@@ -1,25 +1,37 @@
 # docker-compose.apple.yml
-# Override file for Apple Silicon (M4) Macs without NVIDIA GPUs
+# Override file for Apple Silicon Macs.
+# Disables incompatible services (ollama, coqui_tts, coqui_bridge)
+# and points webui to native Ollama running on the host.
 
 services:
+  # Disable ollama service in Docker - rely on native macOS app
   ollama:
-    # Remove NVIDIA-specific environment variable
-    environment: {}
-    # Remove deploy section for GPU resources
-    deploy: null
+    profiles: ["disabled-for-apple"]
+    image: alpine:latest
+    command: ["echo", "Ollama disabled for Apple Silicon"]
 
-  openedai_speech:
-    # Remove deploy section for GPU resources
-    deploy: null
-
+  # Disable coqui_tts service - no ARM64 image available
   coqui_tts:
-    # Remove deploy section for GPU resources
-    deploy: null
-    # Override command to remove --use_cuda flag
-    command: -c "python3 TTS/server/server.py --model_name tts_models/en/vctk/vits"
-    healthcheck:
-      # Slightly increased start period as CPU TTS can be slower to init
-      start_period: 60s
+    profiles: ["disabled-for-apple"]
+    image: alpine:latest
+    command: ["echo", "Coqui TTS disabled for Apple Silicon"]
 
-# Note: Volumes, ports, networks, etc., defined in the base
-# docker-compose.yml are automatically inherited unless explicitly overridden here. 
+  # Disable coqui_bridge service - upstream coqui_tts is disabled
+  coqui_bridge:
+    profiles: ["disabled-for-apple"]
+    image: alpine:latest
+    command: ["echo", "Coqui Bridge disabled for Apple Silicon"]
+
+  # openedai_speech uses its base (CPU) configuration from docker-compose.yml
+  # No override needed here anymore as base file is now CPU-only.
+
+  # Modify webui to connect to native Ollama on the host
+  webui:
+    environment:
+      # Override: Point to host machine's Ollama instance
+      - OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+    # The depends_on from the base file was removed previously.
+
+# Note: Services defined in the base docker-compose.yml but *not* mentioned
+# here (like openedai_speech) will inherit their base configuration fully.
+# Services overridden here (like webui) merge with the base, or are disabled by profiles. 

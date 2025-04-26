@@ -1,0 +1,37 @@
+# docker-compose.nvidia.yml
+# Override file to enable NVIDIA GPU acceleration.
+
+services:
+  ollama:
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  openedai_speech:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  coqui_tts:
+    # Add --use_cuda true flag for NVIDIA GPUs
+    command: -c "python3 TTS/server/server.py --model_name tts_models/en/vctk/vits --use_cuda true"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Restore original start_period if desired, or keep increased one
+    # healthcheck:
+    #   start_period: 60s # Or remove to use base file's default (if different) 
