@@ -1,0 +1,25 @@
+# docker-compose.apple.yml
+# Override file for Apple Silicon (M4) Macs without NVIDIA GPUs
+
+services:
+  ollama:
+    # Remove NVIDIA-specific environment variable
+    environment: {}
+    # Remove deploy section for GPU resources
+    deploy: null
+
+  openedai_speech:
+    # Remove deploy section for GPU resources
+    deploy: null
+
+  coqui_tts:
+    # Remove deploy section for GPU resources
+    deploy: null
+    # Override command to remove --use_cuda flag
+    command: -c "python3 TTS/server/server.py --model_name tts_models/en/vctk/vits"
+    healthcheck:
+      # Slightly increased start period as CPU TTS can be slower to init
+      start_period: 60s
+
+# Note: Volumes, ports, networks, etc., defined in the base
+# docker-compose.yml are automatically inherited unless explicitly overridden here. 

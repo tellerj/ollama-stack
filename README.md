@@ -22,7 +22,7 @@ The stack includes the following services:
 
 - Docker
 - Docker Compose
-- NVIDIA drivers and NVIDIA Container Toolkit (if using GPU acceleration)
+- NVIDIA drivers and NVIDIA Container Toolkit (*only required if using the default GPU-accelerated configuration*)
 
 ## Getting Started
 
@@ -35,9 +35,23 @@ The stack includes the following services:
     - Modify the `docker-compose.yml` file to adjust resource limits (memory, CPU), ports, or environment variables as needed.
     - Place necessary voice models or configuration files in the `openedai-speech` directory if using that service.
 3.  **Run the stack:**
-    ```bash
-    docker-compose up -d
-    ```
+
+    *   **For systems with NVIDIA GPUs (using default `docker-compose.yml`):**
+        ```bash
+        # Use docker compose (v2) or docker-compose (v1)
+        docker compose up -d
+        # or
+        # docker-compose up -d 
+        ```
+    *   **For systems without NVIDIA GPUs (e.g., Apple Silicon Macs):**
+        Use the `docker-compose.apple.yml` override file which removes GPU requirements:
+        ```bash
+        # Use docker compose (v2) or docker-compose (v1)
+        docker compose -f docker-compose.yml -f docker-compose.apple.yml up -d
+        # or
+        # docker-compose -f docker-compose.yml -f docker-compose.apple.yml up -d
+        ```
+
     This command will download the necessary images and start all the services in the background.
 4.  **Access the services:**
     - **Ollama API:** `http://localhost:11434`
