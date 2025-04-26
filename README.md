@@ -19,6 +19,9 @@ The stack can include the following services depending on the configuration used
   - Port: `5002`
 - **`coqui_bridge`**: A bridge service to make the Coqui TTS API compatible with other services if needed.
   - Port: `8090`
+- **`cursor_bridge`**: A bridge service that exposes an OpenAI-compatible chat completion endpoint (`/v1/chat/completions`) and forwards requests to Ollama.
+  - Port: `8180`
+  - Allows tools like Cursor (and other OpenAI API clients) to use your local Ollama instance as a drop-in replacement for OpenAI's API.
 
 ## Prerequisites
 
@@ -66,6 +69,7 @@ The stack can include the following services depending on the configuration used
     - **OpenedAI Speech API:** `http://localhost:8000` (*Runs in Docker for all setups*)
     - **Coqui TTS API (via bridge):** `http://localhost:8090` (*Only available on CPU/NVIDIA setups*)
     - **Coqui TTS API (direct):** `http://localhost:5002` (*Only available on CPU/NVIDIA setups*)
+    - **OpenAI-Compatible Chat API (via bridge):** `http://localhost:8180/v1/chat/completions` (*For use with Cursor and other OpenAI API clients*)
 
 ## Downloading and Using Ollama Models
 
@@ -212,3 +216,25 @@ The following named volumes are used for persistent storage *by the Docker servi
 The `openedai_speech` service uses bind mounts for its configuration and voice data located in the `./openedai-speech` directory within the project folder.
 
 *(Note: Models downloaded via the native Ollama macOS application are stored separately according to its own configuration, typically in `~/.ollama/models`)*
+
+## Using Cursor or Other OpenAI-Compatible Clients with Ollama
+
+This stack includes a `cursor_bridge` service, which acts as a compatibility layer between OpenAI API clients (such as [Cursor](https://www.cursor.so/)) and your local Ollama instance.
+
+**How it works:**
+- The bridge exposes the `/v1/chat/completions` endpoint on port `8180`.
+- Requests to this endpoint are translated and forwarded to Ollama's `/api/chat` endpoint.
+- This allows you to use Cursor or any other tool that expects the OpenAI Chat API with your own local models.
+
+### Example: Configuring Cursor
+
+1. In Cursor, go to **Settings → Models**.
+2. In the **OpenAI API Key** section:
+   - Leave the API Key field blank (unless you have set up authentication).
+   - In the "Override OpenAI Base URL (when using key)" field, enter:
+     ```
+     http://localhost:8180
+     ```
+3. Save your settings.
+
+You can now use Cursor with your local Ollama models, with all data staying on your machine.
