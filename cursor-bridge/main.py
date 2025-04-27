@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
 
+# List of supported Ollama models (customize as needed)
+SUPPORTED_MODELS = {"llama2", "mistral", "phi3", "gemma", "llama3", ...}  # Add your installed models
+
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "llama3:8b")  # Now configurable via env var
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     logger.info("Received request at /v1/chat/completions")
@@ -25,7 +30,10 @@ async def chat_completions(request: Request):
     if not messages:
         logger.error("Missing 'messages' field in request body")
         raise HTTPException(status_code=400, detail="Missing 'messages'")
-    model = body.get("model", "llama2")
+    model = body.get("model", DEFAULT_MODEL)
+    if model not in SUPPORTED_MODELS:
+        logger.warning(f"Requested model '{model}' not found. Using default '{DEFAULT_MODEL}'.")
+        model = DEFAULT_MODEL
     ollama_payload = {
         "model": model,
         "messages": messages
