@@ -1,37 +1,19 @@
 # docker-compose.apple.yml
 # Override file for Apple Silicon Macs.
-# Disables incompatible services (ollama, coqui_tts, coqui_bridge)
-# and points webui to native Ollama running on the host.
+# Disables Docker Ollama service and points webui to native Ollama running on the host.
 
 services:
   # Disable ollama service in Docker - rely on native macOS app
   ollama:
     profiles: ["disabled-for-apple"]
     image: alpine:latest
-    command: ["echo", "Ollama disabled for Apple Silicon"]
-
-  # Disable coqui_tts service - no ARM64 image available
-  coqui_tts:
-    profiles: ["disabled-for-apple"]
-    image: alpine:latest
-    command: ["echo", "Coqui TTS disabled for Apple Silicon"]
-
-  # Disable coqui_bridge service - upstream coqui_tts is disabled
-  coqui_bridge:
-    profiles: ["disabled-for-apple"]
-    image: alpine:latest
-    command: ["echo", "Coqui Bridge disabled for Apple Silicon"]
-
-  # openedai_speech uses its base (CPU) configuration from docker-compose.yml
-  # No override needed here anymore as base file is now CPU-only.
+    command: ["echo", "Ollama disabled for Apple Silicon - using native macOS app"]
 
   # Modify webui to connect to native Ollama on the host
   webui:
     environment:
       # Override: Point to host machine's Ollama instance
       - OLLAMA_API_BASE_URL=http://host.docker.internal:11434
-    # The depends_on from the base file was removed previously.
 
-# Note: Services defined in the base docker-compose.yml but *not* mentioned
-# here (like openedai_speech) will inherit their base configuration fully.
-# Services overridden here (like webui) merge with the base, or are disabled by profiles. 
+  # MCP Proxy uses its base configuration from docker-compose.yml
+  # No override needed for Apple Silicon 
