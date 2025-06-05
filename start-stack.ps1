@@ -8,7 +8,10 @@ param(
     [string]$Hardware = "cpu",
     
     [Parameter(HelpMessage="Skip model download prompts")]
-    [switch]$SkipModels = $false
+    [switch]$SkipModels = $false,
+
+    [Parameter(HelpMessage="Automatically update to latest versions")]
+    [switch]$Update = $false
 )
 
 Write-Host "Starting Ollama Core Stack..." -ForegroundColor Green
@@ -54,6 +57,82 @@ function Wait-ForService {
     return $false
 }
 
+# Function to check for updates
+function Test-ForUpdates {
+    $ComposeFiles = @("-f", "docker-compose.yml")
+    
+    switch ($Hardware) {
+        "nvidia" { $ComposeFiles += @("-f", "docker-compose.nvidia.yml") }
+        "apple" { $ComposeFiles += @("-f", "docker-compose.apple.yml") }
+    }
+
+    Write-Host "Checking for updates..." -ForegroundColor Blue
+    
+    # Get current image versions from docker-compose config
+    $config = docker compose $ComposeFiles config
+    $updates = @()
+    
+    foreach ($line in $config) {
+        if ($line -match '^\s*image:\s*([^:]+):([^\s]+)') {
+            $image = $matches[1]
+            $currentTag = $matches[2]
+            
+            # Get latest tag
+            try {
+                $manifest = docker manifest inspect "$image`:latest" 2>$null
+                $latestTag = ($manifest | Select-String -Pattern '"tag":"([^"]*)"' | Select-Object -First 1).Matches.Groups[1].Value
+                
+                if ($latestTag -and $latestTag -ne $currentTag) {
+                    $updates += "$image`: $currentTag -> $latestTag"
+                }
+            }
+            catch {
+                # Image might not exist or manifest inspect failed
+                continue
+            }
+        }
+    }
+
+    if ($updates.Count -eq 0) {
+        Write-Host "All services are up to date!" -ForegroundColor Green
+        return $false
+    }
+
+    Write-Host "Updates available for the following services:" -ForegroundColor Yellow
+    foreach ($update in $updates) {
+        Write-Host "  - $update" -ForegroundColor White
+    }
+    Write-Host ""
+
+    if ($Update) {
+        Write-Host "Auto-update enabled, proceeding with updates..." -ForegroundColor Green
+        return $true
+    }
+
+    $response = Read-Host "Would you like to update before starting? [y/N]"
+    return $response -match '^[yY]$'
+}
+
+# Function to pull updates
+function Update-Stack {
+    $ComposeFiles = @("-f", "docker-compose.yml")
+    
+    switch ($Hardware) {
+        "nvidia" { $ComposeFiles += @("-f", "docker-compose.nvidia.yml") }
+        "apple" { $ComposeFiles += @("-f", "docker-compose.apple.yml") }
+    }
+
+    Write-Host "Pulling latest images..." -ForegroundColor Blue
+    $pullCommand = @("docker", "compose") + $ComposeFiles + @("pull")
+    
+    if (-not (& $pullCommand[0] $pullCommand[1..($pullCommand.Length-1)])) {
+        Write-Host "Failed to pull updates" -ForegroundColor Red
+        exit 1
+    }
+    
+    Write-Host "Updates pulled successfully!" -ForegroundColor Green
+}
+
 # Check prerequisites
 Write-Host "Checking prerequisites..." -ForegroundColor Blue
 
@@ -87,6 +166,11 @@ switch ($Hardware) {
     "cpu" {
         Write-Host "Using CPU-only configuration" -ForegroundColor Magenta
     }
+}
+
+# Check for updates
+if (Test-ForUpdates) {
+    Update-Stack
 }
 
 # Start core stack

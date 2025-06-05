@@ -16,6 +16,9 @@ docker compose up -d
 # Linux/macOS
 ./start-stack.sh
 
+# Apple Silicon (M1/M2/M3)
+./start-stack.sh -h apple
+
 # Windows PowerShell
 .\start-stack.ps1
 

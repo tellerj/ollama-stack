@@ -7,6 +7,7 @@ set -e
 # Default values
 HARDWARE="cpu"
 SKIP_MODELS=false
+AUTO_UPDATE=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -33,12 +34,14 @@ show_usage() {
     echo "Options:"
     echo "  -h, --hardware HARDWARE    Hardware configuration: cpu, nvidia, or apple (default: cpu)"
     echo "  -s, --skip-models         Skip model download prompts"
+    echo "  -u, --update              Automatically update to latest versions"
     echo "  --help                    Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0                        # Start with CPU-only configuration"
     echo "  $0 -h nvidia             # Start with NVIDIA GPU acceleration"
     echo "  $0 -h apple -s           # Start Apple Silicon config, skip model prompts"
+    echo "  $0 -u                    # Start with automatic updates"
 }
 
 # Parse command line arguments
@@ -54,6 +57,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -s|--skip-models)
             SKIP_MODELS=true
+            shift
+            ;;
+        -u|--update)
+            AUTO_UPDATE=true
             shift
             ;;
         --help)
@@ -104,6 +111,83 @@ wait_for_service() {
     return 1
 }
 
+# Function to check for updates
+check_for_updates() {
+    local compose_files=("-f" "docker-compose.yml")
+    
+    case $HARDWARE in
+        nvidia)
+            compose_files+=("-f" "docker-compose.nvidia.yml")
+            ;;
+        apple)
+            compose_files+=("-f" "docker-compose.apple.yml")
+            ;;
+    esac
+
+    print_color $BLUE "Checking for updates..."
+    
+    # Get current and latest image versions
+    local updates=()
+    while IFS= read -r line; do
+        if [[ $line =~ ^[[:space:]]*image:[[:space:]]*([^:]+):([^[:space:]]+) ]]; then
+            local image="${BASH_REMATCH[1]}"
+            local current_tag="${BASH_REMATCH[2]}"
+            
+            # Get latest tag
+            local latest_tag
+            latest_tag=$(docker manifest inspect "$image:latest" 2>/dev/null | grep -o '"tag":"[^"]*"' | head -1 | cut -d'"' -f4)
+            
+            if [ "$latest_tag" != "$current_tag" ] && [ -n "$latest_tag" ]; then
+                updates+=("$image: $current_tag -> $latest_tag")
+            fi
+        fi
+    done < <(docker compose "${compose_files[@]}" config | grep -E "^[[:space:]]*image:")
+
+    if [ ${#updates[@]} -eq 0 ]; then
+        print_color $GREEN "All services are up to date!"
+        return 1
+    fi
+
+    print_color $YELLOW "Updates available for the following services:"
+    for update in "${updates[@]}"; do
+        print_color $WHITE "  - $update"
+    done
+    echo ""
+
+    if [ "$AUTO_UPDATE" = true ]; then
+        print_color $GREEN "Auto-update enabled, proceeding with updates..."
+        return 0
+    fi
+
+    read -p "Would you like to update before starting? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Function to pull updates
+pull_updates() {
+    local compose_files=("-f" "docker-compose.yml")
+    
+    case $HARDWARE in
+        nvidia)
+            compose_files+=("-f" "docker-compose.nvidia.yml")
+            ;;
+        apple)
+            compose_files+=("-f" "docker-compose.apple.yml")
+            ;;
+    esac
+
+    print_color $BLUE "Pulling latest images..."
+    if ! docker compose "${compose_files[@]}" pull; then
+        print_color $RED "Failed to pull updates"
+        exit 1
+    fi
+    print_color $GREEN "Updates pulled successfully!"
+}
+
 # Check prerequisites
 print_color $BLUE "Checking prerequisites..."
 
@@ -137,6 +221,11 @@ case $HARDWARE in
         print_color $MAGENTA "Using CPU-only configuration"
         ;;
 esac
+
+# Check for updates
+if check_for_updates; then
+    pull_updates
+fi
 
 # Start core stack
 print_color $BLUE "Starting core stack..."
