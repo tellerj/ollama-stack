@@ -4,12 +4,11 @@ A focused local AI stack with Ollama, Open WebUI, and MCP tool integration. Ever
 
 ## 🚀 Quick Start
 
-### Simple Start
-```bash
-git clone <repository_url>
-cd ollama-stack
-docker compose up -d
-```
+### Prerequisites
+
+- Docker / Docker Desktop
+- **NVIDIA GPU**: NVIDIA drivers + Container Toolkit
+- **Apple Silicon**: Native Ollama macOS app installed
 
 ### Using Startup Scripts
 ```bash
@@ -25,6 +24,13 @@ docker compose up -d
 # With hardware acceleration
 ./start-stack.sh -h nvidia
 .\start-stack.ps1 -Hardware nvidia
+```
+
+### Simple Start
+```bash
+git clone <repository_url>
+cd ollama-stack
+docker compose up -d
 ```
 
 ### Hardware-Optimized
@@ -64,12 +70,6 @@ docker compose -f docker-compose.yml -f docker-compose.apple.yml up -d
 - Auto-generates OpenAPI documentation
 - Default time server with timezone/date tools
 - Easily extensible with additional MCP servers
-
-## Prerequisites
-
-- Docker and Docker Compose
-- **NVIDIA GPU**: NVIDIA drivers + Container Toolkit
-- **Apple Silicon**: Native Ollama macOS app installed
 
 ## Getting Started
 
