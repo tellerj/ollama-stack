@@ -3,9 +3,10 @@
 # This script handles a complete cold start of the Ollama Core Stack
 
 param(
-    [Parameter(HelpMessage="Hardware configuration: 'cpu', 'nvidia', or 'apple'")]
+    [Parameter(HelpMessage="Operating system configuration: 'cpu', 'nvidia', or 'apple'")]
     [ValidateSet("cpu", "nvidia", "apple")]
-    [string]$Hardware = "cpu",
+    [Alias("o")]
+    [string]$OperatingSystem = "cpu",
     
     [Parameter(HelpMessage="Skip model download prompts")]
     [switch]$SkipModels = $false,
@@ -15,7 +16,7 @@ param(
 )
 
 Write-Host "Starting Ollama Core Stack..." -ForegroundColor Green
-Write-Host "Hardware: $Hardware" -ForegroundColor Cyan
+Write-Host "Operating System: $OperatingSystem" -ForegroundColor Cyan
 Write-Host ""
 
 # Function to check if Docker is running
@@ -61,7 +62,7 @@ function Wait-ForService {
 function Test-ForUpdates {
     $ComposeFiles = @("-f", "docker-compose.yml")
     
-    switch ($Hardware) {
+    switch ($OperatingSystem) {
         "nvidia" { $ComposeFiles += @("-f", "docker-compose.nvidia.yml") }
         "apple" { $ComposeFiles += @("-f", "docker-compose.apple.yml") }
     }
@@ -117,7 +118,7 @@ function Test-ForUpdates {
 function Update-Stack {
     $ComposeFiles = @("-f", "docker-compose.yml")
     
-    switch ($Hardware) {
+    switch ($OperatingSystem) {
         "nvidia" { $ComposeFiles += @("-f", "docker-compose.nvidia.yml") }
         "apple" { $ComposeFiles += @("-f", "docker-compose.apple.yml") }
     }
@@ -149,11 +150,11 @@ if (-not (Test-Path "docker-compose.yml")) {
 Write-Host "Prerequisites check passed!" -ForegroundColor Green
 Write-Host ""
 
-# Determine Docker Compose command based on hardware
+# Determine Docker Compose command based on operating system
 $ComposeCommand = @("docker", "compose")
 $ComposeFiles = @("-f", "docker-compose.yml")
 
-switch ($Hardware) {
+switch ($OperatingSystem) {
     "nvidia" {
         $ComposeFiles += @("-f", "docker-compose.nvidia.yml")
         Write-Host "Using NVIDIA GPU acceleration" -ForegroundColor Magenta
@@ -187,7 +188,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "Waiting for core services to be ready..." -ForegroundColor Blue
 
-if ($Hardware -ne "apple") {
+if ($OperatingSystem -ne "apple") {
     if (-not (Wait-ForService "Ollama" "http://localhost:11434")) {
         Write-Host "Ollama failed to start" -ForegroundColor Red
         exit 1
@@ -211,7 +212,7 @@ Write-Host ""
 Write-Host "Services:" -ForegroundColor Cyan
 Write-Host "  Open WebUI: http://localhost:8080" -ForegroundColor White
 
-if ($Hardware -ne "apple") {
+if ($OperatingSystem -ne "apple") {
     Write-Host "  Ollama API: http://localhost:11434" -ForegroundColor White
 }
 

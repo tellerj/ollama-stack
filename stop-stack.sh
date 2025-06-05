@@ -10,7 +10,7 @@ SHOW_HELP=false
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -h|--hardware)
+        -o|--operating-system)
             HARDWARE="$2"
             shift 2
             ;;
@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
             REMOVE_VOLUMES=true
             shift
             ;;
-        --help)
+        -h|--help)
             SHOW_HELP=true
             shift
             ;;
@@ -36,13 +36,13 @@ Ollama Stack Shutdown Script
 Usage: ./stop-stack.sh [options]
 
 Options:
-  -h, --hardware <type>    Hardware type: auto, cpu, nvidia, apple (default: auto)
-  -v, --remove-volumes     Also remove Docker volumes (WARNING: deletes all data)
-  --help                   Show this help message
+  -o, --operating-system TYPE    Operating system type: auto, cpu, nvidia, apple (default: auto)
+  -v, --remove-volumes          Also remove Docker volumes (WARNING: deletes all data)
+  -h, --help                    Show this help message
 
 Examples:
   ./stop-stack.sh                      # Auto-detect and stop
-  ./stop-stack.sh -h nvidia            # Stop NVIDIA configuration
+  ./stop-stack.sh -o nvidia            # Stop NVIDIA configuration
   ./stop-stack.sh --remove-volumes     # Stop and remove all data
 EOF
     exit 0

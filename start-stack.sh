@@ -32,25 +32,25 @@ show_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -h, --hardware HARDWARE    Hardware configuration: cpu, nvidia, or apple (default: cpu)"
-    echo "  -s, --skip-models         Skip model download prompts"
-    echo "  -u, --update              Automatically update to latest versions"
-    echo "  --help                    Show this help message"
+    echo "  -o, --operating-system TYPE    Operating system configuration: cpu, nvidia, or apple (default: cpu)"
+    echo "  -s, --skip-models             Skip model download prompts"
+    echo "  -u, --update                  Automatically update to latest versions"
+    echo "  -h, --help                    Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0                        # Start with CPU-only configuration"
-    echo "  $0 -h nvidia             # Start with NVIDIA GPU acceleration"
-    echo "  $0 -h apple -s           # Start Apple Silicon config, skip model prompts"
-    echo "  $0 -u                    # Start with automatic updates"
+    echo "  $0                            # Start with CPU-only configuration"
+    echo "  $0 -o nvidia                  # Start with NVIDIA GPU acceleration"
+    echo "  $0 -o apple -s                # Start Apple Silicon config, skip model prompts"
+    echo "  $0 -u                         # Start with automatic updates"
 }
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -h|--hardware)
+        -o|--operating-system)
             HARDWARE="$2"
             if [[ ! "$HARDWARE" =~ ^(cpu|nvidia|apple)$ ]]; then
-                print_color $RED "Error: Hardware must be 'cpu', 'nvidia', or 'apple'"
+                print_color $RED "Error: Operating system must be 'cpu', 'nvidia', or 'apple'"
                 exit 1
             fi
             shift 2
@@ -63,7 +63,7 @@ while [[ $# -gt 0 ]]; do
             AUTO_UPDATE=true
             shift
             ;;
-        --help)
+        -h|--help)
             show_usage
             exit 0
             ;;
