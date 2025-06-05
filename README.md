@@ -16,14 +16,13 @@ A focused local AI stack with Ollama, Open WebUI, and MCP tool integration. Ever
 ./start-stack.sh
 
 # Apple Silicon (M1/M2/M3)
-./start-stack.sh -h apple
+./start-stack.sh -o apple
 
 # Windows PowerShell
 .\start-stack.ps1
 
 # With hardware acceleration
-./start-stack.sh -h nvidia
-.\start-stack.ps1 -Hardware nvidia
+./start-stack.ps1 -o nvidia
 ```
 
 ### Simple Start
