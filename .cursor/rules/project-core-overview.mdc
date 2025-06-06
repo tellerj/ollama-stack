@@ -1,0 +1,183 @@
+---
+description: Describes the core project architecture and overview of the ollama stack.
+globs: 
+alwaysApply: false
+---
+# Ollama Stack - Core Architecture
+
+## Project Overview
+The **Ollama Stack** is a complete local AI development environment that provides privacy-focused, locally-hosted AI capabilities with a modern web interface and extensible tool integration.
+
+### Core Components
+1. **Ollama** - Local AI model server for running LLMs
+2. **Open WebUI** - Modern, responsive web interface for AI interactions
+3. **MCP Proxy** - Model Context Protocol proxy that exposes MCP tools as REST endpoints
+4. **Extension System** - Modular architecture for adding AI services (see @project-extensions)
+
+### Key Benefits
+- **Privacy First**: Everything runs locally, no data leaves your machine
+- **Multi-Platform**: Supports CPU, NVIDIA GPU, and Apple Silicon
+- **Extensible**: Add new AI services without modifying core stack
+- **Production Ready**: Docker-based with proper resource management
+
+## Directory Structure
+```
+ollama-stack-1/
+├── docker-compose.yml              # Core stack definition
+├── docker-compose.nvidia.yml       # NVIDIA GPU optimizations
+├── docker-compose.apple.yml        # Apple Silicon optimizations
+├── start-stack.sh                  # Unix startup script
+├── start-stack.ps1                 # Windows startup script
+├── stop-stack.sh                   # Unix shutdown script
+├── stop-stack.ps1                  # Windows shutdown script
+├── README.md                       # Project documentation
+├── extensions/                     # Extension framework (see @project-extensions)
+└── tools/                         # Additional tools directory
+```
+
+## Core Services Architecture
+
+### 1. Ollama Service (`ollama`)
+- **Purpose**: Hosts and serves local AI models (Llama, Mistral, etc.)
+- **Port**: 11434 (internal), exposed for model management
+- **Storage**: `ollama_data` volume for model persistence
+- **Platform Support**: CPU, NVIDIA GPU, Apple Silicon with optimizations
+
+### 2. Open WebUI Service (`open-webui`)
+- **Purpose**: Modern web interface for AI interactions
+- **Port**: 3000 (exposed for browser access)
+- **Features**: Chat interface, model management, tool integration
+- **Storage**: `webui_data` volume for user data
+- **Dependencies**: Connects to Ollama and MCP Proxy
+
+### 3. MCP Proxy Service (`mcp_proxy`)
+- **Purpose**: Bridges Model Context Protocol servers to REST APIs
+- **Port**: 8200 (internal), used by OpenWebUI for tool access
+- **Function**: Auto-discovers and proxies MCP extensions
+- **Integration**: Enables seamless tool use in conversations
+
+## Platform Configuration
+
+### Base Configuration (`docker-compose.yml`)
+- **Default setup** that works on all platforms
+- **Shared network**: `ollama-stack-network` for inter-service communication
+- **Volume management** for data persistence
+- **Basic resource limits** for stability
+
+### NVIDIA Configuration (`docker-compose.nvidia.yml`)
+- **GPU acceleration** for Ollama and extensions
+- **CUDA runtime** and device access
+- **Optimized memory settings** for GPU workloads
+- **Usage**: Automatically applied when NVIDIA GPU detected
+
+### Apple Silicon Configuration (`docker-compose.apple.yml`)
+- **Metal Performance Shaders (MPS)** optimization
+- **ARM64-specific** container configurations
+- **Memory efficiency** tuning for Apple Silicon
+- **Usage**: Automatically applied on Apple Silicon Macs
+
+## Startup & Management
+
+### Automated Startup Scripts
+- **`start-stack.sh`** (Unix/macOS): Detects platform and starts appropriate stack
+- **`start-stack.ps1`** (Windows): PowerShell equivalent with platform detection
+- **Features**: Health checks, error handling, colored output, detached mode
+
+### Platform Detection Logic
+```bash
+# Automatic detection of:
+1. Apple Silicon (arm64 + macOS)
+2. NVIDIA GPU (nvidia-smi available)
+3. CPU fallback (default)
+```
+
+### Service Dependencies
+```
+Open WebUI → Ollama (model serving)
+Open WebUI → MCP Proxy (tool integration)
+Extensions → ollama-stack-network (shared communication)
+```
+
+## Key Environment Variables
+- `NVIDIA_VISIBLE_DEVICES`: GPU selection for NVIDIA setups
+- `NVIDIA_DRIVER_CAPABILITIES`: Required capabilities (compute,utility)
+- `MCP_API_KEY`: Authentication for MCP proxy (default: "mcp-proxy-key")
+
+## Network Architecture
+- **External Access**: Only Open WebUI (port 3000) exposed to host
+- **Internal Communication**: All services on `ollama-stack-network`
+- **Service Discovery**: Docker DNS resolution between services
+- **Security**: MCP proxy and Ollama not directly accessible from outside
+
+## Data Persistence
+- **`ollama_data`**: AI models and Ollama configuration
+- **`webui_data`**: User accounts, chat history, settings
+- **Extension volumes**: Each extension manages its own data (see @project-extensions)
+
+## Health Monitoring
+- **Service health checks** for all components
+- **Startup dependencies** ensure proper initialization order
+- **Resource monitoring** through Docker stats
+- **Log aggregation** via Docker Compose logs
+
+## Usage Patterns
+
+### Standard Workflow
+1. **Start Stack**: `./start-stack.sh` (auto-detects platform)
+2. **Access Interface**: Browser to `http://localhost:3000`
+3. **Download Models**: Through OpenWebUI or Ollama CLI
+4. **Add Extensions**: See @project-extensions for modular service addition
+5. **Monitor**: Use `docker compose logs -f` for troubleshooting
+
+### Common Operations
+```bash
+# Start the stack
+./start-stack.sh
+
+# Stop the stack  
+./stop-stack.sh
+
+# View logs
+docker compose logs -f
+
+# Check service status
+docker compose ps
+
+# Update images
+docker compose pull && ./start-stack.sh
+```
+
+## Integration Points
+
+### For Extensions
+- **Network**: Join `ollama-stack-network` for service communication
+- **MCP Integration**: Implement MCP servers for OpenWebUI tool access
+- **Management**: Use extension CLI for lifecycle operations (see @project-extensions)
+
+### For Development
+- **Local Models**: Access Ollama API at `http://localhost:11434`
+- **Web Interface**: Extend OpenWebUI at `http://localhost:3000`
+- **Tool Development**: Create MCP servers for custom functionality
+
+## Troubleshooting
+
+### Common Issues
+- **Port conflicts**: Ensure 3000, 11434, 8200 are available
+- **GPU access**: Verify NVIDIA Docker runtime or MPS availability
+- **Memory limits**: Monitor resource usage with `docker stats`
+- **Network isolation**: Check `ollama-stack-network` exists
+
+### Platform-Specific
+- **NVIDIA**: Verify `nvidia-docker` and CUDA drivers
+- **Apple Silicon**: Ensure Docker Desktop with ARM64 support
+- **CPU**: May be slow but should work on any Docker-capable system
+
+## Extending the Stack
+For adding new AI services, tools, or capabilities, see the **@project-extensions** rule which covers the modular extension architecture that allows seamless augmentation without modifying core files.
+
+## Best Practices for AI Agents
+1. **Never modify core compose files** - use extension system instead
+2. **Respect platform detection** - use provided startup scripts
+3. **Monitor resource usage** - AI workloads are resource-intensive
+4. **Test across platforms** - ensure compatibility with CPU/GPU/Apple Silicon
+5. **Use provided tooling** - leverage startup scripts and management utilities 

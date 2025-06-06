@@ -1,0 +1,189 @@
+---
+description: Modular extension architecture for the ollama stack project built on model context protocol
+globs: 
+alwaysApply: false
+---
+# Ollama Stack - Modular MCP Architecture
+
+## Architecture Overview
+This project implements a **modular, MCP-first architecture** for the Ollama Stack that allows seamless addition/removal of AI services without modifying core files.
+
+### Core Principles
+1. **Zero Core Impact**: Never modify `docker-compose.yml`, `docker-compose.nvidia.yml`, or `docker-compose.apple.yml`
+2. **MCP-First**: All extensions use Model Context Protocol for OpenWebUI integration
+3. **Platform Agnostic**: Support CPU, NVIDIA GPU, and Apple Silicon with automatic detection
+4. **Self-Contained**: Each extension is completely independent and testable
+5. **Unified Management**: Single CLI for all extension lifecycle operations
+
+## Directory Structure
+```
+ollama-stack-1/
+├── extensions/                          # Extension framework
+│   ├── manage.sh                       # Extension management CLI (chmod +x)
+│   ├── registry.json                   # Extension registry and metadata
+│   └── {extension-name}/               # Individual extensions
+│       ├── server.py                   # MCP server implementation
+│       ├── requirements.txt            # Python dependencies
+│       ├── Dockerfile                  # Base container
+│       ├── docker-compose.yml          # Base configuration
+│       ├── docker-compose.nvidia.yml   # NVIDIA overrides
+│       ├── docker-compose.apple.yml    # Apple Silicon overrides
+│       ├── mcp-config.json            # Extension metadata
+│       └── README.md                   # Documentation
+└── [core files unchanged]              # Original stack files
+```
+
+## Extension Framework Components
+
+### 1. Registry System (`extensions/registry.json`)
+- Tracks all available extensions and their metadata
+- Maintains enabled/disabled state
+- Provides platform compatibility information
+- Used by management CLI for operations
+
+### 2. Management CLI (`extensions/manage.sh`)
+- **Platform Detection**: Auto-detects CPU/NVIDIA/Apple Silicon
+- **Lifecycle Management**: enable, disable, start, stop, restart, logs, info
+- **Unified Interface**: Single command for all extension operations
+- **Usage**: `./manage.sh <command> <extension> [options]`
+
+### 3. MCP Integration Pattern
+- Extensions implement **Model Context Protocol servers**
+- Use **stdio transport** (not HTTP) for OpenWebUI integration
+- OpenWebUI's `mcpo` proxy automatically converts MCP to REST
+- **No bridge code needed** - native OpenWebUI support
+
+## Creating New Extensions
+
+### Step 1: Extension Metadata
+Create `extensions/{name}/mcp-config.json`:
+```json
+{
+  "name": "extension-name",
+  "displayName": "Human Readable Name",
+  "description": "What this extension does",
+  "type": "mcp-server",
+  "mcp": {
+    "serverName": "extension-name",
+    "command": ["python", "/app/server.py"],
+    "transport": "stdio"
+  },
+  "platforms": {
+    "cpu": {"supported": true, "performance": "slow"},
+    "nvidia": {"supported": true, "performance": "optimal"},
+    "apple": {"supported": true, "performance": "good"}
+  }
+}
+```
+
+### Step 2: MCP Server Implementation
+Create `extensions/{name}/server.py` with:
+```python
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+
+server = Server("extension-name")
+
+@server.list_tools()
+async def list_tools():
+    # Define your tools here
+
+@server.call_tool()
+async def call_tool(name: str, arguments: dict):
+    # Implement tool logic here
+
+async def main():
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream, server.create_initialization_options())
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Step 3: Docker Configuration
+- `Dockerfile`: Base Python container with dependencies
+- `docker-compose.yml`: Base service config (no exposed ports, joins `ollama-stack-network`)
+- `docker-compose.nvidia.yml`: GPU-specific overrides
+- `docker-compose.apple.yml`: Apple Silicon optimizations
+
+### Step 4: Registry Registration
+Add to `extensions/registry.json` extensions object:
+```json
+"extension-name": {
+  "name": "Extension Name",
+  "type": "mcp-server",
+  "status": "available",
+  "platforms": ["cpu", "nvidia", "apple"]
+}
+```
+
+## Key Patterns & Conventions
+
+### MCP Server Structure
+- **Tools**: Callable functions exposed to OpenWebUI
+- **Resources**: Static content (docs, examples, model info)
+- **Prompts**: Templated prompts for common tasks
+- **Transport**: Always use `stdio` (not SSE/HTTP)
+
+### Docker Patterns
+- **Base Image**: `python:3.11-slim` with system dependencies
+- **No Exposed Ports**: MCP uses stdio, not HTTP
+- **Shared Network**: Join `ollama-stack-network` (external: true)
+- **Volume Management**: Use named volumes for cache/models
+- **Health Checks**: Include basic health check script
+
+### Platform Optimization
+- **NVIDIA**: Add GPU resource reservations, CUDA environment
+- **Apple**: Set MPS environment variables, disable torch compile
+- **CPU**: Minimal configuration, focus on memory limits
+
+## Management Commands
+```bash
+# Core operations
+./extensions/manage.sh list                    # Show all extensions
+./extensions/manage.sh info <ext>             # Detailed extension info
+./extensions/manage.sh enable <ext>           # Enable extension
+./extensions/manage.sh start <ext> [-p platform]  # Start extension
+./extensions/manage.sh stop <ext>             # Stop extension
+./extensions/manage.sh logs <ext> [-f]        # View logs
+
+# Platform selection
+-p auto    # Auto-detect (default)
+-p cpu     # Force CPU
+-p nvidia  # Force NVIDIA GPU
+-p apple   # Force Apple Silicon
+```
+
+## Integration Flow
+1. Extension runs as independent MCP server (stdio)
+2. OpenWebUI's `mcp_proxy` service discovers and proxies MCP servers
+3. Tools/resources/prompts appear automatically in OpenWebUI
+4. No manual configuration required
+
+## Troubleshooting Patterns
+- **Check Status**: `./extensions/manage.sh list`
+- **View Logs**: `./extensions/manage.sh logs <ext> -f`
+- **Test Connectivity**: Ensure `ollama-stack-network` exists
+- **Platform Issues**: Try different platform with `-p` flag
+- **Resource Limits**: Check memory/GPU constraints in logs
+
+## Example Extensions
+- **dia-tts-mcp**: Text-to-speech using Dia model (reference implementation)
+- Templates available in existing extension for common patterns
+
+## Best Practices for AI Agents
+1. **Always check existing extensions first** - understand patterns before creating new ones
+2. **Use the management CLI** - don't manually docker compose
+3. **Follow the registry pattern** - keep metadata in sync
+4. **Test across platforms** - verify CPU/GPU/Apple compatibility
+5. **Implement proper error handling** - MCP tools should gracefully handle failures
+6. **Document thoroughly** - include comprehensive README.md
+
+## Quick Start for New Extensions
+1. Copy existing extension structure (like `dia-tts-mcp`)
+2. Modify `mcp-config.json` with new extension details
+3. Implement MCP server in `server.py`
+4. Update `requirements.txt` and `Dockerfile`
+5. Add to registry and test with `./extensions/manage.sh`
+
+This architecture enables rapid development of AI service extensions while maintaining clean separation from the core Ollama Stack. 
