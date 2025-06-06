@@ -1,184 +1,101 @@
 # Ollama Stack
 
-A focused local AI stack with Ollama, Open WebUI, and MCP tool integration. Everything runs locally for privacy.
+Local AI stack with Ollama, Open WebUI, and MCP tool integration.
+
+## Components
+
+- **Ollama**: Local AI model server (port 11434)
+- **Open WebUI**: Web interface for chat interactions (port 8080) 
+- **MCP Proxy**: Tool integration server exposing MCP tools via REST (port 8200)
+- **Extension System**: Modular extensions for additional AI capabilities
 
 ## Features
 
-- **Local AI Processing**: Run AI models locally using Ollama
-- **Modern Web Interface**: Clean, responsive UI for interacting with AI models
-- **Vector Database**: Store and search embeddings with Qdrant
-- **Document Processing**: Upload and process documents with Unstructured
-- **Multi-Platform Support**: Works on CPU, NVIDIA GPU, and Apple Silicon
-- **Privacy-Focused**: All processing happens locally on your machine
+- Multi-platform support (CPU, NVIDIA GPU, Apple Silicon)
+- Unified CLI tool for management
+- Extension system for additional tools
+- Docker-based deployment
 
 ## Prerequisites
 
-- [Docker](https://www.docker.com/products/docker-desktop/) and Docker Compose
+- [Docker](https://www.docker.com/products/docker-desktop/)
 - [Ollama](https://ollama.ai/) installed and running
 - For NVIDIA GPU support: NVIDIA drivers and NVIDIA Container Toolkit
 - For Apple Silicon: Docker Desktop for Mac with Apple Silicon support
 
 ## Quick Start
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/yourusername/ollama-stack.git
-   cd ollama-stack
-   ```
-
-2. Start the stack:
-   ```bash
-   # Use the unified CLI tool (recommended)
-   ./ollama-stack start
-
-   # Or use legacy scripts
-   ./scripts/start-stack.sh -p nvidia
-   ```
-
-3. Access the web interface at `http://localhost:8080`
-
-## 📋 Documentation
-
-- **[CLI Usage Guide](docs/CLI_USAGE.md)** - Complete CLI reference with examples
-- **[Windows Setup](docs/WINDOWS_SETUP.md)** - Windows-specific installation and usage
-- **[Project Structure](PROJECT_STRUCTURE.md)** - Organization and file layout guide
-- **[Development Notes](docs/UNIFIED_CLI_SUMMARY.md)** - Technical implementation details
-
-## Components
-
-### Core Services
-
-- **Ollama**: Local AI model server
-- **Web UI**: Modern interface for interacting with AI models
-- **MCP Proxy**: Tool integration server that exposes MCP tools via REST API
-
-### Optional Services
-
-- **Monitoring**: 
-- **Logging**: 
-
-## Configuration
-
-### Platform Selection
-
-The stack supports different hardware configurations and will auto-detect the appropriate platform by default:
-
-- **Auto-detect** (default): Automatically detects the best platform for your system
-- **CPU**: Basic configuration for systems without GPU
-- **NVIDIA**: Optimized for NVIDIA GPUs
-- **Apple**: Optimized for Apple Silicon
-
-You can override the auto-detection by specifying a platform:
-
 ```bash
-# Auto-detect platform (default)
+# Clone the repo
+   git clone https://github.com/tellerj/ollama-stack.git
+   cd ollama-stack
+   
+# Start the stack
 ./ollama-stack start
 
-# Force specific platform
-./ollama-stack start -p nvidia
-./ollama-stack start -p apple
-./ollama-stack start -p cpu
+# Enable an extension
+./ollama-stack extensions enable dia-tts-mcp
+./ollama-stack extensions start dia-tts-mcp
+
+# Check status
+./ollama-stack status
 ```
 
-### Environment Variables
+Access the web interface at `http://localhost:8080`
 
-Key environment variables can be configured in `.env`:
-
-- `OLLAMA_HOST`: Ollama server host (default: `host.docker.internal`)
-- `OLLAMA_PORT`: Ollama server port (default: `11434`)
-- `QDRANT_HOST`: Qdrant server host (default: `qdrant`)
-- `QDRANT_PORT`: Qdrant server port (default: `6333`)
-
-## Usage
-
-### Using the Unified CLI (Recommended)
+## CLI Commands
 
 ```bash
-# Start the stack
-./ollama-stack start                    # Auto-detect platform
-./ollama-stack start -p nvidia          # Force specific platform
-
-# Manage extensions
-./ollama-stack extensions list          # List all extensions
-./ollama-stack extensions enable name   # Enable extension
-./ollama-stack extensions start name    # Start extension
-
-# Monitor and control
-./ollama-stack status                   # Check status
-./ollama-stack logs                     # View logs
-./ollama-stack stop                     # Stop everything
-
-# Get help
-./ollama-stack --help
+./ollama-stack start [-p platform]     # Start stack (auto-detects platform)
+./ollama-stack stop                    # Stop stack  
+./ollama-stack status                  # Show status
+./ollama-stack logs [service]          # View logs
+./ollama-stack extensions list         # List extensions
+./ollama-stack extensions enable <ext> # Enable extension
+./ollama-stack extensions start <ext>  # Start extension
+./ollama-stack --help                  # Show help
 ```
 
-### Legacy Scripts (For Backwards Compatibility)
+## Installation
 
 ```bash
-# Start with auto-detection
-./scripts/start-stack.sh
-
-# Stop with auto-detection
-./scripts/stop-stack.sh
-
-# Show help
-./scripts/start-stack.sh -h
+# System-wide installation
+./scripts/install.sh      # Unix/macOS
+.\scripts\install.ps1     # Windows
 ```
 
-## Development
+## Documentation
 
-### Project Structure
+- [CLI Usage Guide](docs/CLI_USAGE.md)
+- [Windows Setup](docs/WINDOWS_SETUP.md)
+- [Project Structure](PROJECT_STRUCTURE.md)
+
+## Platform Support
+
+The CLI auto-detects your hardware:
+
+- **CPU**: Basic Docker configuration
+- **NVIDIA**: GPU acceleration with CUDA
+- **Apple Silicon**: Uses native Ollama app + Docker services
+
+Force a specific platform: `./ollama-stack start -p nvidia`
+
+## Project Structure
 
 ```
-.
-├── README.md                   # This file
-├── ollama-stack               # Main CLI tool (Unix/macOS)
-├── ollama-stack.ps1           # Main CLI tool (Windows)
-├── docker-compose*.yml        # Docker configurations
+ollama-stack/
+├── ollama-stack                # Main CLI (Unix/macOS)
+├── ollama-stack.ps1           # Main CLI (Windows)  
+├── docker-compose*.yml        # Service configurations
 ├── docs/                      # Documentation
-│   ├── CLI_USAGE.md          # Detailed CLI usage guide
-│   ├── WINDOWS_SETUP.md      # Windows-specific setup
-│   └── UNIFIED_CLI_SUMMARY.md # Development notes
-├── scripts/                   # Utility and legacy scripts
-│   ├── install.sh            # Unix installer
-│   ├── install.ps1           # Windows installer
-│   ├── start-stack.sh        # Legacy start script
-│   └── stop-stack.sh         # Legacy stop script
+├── scripts/                   # Installers and legacy scripts
 ├── extensions/                # Extension system
 └── tools/                     # Additional tools
 ```
 
-### Adding New Services
-
-1. Add service configuration to `docker-compose.yml`
-2. Add platform-specific overrides if needed
-3. Update start/stop scripts to handle the new service
-
 ## Troubleshooting
 
-### Common Issues
-
-1. **Ollama Connection Issues**
-   - Ensure Ollama is running
-   - Check `OLLAMA_HOST` and `OLLAMA_PORT` in `.env`
-
-2. **GPU Not Detected**
-   - Verify NVIDIA drivers are installed
-   - Check NVIDIA Container Toolkit installation
-   - Use `nvidia-smi` to verify GPU detection
-
-3. **Apple Silicon Issues**
-   - Ensure Docker Desktop is configured for Apple Silicon
-   - Check Rosetta 2 installation if needed
-
-### Logs
-
-View service logs:
-```bash
-# All services
-docker compose logs
-
-# Specific service
-docker compose logs web-ui
-```
+**Service not starting**: Check logs with `./ollama-stack logs <service>`
+**GPU not detected**: Verify `nvidia-smi` works and NVIDIA Container Toolkit is installed
+**Apple Silicon**: Ensure native Ollama app is running before starting stack
 
