@@ -33,7 +33,7 @@ detect_platform() {
     if [ "$PLATFORM" != "auto" ]; then
         echo "$PLATFORM"
         return
-    }
+    fi
     
     # Check for Apple Silicon
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -60,13 +60,13 @@ show_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -p, --platform TYPE         Platform configuration: auto, cpu, nvidia, or apple (default: auto)"
+    echo "  -p, --platform TYPE        Platform configuration: auto, cpu, nvidia, or apple (default: auto)"
     echo "  -s, --skip-models          Skip model download prompts"
     echo "  -u, --update               Automatically update to latest versions"
     echo "  -h, --help                 Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0                         # Auto-detect platform"
+    echo "  $0                        # Auto-detect platform"
     echo "  $0 -p nvidia              # Force NVIDIA GPU acceleration"
     echo "  $0 -p apple -s            # Force Apple Silicon config, skip model prompts"
     echo "  $0 -u                     # Start with automatic updates"

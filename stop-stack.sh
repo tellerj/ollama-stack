@@ -96,6 +96,33 @@ detect_platform() {
     echo "cpu"
 }
 
+# Function to stop native Ollama on Apple Silicon
+stop_native_ollama() {
+    print_status "Stopping native Ollama service..."
+    
+    # Try to stop using launchctl first (if installed via Homebrew)
+    if launchctl list | grep -q "ollama"; then
+        if launchctl stop ollama; then
+            print_success "Native Ollama service stopped successfully"
+            return 0
+        fi
+    fi
+    
+    # If launchctl fails or Ollama is not managed by it, try to kill the process
+    if pgrep -x "ollama" > /dev/null; then
+        if pkill -x "ollama"; then
+            print_success "Native Ollama process stopped successfully"
+            return 0
+        else
+            print_error "Failed to stop native Ollama process"
+            return 1
+        fi
+    else
+        print_status "Native Ollama is not running"
+        return 0
+    fi
+}
+
 # Stop stack function
 stop_stack() {
     local platform_type=$1
@@ -111,6 +138,8 @@ stop_stack() {
             ;;
         apple)
             compose_files+=("-f" "docker-compose.apple.yml")
+            # For Apple Silicon, we need to exclude the Ollama service
+            compose_files+=("--profile" "disabled-for-apple")
             ;;
     esac
     
@@ -162,6 +191,11 @@ fi
 
 # Stop the stack
 stop_stack "$PLATFORM"
+
+# If on Apple Silicon, also stop the native Ollama service
+if [ "$PLATFORM" = "apple" ]; then
+    stop_native_ollama
+fi
 
 echo ""
 print_success "Ollama Stack shutdown complete!" 
