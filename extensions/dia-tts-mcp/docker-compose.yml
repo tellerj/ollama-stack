@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  dia-tts-mcp:
+    build: .
+    container_name: dia-tts-mcp
+    ports:
+      - "8210:8000"  # HTTP endpoint for MCP over SSE
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+      - PYTORCH_ENABLE_MPS_FALLBACK=1
+      - MCP_SERVER_NAME=dia-tts
+    volumes:
+      - dia_tts_cache:/root/.cache/huggingface
+      - dia_tts_models:/root/.cache/torch
+      - dia_tts_temp:/tmp/dia_tts
+    restart: unless-stopped
+    mem_limit: 16g
+    cpus: 8.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - dia-tts-network
+
+volumes:
+  dia_tts_cache:
+    name: dia_tts_cache
+  dia_tts_models:
+    name: dia_tts_models  
+  dia_tts_temp:
+    name: dia_tts_temp
+
+networks:
+  dia-tts-network:
+    name: dia-tts-network
+    driver: bridge 
