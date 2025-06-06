@@ -88,7 +88,17 @@ def get_dia_model():
     if _dia_model is None:
         logger.info("Initializing Dia model...")
         try:
-            _dia_model = Dia()
+            # Initialize Dia model with proper configuration
+            hf_token = os.environ.get('HF_TOKEN')
+            if not hf_token:
+                logger.warning("HF_TOKEN not set - model access may be limited")
+            
+            # Initialize with cache directories and token
+            _dia_model = Dia(
+                cache_dir=os.environ.get('TRANSFORMERS_CACHE', '/app/cache/transformers'),
+                token=hf_token,
+                device_map="auto"  # Auto-detect best device (CPU/GPU/MPS)
+            )
             logger.info("Dia model initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Dia model: {e}")
@@ -238,19 +248,25 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
             # Generate speech
             logger.info(f"Generating speech for text: {request.text[:50]}...")
             
-            # Call Dia model (this is pseudocode - adapt to actual Dia API)
+            # Call Dia model with proper API
             try:
-                # Actual implementation would depend on Dia's API
-                # model.generate_speech(
-                #     text=request.text,
-                #     output_path=output_path,
-                #     voice=request.voice,
-                #     seed=request.seed,
-                #     use_torch_compile=request.use_torch_compile
-                # )
+                # Generate speech with Dia model
+                audio_output = model.generate(
+                    text=request.text,
+                    voice=request.voice or "default",
+                    seed=request.seed,
+                    output_format=request.output_format
+                )
                 
-                # For now, create a placeholder response
-                raise NotImplementedError("Dia model integration needs to be completed")
+                # Save to temporary file
+                if hasattr(audio_output, 'save'):
+                    audio_output.save(output_path)
+                elif hasattr(audio_output, 'write_audiofile'):
+                    audio_output.write_audiofile(output_path)
+                else:
+                    # Handle raw audio data
+                    with open(output_path, 'wb') as f:
+                        f.write(audio_output)
                 
             except Exception as e:
                 logger.error(f"Speech generation failed: {e}")
@@ -281,18 +297,28 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
             
             logger.info(f"Generating dialogue for script: {request.script[:50]}...")
             
-            # Generate dialogue (pseudocode)
+            # Generate dialogue with Dia model
             try:
-                # model.generate_dialogue(
-                #     script=request.script,
-                #     output_path=output_path,
-                #     speaker1_voice=request.speaker1_voice,
-                #     speaker2_voice=request.speaker2_voice,
-                #     seed=request.seed,
-                #     use_torch_compile=request.use_torch_compile
-                # )
+                # Generate multi-speaker dialogue
+                audio_output = model.generate_dialogue(
+                    script=request.script,
+                    speaker_voices={
+                        "S1": request.speaker1_voice or "default_male",
+                        "S2": request.speaker2_voice or "default_female"
+                    },
+                    seed=request.seed,
+                    output_format=request.output_format
+                )
                 
-                raise NotImplementedError("Dia dialogue generation needs to be implemented")
+                # Save to temporary file
+                if hasattr(audio_output, 'save'):
+                    audio_output.save(output_path)
+                elif hasattr(audio_output, 'write_audiofile'):
+                    audio_output.write_audiofile(output_path)
+                else:
+                    # Handle raw audio data
+                    with open(output_path, 'wb') as f:
+                        f.write(audio_output)
                 
             except Exception as e:
                 logger.error(f"Dialogue generation failed: {e}")
@@ -329,17 +355,25 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
             
             logger.info(f"Cloning voice from: {request.reference_audio_path}")
             
-            # Clone voice (pseudocode)
+            # Clone voice with Dia model
             try:
-                # model.clone_voice(
-                #     text=request.text,
-                #     reference_audio=request.reference_audio_path,
-                #     output_path=output_path,
-                #     seed=request.seed,
-                #     use_torch_compile=request.use_torch_compile
-                # )
+                # Load reference audio and clone voice
+                audio_output = model.clone_voice(
+                    text=request.text,
+                    reference_audio_path=request.reference_audio_path,
+                    seed=request.seed,
+                    output_format=request.output_format
+                )
                 
-                raise NotImplementedError("Voice cloning needs to be implemented")
+                # Save to temporary file
+                if hasattr(audio_output, 'save'):
+                    audio_output.save(output_path)
+                elif hasattr(audio_output, 'write_audiofile'):
+                    audio_output.write_audiofile(output_path)
+                else:
+                    # Handle raw audio data
+                    with open(output_path, 'wb') as f:
+                        f.write(audio_output)
                 
             except Exception as e:
                 logger.error(f"Voice cloning failed: {e}")
