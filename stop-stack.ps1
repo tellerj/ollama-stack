@@ -2,40 +2,62 @@
 # Ollama Stack Shutdown Script
 
 param(
-    [Parameter(HelpMessage="Operating system type: 'auto', 'cpu', 'nvidia', or 'apple'")]
+    [Parameter(Mandatory=$false)]
     [ValidateSet("auto", "cpu", "nvidia", "apple")]
-    [Alias("o")]
-    [string]$OperatingSystem = "auto",
+    [string]$Platform = "auto",
     
-    [Parameter(HelpMessage="Also remove Docker volumes (WARNING: deletes all data)")]
-    [switch]$RemoveVolumes = $false
+    [Parameter(Mandatory=$false)]
+    [switch]$RemoveVolumes,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$Help
 )
+
+# Show help if requested
+if ($Help) {
+    Write-Host @"
+Ollama Stack Shutdown Script
+
+Usage: .\stop-stack.ps1 [options]
+
+Options:
+  -Platform TYPE    Platform type: auto, cpu, nvidia, apple (default: auto)
+  -RemoveVolumes    Also remove Docker volumes (WARNING: deletes all data)
+  -Help            Show this help message
+
+Examples:
+  .\stop-stack.ps1                      # Auto-detect and stop
+  .\stop-stack.ps1 -Platform nvidia     # Force NVIDIA configuration
+  .\stop-stack.ps1 -RemoveVolumes       # Stop and remove all data
+"@
+    exit 0
+}
 
 # Color output functions
 function Write-Status {
-    param($Message)
+    param([string]$Message)
     Write-Host "[*] $Message" -ForegroundColor Blue
 }
 
 function Write-Success {
-    param($Message)
+    param([string]$Message)
     Write-Host "[+] $Message" -ForegroundColor Green
 }
 
 function Write-Error {
-    param($Message)
+    param([string]$Message)
     Write-Host "[-] $Message" -ForegroundColor Red
 }
 
 function Write-Warning {
-    param($Message)
+    param([string]$Message)
     Write-Host "[!] $Message" -ForegroundColor Yellow
 }
 
-# Hardware detection function
-function Get-OperatingSystem {
-    if ($OperatingSystem -ne "auto") {
-        return $OperatingSystem
+# Platform detection function
+function Get-Platform {
+    if ($Platform -ne "auto") {
+        return $Platform
     }
     
     # Check for Apple Silicon
@@ -47,8 +69,11 @@ function Get-OperatingSystem {
     
     # Check for NVIDIA GPU
     if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
-        if (nvidia-smi 2>$null) {
+        try {
+            $null = nvidia-smi
             return "nvidia"
+        } catch {
+            # NVIDIA command failed, continue to CPU check
         }
     }
     
@@ -58,37 +83,42 @@ function Get-OperatingSystem {
 
 # Stop stack function
 function Stop-Stack {
-    param($OperatingSystemType)
+    param(
+        [string]$PlatformType
+    )
     
-    Write-Status "Stopping Ollama Stack ($OperatingSystemType configuration)..."
+    Write-Status "Stopping Ollama Stack ($PlatformType configuration)..."
     
     # Build compose file arguments
-    $ComposeFiles = @("-f", "docker-compose.yml")
+    $composeFiles = @("-f", "docker-compose.yml")
     
-    switch ($OperatingSystemType) {
-        "nvidia" { $ComposeFiles += @("-f", "docker-compose.nvidia.yml") }
-        "apple" { $ComposeFiles += @("-f", "docker-compose.apple.yml") }
+    switch ($PlatformType) {
+        "nvidia" {
+            $composeFiles += "-f", "docker-compose.nvidia.yml"
+        }
+        "apple" {
+            $composeFiles += "-f", "docker-compose.apple.yml"
+        }
     }
     
     # Build docker compose command
-    $ComposeCommand = @("docker", "compose") + $ComposeFiles
+    $composeCmd = @("docker", "compose") + $composeFiles
     
     if ($RemoveVolumes) {
         Write-Warning "Removing volumes (all data will be deleted)..."
-        $ComposeCommand += @("down", "-v")
-    }
-    else {
-        $ComposeCommand += @("down")
+        $composeCmd += "down", "-v"
+    } else {
+        $composeCmd += "down"
     }
     
     # Execute the command
-    if (& $ComposeCommand[0] $ComposeCommand[1..($ComposeCommand.Length-1)]) {
+    try {
+        & $composeCmd[0] $composeCmd[1..$composeCmd.Length]
         Write-Success "Stack stopped successfully"
         if ($RemoveVolumes) {
             Write-Success "Volumes removed successfully"
         }
-    }
-    else {
+    } catch {
         Write-Error "Failed to stop stack"
         exit 1
     }
@@ -105,19 +135,23 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 }
 
 try {
-    docker info | Out-Null
-}
-catch {
+    $null = docker info
+} catch {
     Write-Error "Docker is not running or accessible"
     exit 1
 }
 
-# Detect operating system
-$DETECTED_OS = Get-OperatingSystem
-Write-Status "Detected operating system: $DETECTED_OS"
+# Detect platform if set to auto
+$detectedPlatform = Get-Platform
+if ($Platform -eq "auto") {
+    $Platform = $detectedPlatform
+    Write-Status "Auto-detected platform: $Platform"
+} else {
+    Write-Status "Using specified platform: $Platform"
+}
 
 # Stop the stack
-Stop-Stack $DETECTED_OS
+Stop-Stack -PlatformType $Platform
 
 Write-Host ""
 Write-Success "Ollama Stack shutdown complete!" 

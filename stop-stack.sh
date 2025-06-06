@@ -3,15 +3,19 @@
 set -e
 
 # Default values
-HARDWARE="auto"
+PLATFORM="auto"
 REMOVE_VOLUMES=false
 SHOW_HELP=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -o|--operating-system)
-            HARDWARE="$2"
+        -p|--platform)
+            PLATFORM="$2"
+            if [[ ! "$PLATFORM" =~ ^(auto|cpu|nvidia|apple)$ ]]; then
+                echo -e "\033[31mError: Platform must be 'auto', 'cpu', 'nvidia', or 'apple'\033[0m"
+                exit 1
+            fi
             shift 2
             ;;
         -v|--remove-volumes)
@@ -36,13 +40,13 @@ Ollama Stack Shutdown Script
 Usage: ./stop-stack.sh [options]
 
 Options:
-  -o, --operating-system TYPE    Operating system type: auto, cpu, nvidia, apple (default: auto)
-  -v, --remove-volumes          Also remove Docker volumes (WARNING: deletes all data)
-  -h, --help                    Show this help message
+  -p, --platform TYPE    Platform type: auto, cpu, nvidia, apple (default: auto)
+  -v, --remove-volumes   Also remove Docker volumes (WARNING: deletes all data)
+  -h, --help            Show this help message
 
 Examples:
   ./stop-stack.sh                      # Auto-detect and stop
-  ./stop-stack.sh -o nvidia            # Stop NVIDIA configuration
+  ./stop-stack.sh -p nvidia            # Force NVIDIA configuration
   ./stop-stack.sh --remove-volumes     # Stop and remove all data
 EOF
     exit 0
@@ -65,10 +69,10 @@ print_warning() {
     echo -e "\033[33m[!] $1\033[0m"
 }
 
-# Hardware detection function
-detect_hardware() {
-    if [ "$HARDWARE" != "auto" ]; then
-        echo "$HARDWARE"
+# Platform detection function
+detect_platform() {
+    if [ "$PLATFORM" != "auto" ]; then
+        echo "$PLATFORM"
         return
     fi
     
@@ -94,14 +98,14 @@ detect_hardware() {
 
 # Stop stack function
 stop_stack() {
-    local hardware_type=$1
+    local platform_type=$1
     
-    print_status "Stopping Ollama Stack ($hardware_type configuration)..."
+    print_status "Stopping Ollama Stack ($platform_type configuration)..."
     
     # Build compose file arguments
     local compose_files=("-f" "docker-compose.yml")
     
-    case $hardware_type in
+    case $platform_type in
         nvidia)
             compose_files+=("-f" "docker-compose.nvidia.yml")
             ;;
@@ -147,12 +151,17 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
-# Detect hardware
-DETECTED_HARDWARE=$(detect_hardware)
-print_status "Detected hardware: $DETECTED_HARDWARE"
+# Detect platform if set to auto
+DETECTED_PLATFORM=$(detect_platform)
+if [ "$PLATFORM" = "auto" ]; then
+    PLATFORM=$DETECTED_PLATFORM
+    print_status "Auto-detected platform: $PLATFORM"
+else
+    print_status "Using specified platform: $PLATFORM"
+fi
 
 # Stop the stack
-stop_stack "$DETECTED_HARDWARE"
+stop_stack "$PLATFORM"
 
 echo ""
 print_success "Ollama Stack shutdown complete!" 

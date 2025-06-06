@@ -5,7 +5,7 @@
 set -e
 
 # Default values
-HARDWARE="cpu"
+PLATFORM="auto"
 SKIP_MODELS=false
 AUTO_UPDATE=false
 
@@ -27,30 +27,58 @@ print_color() {
     echo -e "${color}${message}${NC}"
 }
 
+# Function to detect platform
+detect_platform() {
+    # If platform is explicitly set, use that
+    if [ "$PLATFORM" != "auto" ]; then
+        echo "$PLATFORM"
+        return
+    }
+    
+    # Check for Apple Silicon
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if [[ $(uname -m) == "arm64" ]]; then
+            echo "apple"
+            return
+        fi
+    fi
+    
+    # Check for NVIDIA GPU
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        if nvidia-smi >/dev/null 2>&1; then
+            echo "nvidia"
+            return
+        fi
+    fi
+    
+    # Default to CPU
+    echo "cpu"
+}
+
 # Function to show usage
 show_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -o, --operating-system TYPE    Operating system configuration: cpu, nvidia, or apple (default: cpu)"
-    echo "  -s, --skip-models             Skip model download prompts"
-    echo "  -u, --update                  Automatically update to latest versions"
-    echo "  -h, --help                    Show this help message"
+    echo "  -p, --platform TYPE         Platform configuration: auto, cpu, nvidia, or apple (default: auto)"
+    echo "  -s, --skip-models          Skip model download prompts"
+    echo "  -u, --update               Automatically update to latest versions"
+    echo "  -h, --help                 Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0                            # Start with CPU-only configuration"
-    echo "  $0 -o nvidia                  # Start with NVIDIA GPU acceleration"
-    echo "  $0 -o apple -s                # Start Apple Silicon config, skip model prompts"
-    echo "  $0 -u                         # Start with automatic updates"
+    echo "  $0                         # Auto-detect platform"
+    echo "  $0 -p nvidia              # Force NVIDIA GPU acceleration"
+    echo "  $0 -p apple -s            # Force Apple Silicon config, skip model prompts"
+    echo "  $0 -u                     # Start with automatic updates"
 }
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -o|--operating-system)
-            HARDWARE="$2"
-            if [[ ! "$HARDWARE" =~ ^(cpu|nvidia|apple)$ ]]; then
-                print_color $RED "Error: Operating system must be 'cpu', 'nvidia', or 'apple'"
+        -p|--platform)
+            PLATFORM="$2"
+            if [[ ! "$PLATFORM" =~ ^(auto|cpu|nvidia|apple)$ ]]; then
+                print_color $RED "Error: Platform must be 'auto', 'cpu', 'nvidia', or 'apple'"
                 exit 1
             fi
             shift 2
@@ -76,7 +104,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 print_color $GREEN "Starting Ollama Core Stack..."
-print_color $CYAN "Hardware: $HARDWARE"
+
+# Detect platform if set to auto
+DETECTED_PLATFORM=$(detect_platform)
+if [ "$PLATFORM" = "auto" ]; then
+    PLATFORM=$DETECTED_PLATFORM
+    print_color $CYAN "Auto-detected platform: $PLATFORM"
+else
+    print_color $CYAN "Using specified platform: $PLATFORM"
+fi
 echo ""
 
 # Function to check if Docker is running
@@ -115,7 +151,7 @@ wait_for_service() {
 check_for_updates() {
     local compose_files=("-f" "docker-compose.yml")
     
-    case $HARDWARE in
+    case $PLATFORM in
         nvidia)
             compose_files+=("-f" "docker-compose.nvidia.yml")
             ;;
@@ -171,7 +207,7 @@ check_for_updates() {
 pull_updates() {
     local compose_files=("-f" "docker-compose.yml")
     
-    case $HARDWARE in
+    case $PLATFORM in
         nvidia)
             compose_files+=("-f" "docker-compose.nvidia.yml")
             ;;
@@ -204,10 +240,10 @@ fi
 print_color $GREEN "Prerequisites check passed!"
 echo ""
 
-# Determine Docker Compose command based on hardware
+# Determine Docker Compose command based on platform
 COMPOSE_FILES=("-f" "docker-compose.yml")
 
-case $HARDWARE in
+case $PLATFORM in
     nvidia)
         COMPOSE_FILES+=("-f" "docker-compose.nvidia.yml")
         print_color $MAGENTA "Using NVIDIA GPU acceleration"
@@ -238,7 +274,7 @@ fi
 echo ""
 print_color $BLUE "Waiting for core services to be ready..."
 
-if [ "$HARDWARE" != "apple" ]; then
+if [ "$PLATFORM" != "apple" ]; then
     if ! wait_for_service "Ollama" "http://localhost:11434"; then
         print_color $RED "Ollama failed to start"
         exit 1
@@ -262,7 +298,7 @@ echo ""
 print_color $CYAN "Services:"
 print_color $WHITE "  Open WebUI: http://localhost:8080"
 
-if [ "$HARDWARE" != "apple" ]; then
+if [ "$PLATFORM" != "apple" ]; then
     print_color $WHITE "  Ollama API: http://localhost:11434"
 fi
 

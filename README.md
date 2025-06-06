@@ -1,203 +1,176 @@
 # Ollama Stack
 
-A focused local AI stack with Ollama, Open WebUI, and MCP tool integration. Everything runs locally for complete privacy.
+A focused local AI stack with Ollama, Open WebUI, and MCP tool integration. Everything runs locally for privacy.
 
-## 🚀 Quick Start
+## Features
 
-### Prerequisites
+- **Local AI Processing**: Run AI models locally using Ollama
+- **Modern Web Interface**: Clean, responsive UI for interacting with AI models
+- **Vector Database**: Store and search embeddings with Qdrant
+- **Document Processing**: Upload and process documents with Unstructured
+- **Multi-Platform Support**: Works on CPU, NVIDIA GPU, and Apple Silicon
+- **Privacy-Focused**: All processing happens locally on your machine
 
-- Docker / Docker Desktop
-- **NVIDIA GPU**: NVIDIA drivers + Container Toolkit
-- **Apple Silicon**: Native Ollama macOS app installed
+## Prerequisites
 
-### Using Startup Scripts
+- [Docker](https://www.docker.com/products/docker-desktop/) and Docker Compose
+- [Ollama](https://ollama.ai/) installed and running
+- For NVIDIA GPU support: NVIDIA drivers and NVIDIA Container Toolkit
+- For Apple Silicon: Docker Desktop for Mac with Apple Silicon support
+
+## Quick Start
+
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/ollama-stack.git
+   cd ollama-stack
+   ```
+
+2. Start the stack:
+   ```bash
+   # Auto-detect platform (default)
+   ./start-stack.sh
+
+   # Force specific platform
+   ./start-stack.sh -p cpu
+   ./start-stack.sh -p nvidia
+   ./start-stack.sh -p apple
+   ```
+
+3. Access the web interface at `http://localhost:3000`
+
+## Components
+
+### Core Services
+
+- **Ollama**: Local AI model server
+- **Web UI**: Modern interface for interacting with AI models
+- **MCP Proxy**: Tool integration server that exposes MCP tools via REST API
+
+### Optional Services
+
+- **Monitoring**: 
+- **Logging**: 
+
+## Configuration
+
+### Platform Selection
+
+The stack supports different hardware configurations and will auto-detect the appropriate platform by default:
+
+- **Auto-detect** (default): Automatically detects the best platform for your system
+- **CPU**: Basic configuration for systems without GPU
+- **NVIDIA**: Optimized for NVIDIA GPUs
+- **Apple**: Optimized for Apple Silicon
+
+You can override the auto-detection by specifying a platform:
+
 ```bash
-# Linux/macOS
+# Auto-detect platform (default)
 ./start-stack.sh
 
-# Apple Silicon (M1/M2/M3)
-./start-stack.sh -o apple
-
-# Windows PowerShell
-.\start-stack.ps1
-
-# With hardware acceleration
-./start-stack.ps1 -o nvidia
+# Force specific platform
+./start-stack.sh -p nvidia
+./start-stack.sh -p apple
+./start-stack.sh -p cpu
 ```
-
-### Simple Start
-```bash
-git clone <repository_url>
-cd ollama-stack
-docker compose up -d
-```
-
-### Hardware-Optimized
-```bash
-# NVIDIA GPU acceleration
-docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d
-
-# Apple Silicon (requires native Ollama app running first)
-docker compose -f docker-compose.yml -f docker-compose.apple.yml up -d
-```
-
-### Access Services
-- **Open WebUI**: http://localhost:8080 (Main interface)
-- **Ollama API**: http://localhost:11434 (LLM engine)
-- **MCP Proxy**: http://localhost:8200 (Tool integration)
-- **MCP Docs**: http://localhost:8200/docs (Interactive API docs)
-
-### First Steps
-1. **Download a model**: Open WebUI → model selector → type `llama3.1` or `phi3`
-2. **Explore MCP tools**: Visit http://localhost:8200/docs
-3. **Start chatting**: Built-in tools appear automatically in conversations
-
-## Core Services
-
-### Ollama (`localhost:11434`)
-- Runs large language models locally
-- Supports CPU and GPU acceleration
-- Compatible with 100+ open-source models
-
-### Open WebUI (`localhost:8080`)
-- Modern chat interface for Ollama
-- Built-in RAG, document upload, and tool integration
-- Includes RAG Optimizer and Document Manager tools
-
-### MCP Proxy (`localhost:8200`)
-- Exposes MCP tools via REST API
-- Auto-generates OpenAPI documentation
-- Default time server with timezone/date tools
-- Easily extensible with additional MCP servers
-
-## Getting Started
-
-### Download Models
-
-**Via WebUI (Recommended):**
-1. Open http://localhost:8080
-2. Click model selector → type model name (`llama3.1`, `mistral`, `phi3`)
-3. Wait for download
-
-**Via Command Line:**
-```bash
-# Dockerized Ollama
-docker exec ollama ollama pull llama3.1
-
-# Native Ollama (Apple Silicon)
-ollama pull llama3.1
-```
-
-### Hardware Configurations
-
-| Configuration | Command | Use Case |
-|---------------|---------|----------|
-| **CPU Only** | `docker compose up -d` | Testing, light usage |
-| **NVIDIA GPU** | `docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d` | Heavy usage, faster inference |
-| **Apple Silicon** | `docker compose -f docker-compose.yml -f docker-compose.apple.yml up -d` | M1/M2/M3 Macs (requires native Ollama) |
-
-## Using MCP Tools
-
-### Built-in Time Server
-- Current time and timezone conversions
-- Date calculations and formatting
-- Test at http://localhost:8200/docs
-
-### Adding MCP Servers
-Modify the `mcp_proxy` service in `docker-compose.yml`:
-```yaml
-command: ["--port", "8000", "--api-key", "mcp-proxy-key", "--", "uvx", "your-mcp-server"]
-```
-
-Or use a config file approach. See [MCP documentation](https://docs.openwebui.com/openapi-servers/mcp/) for details.
-
-### Integration
-- **REST API**: Make HTTP requests to `http://localhost:8200`
-- **Open WebUI**: Tools appear automatically in conversations
-- **Custom Apps**: Use OpenAPI spec from `/docs` endpoint
-
-## Extensions
-
-Additional features are available as extensions in `./extensions/`:
-- **Apache Tika**: Advanced document processing (1000+ formats)
-- **TTS Services**: Text-to-speech capabilities
-- **API Bridges**: OpenAI compatibility layers
-
-This modular approach keeps the core stack lean while allowing you to add only what you need.
-
-## Advanced Configuration
-
-### Volumes
-- `ollama_data`: Model storage (Docker Ollama only)
-- `webui_data`: Open WebUI configuration and data
 
 ### Environment Variables
-```yaml
-# MCP Proxy
-MCP_API_KEY: "your-api-key"
 
-# Open WebUI
-OLLAMA_API_BASE_URL: "http://ollama:11434"
+Key environment variables can be configured in `.env`:
+
+- `OLLAMA_HOST`: Ollama server host (default: `host.docker.internal`)
+- `OLLAMA_PORT`: Ollama server port (default: `11434`)
+- `QDRANT_HOST`: Qdrant server host (default: `qdrant`)
+- `QDRANT_PORT`: Qdrant server port (default: `6333`)
+
+## Usage
+
+### Starting the Stack
+
+```bash
+# Start with auto-detection (recommended)
+./start-stack.sh
+
+# Start with specific platform
+./start-stack.sh -p nvidia
+
+# Start with verbose output
+./start-stack.sh -v
+
+# Show help
+./start-stack.sh -h
 ```
 
-### Resource Limits
-Adjust in `docker-compose.yml`:
-```yaml
-ollama:
-  mem_limit: 16g
-  cpus: 8.0
+### Stopping the Stack
+
+```bash
+# Stop with auto-detection (recommended)
+./stop-stack.sh
+
+# Stop with specific platform
+./stop-stack.sh -p nvidia
+
+# Stop and remove volumes
+./stop-stack.sh -v
 ```
+
+### Updating the Stack
+
+```bash
+# Update with auto-detection (recommended)
+./update-stack.sh
+
+# Update with specific platform
+./update-stack.sh -p nvidia
+```
+
+## Development
+
+### Project Structure
+
+```
+.
+├── docker-compose.yml          # Base Docker Compose configuration
+├── docker-compose.nvidia.yml   # NVIDIA-specific overrides
+├── docker-compose.apple.yml    # Apple Silicon-specific overrides
+├── start-stack.sh             # Start script for Unix-like systems
+├── start-stack.ps1            # Start script for Windows
+├── stop-stack.sh              # Stop script for Unix-like systems
+└── stop-stack.ps1             # Stop script for Windows
+```
+
+### Adding New Services
+
+1. Add service configuration to `docker-compose.yml`
+2. Add platform-specific overrides if needed
+3. Update start/stop scripts to handle the new service
 
 ## Troubleshooting
 
-### Services Won't Start
+### Common Issues
+
+1. **Ollama Connection Issues**
+   - Ensure Ollama is running
+   - Check `OLLAMA_HOST` and `OLLAMA_PORT` in `.env`
+
+2. **GPU Not Detected**
+   - Verify NVIDIA drivers are installed
+   - Check NVIDIA Container Toolkit installation
+   - Use `nvidia-smi` to verify GPU detection
+
+3. **Apple Silicon Issues**
+   - Ensure Docker Desktop is configured for Apple Silicon
+   - Check Rosetta 2 installation if needed
+
+### Logs
+
+View service logs:
 ```bash
-docker info                    # Check Docker is running
-docker compose logs           # Check service logs
-docker compose restart webui  # Restart specific service
+# All services
+docker compose logs
+
+# Specific service
+docker compose logs web-ui
 ```
 
-### MCP Proxy Issues
-```bash
-curl http://localhost:8200/docs     # Check health
-docker compose logs mcp_proxy       # Check logs
-docker compose restart mcp_proxy    # Restart service
-```
-
-### Models Not Downloading
-1. Check internet connection
-2. Try smaller models (`phi3:mini`)
-3. Check disk space
-4. Restart Ollama: `docker compose restart ollama`
-
-### Apple Silicon Issues
-- Ensure native Ollama app is running first
-- Check connection: `curl http://localhost:11434`
-- Models are stored in `~/.ollama/models`
-
-## Integration with Development Tools
-
-### Cursor IDE
-1. Settings → Models
-2. Base URL: `http://localhost:11434`
-3. API Key: Leave blank
-
-### Other Tools
-Many AI tools support Ollama's API format. For OpenAI compatibility, check `./extensions/` for bridge services.
-
-## Stopping the Stack
-
-```bash
-# Stop services
-docker compose down
-
-# Stop with hardware acceleration
-docker compose -f docker-compose.yml -f docker-compose.nvidia.yml down
-
-# Remove volumes too
-docker compose down -v
-```
-
----
-
-**Ready to start?** Run `docker compose up -d` and visit http://localhost:8080!

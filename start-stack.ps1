@@ -3,10 +3,10 @@
 # This script handles a complete cold start of the Ollama Core Stack
 
 param(
-    [Parameter(HelpMessage="Operating system configuration: 'cpu', 'nvidia', or 'apple'")]
-    [ValidateSet("cpu", "nvidia", "apple")]
-    [Alias("o")]
-    [string]$OperatingSystem = "cpu",
+    [Parameter(HelpMessage="Platform configuration: 'auto', 'cpu', 'nvidia', or 'apple'")]
+    [ValidateSet("auto", "cpu", "nvidia", "apple")]
+    [Alias("p")]
+    [string]$Platform = "auto",
     
     [Parameter(HelpMessage="Skip model download prompts")]
     [switch]$SkipModels = $false,
@@ -15,8 +15,44 @@ param(
     [switch]$Update = $false
 )
 
+# Function to detect platform
+function Get-Platform {
+    # If platform is explicitly set, use that
+    if ($Platform -ne "auto") {
+        return $Platform
+    }
+    
+    # Check for Apple Silicon
+    if ($IsMacOS) {
+        if ((uname -m) -eq "arm64") {
+            return "apple"
+        }
+    }
+    
+    # Check for NVIDIA GPU
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+        try {
+            $null = nvidia-smi
+            return "nvidia"
+        } catch {
+            # NVIDIA command failed, continue to CPU check
+        }
+    }
+    
+    # Default to CPU
+    return "cpu"
+}
+
 Write-Host "Starting Ollama Core Stack..." -ForegroundColor Green
-Write-Host "Operating System: $OperatingSystem" -ForegroundColor Cyan
+
+# Detect platform if set to auto
+$detectedPlatform = Get-Platform
+if ($Platform -eq "auto") {
+    $Platform = $detectedPlatform
+    Write-Host "Auto-detected platform: $Platform" -ForegroundColor Cyan
+} else {
+    Write-Host "Using specified platform: $Platform" -ForegroundColor Cyan
+}
 Write-Host ""
 
 # Function to check if Docker is running
@@ -62,7 +98,7 @@ function Wait-ForService {
 function Test-ForUpdates {
     $ComposeFiles = @("-f", "docker-compose.yml")
     
-    switch ($OperatingSystem) {
+    switch ($Platform) {
         "nvidia" { $ComposeFiles += @("-f", "docker-compose.nvidia.yml") }
         "apple" { $ComposeFiles += @("-f", "docker-compose.apple.yml") }
     }
@@ -118,7 +154,7 @@ function Test-ForUpdates {
 function Update-Stack {
     $ComposeFiles = @("-f", "docker-compose.yml")
     
-    switch ($OperatingSystem) {
+    switch ($Platform) {
         "nvidia" { $ComposeFiles += @("-f", "docker-compose.nvidia.yml") }
         "apple" { $ComposeFiles += @("-f", "docker-compose.apple.yml") }
     }
@@ -150,11 +186,11 @@ if (-not (Test-Path "docker-compose.yml")) {
 Write-Host "Prerequisites check passed!" -ForegroundColor Green
 Write-Host ""
 
-# Determine Docker Compose command based on operating system
+# Determine Docker Compose command based on platform
 $ComposeCommand = @("docker", "compose")
 $ComposeFiles = @("-f", "docker-compose.yml")
 
-switch ($OperatingSystem) {
+switch ($Platform) {
     "nvidia" {
         $ComposeFiles += @("-f", "docker-compose.nvidia.yml")
         Write-Host "Using NVIDIA GPU acceleration" -ForegroundColor Magenta
@@ -188,7 +224,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "Waiting for core services to be ready..." -ForegroundColor Blue
 
-if ($OperatingSystem -ne "apple") {
+if ($Platform -ne "apple") {
     if (-not (Wait-ForService "Ollama" "http://localhost:11434")) {
         Write-Host "Ollama failed to start" -ForegroundColor Red
         exit 1
@@ -212,7 +248,7 @@ Write-Host ""
 Write-Host "Services:" -ForegroundColor Cyan
 Write-Host "  Open WebUI: http://localhost:8080" -ForegroundColor White
 
-if ($OperatingSystem -ne "apple") {
+if ($Platform -ne "apple") {
     Write-Host "  Ollama API: http://localhost:11434" -ForegroundColor White
 }
 
