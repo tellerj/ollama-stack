@@ -19,26 +19,29 @@ Local AI stack with Ollama, Open WebUI, and MCP tool integration.
 ## Prerequisites
 
 - [Docker](https://www.docker.com/products/docker-desktop/)
-- [Ollama](https://ollama.ai/) installed and running
+- [Ollama](https://ollama.ai/) installed and running (Apple Silicon)
 - For NVIDIA GPU support: NVIDIA drivers and NVIDIA Container Toolkit
-- For Apple Silicon: Docker Desktop for Mac with Apple Silicon support
 
 ## Quick Start
 
 ```bash
 # Clone the repo
-   git clone https://github.com/tellerj/ollama-stack.git
-   cd ollama-stack
+git clone https://github.com/tellerj/ollama-stack.git
+cd ollama-stack
+
+# Install the CLI tool
+./scripts/install.sh      # Unix/macOS
+.\scripts\install.ps1     # Windows
    
 # Start the stack
-./ollama-stack start
+ollama-stack start
 
 # Enable an extension
-./ollama-stack extensions enable dia-tts-mcp
-./ollama-stack extensions start dia-tts-mcp
+ollama-stack extensions enable dia-tts-mcp
+ollama-stack extensions start dia-tts-mcp
 
 # Check status
-./ollama-stack status
+ollama-stack status
 ```
 
 Access the web interface at `http://localhost:8080`
@@ -46,29 +49,30 @@ Access the web interface at `http://localhost:8080`
 ## CLI Commands
 
 ```bash
-./ollama-stack start [-p platform]     # Start stack (auto-detects platform)
-./ollama-stack stop                    # Stop stack  
-./ollama-stack status                  # Show status
-./ollama-stack logs [service]          # View logs
-./ollama-stack extensions list         # List extensions
-./ollama-stack extensions enable <ext> # Enable extension
-./ollama-stack extensions start <ext>  # Start extension
-./ollama-stack --help                  # Show help
+ollama-stack start [-p platform]     # Start stack (auto-detects platform)
+ollama-stack stop                    # Stop stack  
+ollama-stack status                  # Show status
+ollama-stack logs [service]          # View logs
+ollama-stack extensions list         # List extensions
+ollama-stack extensions enable <ext> # Enable extension
+ollama-stack extensions start <ext>  # Start extension
+ollama-stack --help                  # Show help
 ```
 
-## Installation
+
+## Run via Script (no install)
 
 ```bash
-# System-wide installation
-./scripts/install.sh      # Unix/macOS
-.\scripts\install.ps1     # Windows
+# From project root
+./ollama-stack start      # Unix/macOS
+.\ollama-stack.ps1 start  # Windows
 ```
 
 ## Documentation
 
 - [CLI Usage Guide](docs/CLI_USAGE.md)
 - [Windows Setup](docs/WINDOWS_SETUP.md)
-- [Project Structure](PROJECT_STRUCTURE.md)
+- [Project Structure](docs/PROJECT_STRUCTURE.md)
 
 ## Platform Support
 
@@ -84,7 +88,7 @@ Force a specific platform: `./ollama-stack start -p nvidia`
 
 ```
 ollama-stack/
-├── ollama-stack                # Main CLI (Unix/macOS)
+├── ollama-stack               # Main CLI (Unix/macOS)
 ├── ollama-stack.ps1           # Main CLI (Windows)  
 ├── docker-compose*.yml        # Service configurations
 ├── docs/                      # Documentation
