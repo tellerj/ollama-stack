@@ -5,6 +5,4 @@
 __pycache__/
 *.py[cod]
 
-# Generated FAISS index and metadata
-docsage_index.faiss
-docsage_metadata.pkl
+

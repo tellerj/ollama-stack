@@ -28,16 +28,21 @@ A focused local AI stack with Ollama, Open WebUI, and MCP tool integration. Ever
 
 2. Start the stack:
    ```bash
-   # Auto-detect platform (default)
-   ./start-stack.sh
+   # Use the unified CLI tool (recommended)
+   ./ollama-stack start
 
-   # Force specific platform
-   ./start-stack.sh -p cpu
-   ./start-stack.sh -p nvidia
-   ./start-stack.sh -p apple
+   # Or use legacy scripts
+   ./scripts/start-stack.sh -p nvidia
    ```
 
-3. Access the web interface at `http://localhost:3000`
+3. Access the web interface at `http://localhost:8080`
+
+## 📋 Documentation
+
+- **[CLI Usage Guide](docs/CLI_USAGE.md)** - Complete CLI reference with examples
+- **[Windows Setup](docs/WINDOWS_SETUP.md)** - Windows-specific installation and usage
+- **[Project Structure](PROJECT_STRUCTURE.md)** - Organization and file layout guide
+- **[Development Notes](docs/UNIFIED_CLI_SUMMARY.md)** - Technical implementation details
 
 ## Components
 
@@ -67,12 +72,12 @@ You can override the auto-detection by specifying a platform:
 
 ```bash
 # Auto-detect platform (default)
-./start-stack.sh
+./ollama-stack start
 
 # Force specific platform
-./start-stack.sh -p nvidia
-./start-stack.sh -p apple
-./start-stack.sh -p cpu
+./ollama-stack start -p nvidia
+./ollama-stack start -p apple
+./ollama-stack start -p cpu
 ```
 
 ### Environment Variables
@@ -86,43 +91,38 @@ Key environment variables can be configured in `.env`:
 
 ## Usage
 
-### Starting the Stack
+### Using the Unified CLI (Recommended)
 
 ```bash
-# Start with auto-detection (recommended)
-./start-stack.sh
+# Start the stack
+./ollama-stack start                    # Auto-detect platform
+./ollama-stack start -p nvidia          # Force specific platform
 
-# Start with specific platform
-./start-stack.sh -p nvidia
+# Manage extensions
+./ollama-stack extensions list          # List all extensions
+./ollama-stack extensions enable name   # Enable extension
+./ollama-stack extensions start name    # Start extension
 
-# Start with verbose output
-./start-stack.sh -v
+# Monitor and control
+./ollama-stack status                   # Check status
+./ollama-stack logs                     # View logs
+./ollama-stack stop                     # Stop everything
+
+# Get help
+./ollama-stack --help
+```
+
+### Legacy Scripts (For Backwards Compatibility)
+
+```bash
+# Start with auto-detection
+./scripts/start-stack.sh
+
+# Stop with auto-detection
+./scripts/stop-stack.sh
 
 # Show help
-./start-stack.sh -h
-```
-
-### Stopping the Stack
-
-```bash
-# Stop with auto-detection (recommended)
-./stop-stack.sh
-
-# Stop with specific platform
-./stop-stack.sh -p nvidia
-
-# Stop and remove volumes
-./stop-stack.sh -v
-```
-
-### Updating the Stack
-
-```bash
-# Update with auto-detection (recommended)
-./update-stack.sh
-
-# Update with specific platform
-./update-stack.sh -p nvidia
+./scripts/start-stack.sh -h
 ```
 
 ## Development
@@ -131,13 +131,21 @@ Key environment variables can be configured in `.env`:
 
 ```
 .
-├── docker-compose.yml          # Base Docker Compose configuration
-├── docker-compose.nvidia.yml   # NVIDIA-specific overrides
-├── docker-compose.apple.yml    # Apple Silicon-specific overrides
-├── start-stack.sh             # Start script for Unix-like systems
-├── start-stack.ps1            # Start script for Windows
-├── stop-stack.sh              # Stop script for Unix-like systems
-└── stop-stack.ps1             # Stop script for Windows
+├── README.md                   # This file
+├── ollama-stack               # Main CLI tool (Unix/macOS)
+├── ollama-stack.ps1           # Main CLI tool (Windows)
+├── docker-compose*.yml        # Docker configurations
+├── docs/                      # Documentation
+│   ├── CLI_USAGE.md          # Detailed CLI usage guide
+│   ├── WINDOWS_SETUP.md      # Windows-specific setup
+│   └── UNIFIED_CLI_SUMMARY.md # Development notes
+├── scripts/                   # Utility and legacy scripts
+│   ├── install.sh            # Unix installer
+│   ├── install.ps1           # Windows installer
+│   ├── start-stack.sh        # Legacy start script
+│   └── stop-stack.sh         # Legacy stop script
+├── extensions/                # Extension system
+└── tools/                     # Additional tools
 ```
 
 ### Adding New Services
