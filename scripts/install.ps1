@@ -77,10 +77,14 @@ if ($env:PATH -split ";" | Where-Object { $_ -like "*PowerShell*" }) {
     $installMethod = "script"
     $installPath = $userScriptsPath
 } else {
-    # Create user bin directory
-    $installMethod = "script"
-    $installPath = $userScriptsPath
-    New-Item -ItemType Directory -Path $userScriptsPath -Force | Out-Null
+    # Try to create user bin directory
+    try {
+        $installMethod = "script"
+        $installPath = $userScriptsPath
+        New-Item -ItemType Directory -Path $userScriptsPath -Force | Out-Null
+    } catch {
+        $installMethod = "manual"
+    }
 }
 
 switch ($installMethod) {
@@ -159,6 +163,28 @@ powershell.exe -ExecutionPolicy Bypass -File "$targetScript" %*
         Write-Host "  ollama-stack.ps1 start" -ForegroundColor Cyan
         Write-Host "  ollama-stack start" -ForegroundColor Cyan -NoNewline
         Write-Host " (if PATH is configured)" -ForegroundColor Gray
+    }
+    "manual" {
+        Write-Warning "Could not find a suitable installation directory"
+        Write-Info "Manual installation options:"
+        Write-Host ""
+        Write-Info "Option 1 - Create user bin and add to PATH:"
+        Write-Host "mkdir `$env:USERPROFILE\bin" -ForegroundColor Yellow
+        Write-Host "copy `"$ToolPath`" `$env:USERPROFILE\bin\" -ForegroundColor Yellow
+        Write-Host "`$env:PATH += `";`$env:USERPROFILE\bin`"" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Info "Option 2 - Run as Administrator:"
+        Write-Host "Right-click PowerShell → 'Run as Administrator' → re-run this script" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Info "Option 3 - Use directly from project:"
+        Write-Host ".\ollama-stack.ps1 start" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Error "Installation failed - manual steps required above"
+        Write-Host ""
+        Write-Info "Until installed, use the tool directly from project directory:"
+        Write-Host "  .\ollama-stack.ps1 start" -ForegroundColor Blue
+        Write-Host "  .\ollama-stack.ps1 status" -ForegroundColor Blue
+        exit 1
     }
 }
 

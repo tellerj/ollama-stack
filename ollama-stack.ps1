@@ -845,6 +845,196 @@ function Invoke-ExtensionsInfo {
     Write-ColorOutput "  Running: $(if ($running -eq 'Yes') { '🟢 Yes' } else { '🔴 No' })" -ForegroundColor White
 }
 
+function Invoke-Uninstall {
+    param([string[]]$Args)
+    
+    $force = $false
+    $removeVolumes = $false
+    
+    # Parse arguments
+    $i = 0
+    while ($i -lt $Args.Length) {
+        switch ($Args[$i]) {
+            { $_ -in @("-f", "--force") } {
+                $force = $true
+            }
+            "--remove-volumes" {
+                $removeVolumes = $true
+            }
+            default {
+                Write-Error "Unknown option: $($Args[$i])"
+                Write-Host "Usage: ollama-stack.ps1 uninstall [--force] [--remove-volumes]"
+                exit 1
+            }
+        }
+        $i++
+    }
+    
+    Write-Header "Ollama Stack Uninstall"
+    
+    if (-not $force) {
+        Write-ColorOutput "This will completely remove the Ollama Stack:" -ForegroundColor Yellow
+        Write-ColorOutput "  • Stop all running containers" -ForegroundColor White
+        Write-ColorOutput "  • Remove all containers" -ForegroundColor White
+        Write-ColorOutput "  • Remove all Docker images" -ForegroundColor White
+        Write-ColorOutput "  • Remove Docker network" -ForegroundColor White
+        if ($removeVolumes) {
+            Write-ColorOutput "  • Remove all volumes (DELETES ALL DATA!)" -ForegroundColor Red
+        } else {
+            Write-ColorOutput "  • Keep volumes (data preserved)" -ForegroundColor Green
+        }
+        Write-ColorOutput "  • Disable all extensions" -ForegroundColor White
+        Write-Host ""
+        
+        $response = Read-Host "Are you sure you want to continue? (y/N)"
+        if ($response -notmatch "^[Yy]$") {
+            Write-ColorOutput "Uninstall cancelled." -ForegroundColor Green
+            exit 0
+        }
+    }
+    
+    # Stop all services first
+    Write-ColorOutput "Stopping all services..." -ForegroundColor Cyan
+    Invoke-Stop @("--platform", "auto")
+    
+    # Stop and remove extension containers
+    Write-ColorOutput "Stopping and removing extension containers..." -ForegroundColor Cyan
+    $extensionDirs = Get-ChildItem $ExtensionsDir -Directory -ErrorAction SilentlyContinue
+    foreach ($extensionDir in $extensionDirs) {
+        $extension = $extensionDir.Name
+        $dockerCompose = Join-Path $extensionDir.FullName "docker-compose.yml"
+        if (Test-Path $dockerCompose) {
+            Write-ColorOutput "  Removing extension: $extension" -ForegroundColor White
+            $originalLocation = Get-Location
+            try {
+                Set-Location $extensionDir.FullName
+                docker compose down --remove-orphans 2>$null | Out-Null
+            } catch {
+                # Ignore errors
+            } finally {
+                Set-Location $originalLocation
+            }
+            
+            # Disable extension
+            Disable-Extension $extension
+        }
+    }
+    
+    # Remove main stack containers
+    Write-ColorOutput "Removing main stack containers..." -ForegroundColor Cyan
+    try {
+        docker compose down --remove-orphans 2>$null | Out-Null
+    } catch {
+        # Ignore errors
+    }
+    
+    # Remove images
+    Write-ColorOutput "Removing Docker images..." -ForegroundColor Cyan
+    $imagesToRemove = @(
+        "ollama/ollama",
+        "ghcr.io/open-webui/open-webui",
+        "ghcr.io/open-webui/mcpo"
+    )
+    
+    foreach ($image in $imagesToRemove) {
+        try {
+            $existingImages = docker images --format "table {{.Repository}}:{{.Tag}}" 2>$null
+            if ($existingImages -match "^$([regex]::Escape($image))") {
+                Write-ColorOutput "  Removing image: $image" -ForegroundColor White
+                $imageIds = docker images "$image" -q 2>$null
+                if ($imageIds) {
+                    docker rmi $imageIds 2>$null | Out-Null
+                }
+            }
+        } catch {
+            # Ignore errors
+        }
+    }
+    
+    # Remove extension images
+    foreach ($extensionDir in $extensionDirs) {
+        $extension = $extensionDir.Name
+        try {
+            $existingImages = docker images --format "table {{.Repository}}:{{.Tag}}" 2>$null
+            if ($existingImages -match "^$([regex]::Escape($extension))") {
+                Write-ColorOutput "  Removing extension image: $extension" -ForegroundColor White
+                $imageIds = docker images "$extension" -q 2>$null
+                if ($imageIds) {
+                    docker rmi $imageIds 2>$null | Out-Null
+                }
+            }
+        } catch {
+            # Ignore errors
+        }
+    }
+    
+    # Remove volumes
+    if ($removeVolumes) {
+        Write-ColorOutput "Removing volumes..." -ForegroundColor Cyan
+        $volumesToRemove = @(
+            "ollama_data",
+            "webui_data"
+        )
+        
+        foreach ($volume in $volumesToRemove) {
+            try {
+                $existingVolumes = docker volume ls --format "table {{.Name}}" 2>$null
+                if ($existingVolumes -match "^$([regex]::Escape($volume))$") {
+                    Write-ColorOutput "  Removing volume: $volume" -ForegroundColor White
+                    docker volume rm $volume 2>$null | Out-Null
+                }
+            } catch {
+                # Ignore errors
+            }
+        }
+        
+        # Remove extension volumes
+        foreach ($extensionDir in $extensionDirs) {
+            $extension = $extensionDir.Name
+            try {
+                $existingVolumes = docker volume ls --format "table {{.Name}}" 2>$null
+                $extensionVolumes = $existingVolumes | Where-Object { $_ -match "^$([regex]::Escape($extension))" }
+                foreach ($volume in $extensionVolumes) {
+                    if ($volume -and $volume.Trim()) {
+                        Write-ColorOutput "  Removing extension volume: $volume" -ForegroundColor White
+                        docker volume rm $volume.Trim() 2>$null | Out-Null
+                    }
+                }
+            } catch {
+                # Ignore errors
+            }
+        }
+    }
+    
+    # Remove network
+    Write-ColorOutput "Removing Docker network..." -ForegroundColor Cyan
+    try {
+        $existingNetworks = docker network ls --format "table {{.Name}}" 2>$null
+        if ($existingNetworks -match "^ollama-stack-network$") {
+            docker network rm ollama-stack-network 2>$null | Out-Null
+        }
+    } catch {
+        # Ignore errors
+    }
+    
+    # Clean up any remaining containers
+    Write-ColorOutput "Cleaning up remaining containers..." -ForegroundColor Cyan
+    try {
+        docker container prune -f 2>$null | Out-Null
+    } catch {
+        # Ignore errors
+    }
+    
+    Write-ColorOutput "✅ Ollama Stack uninstall completed!" -ForegroundColor Green
+    if (-not $removeVolumes) {
+        Write-ColorOutput "Note: Data volumes were preserved. Use 'docker volume ls' to see them." -ForegroundColor Yellow
+    }
+    
+    Write-Host ""
+    Write-ColorOutput "To remove Docker completely, run:" -ForegroundColor White
+    Write-ColorOutput "  docker system prune -a --volumes" -ForegroundColor White
+}
+
 function Show-ExtensionsHelp {
     Write-Host @"
 Available extension subcommands:
@@ -872,6 +1062,7 @@ COMMANDS:
     status               Show stack and extension status
     logs [service]       View logs (all services or specific service)
     extensions           Manage extensions
+    uninstall            Completely remove the stack
 
 STACK OPTIONS:
     start:
@@ -885,6 +1076,10 @@ STACK OPTIONS:
 
     logs:
         -f, --follow            Follow logs in real-time
+
+    uninstall:
+        -f, --force             Skip confirmation prompt
+        --remove-volumes        Remove data volumes (deletes all data)
 
 EXTENSION COMMANDS:
     extensions list             List all extensions
@@ -910,6 +1105,8 @@ EXAMPLES:
     .\ollama-stack.ps1 status                         # Show current status
     .\ollama-stack.ps1 logs -f                        # Follow all logs
     .\ollama-stack.ps1 logs webui                     # Show WebUI logs only
+    .\ollama-stack.ps1 uninstall                      # Remove stack (keeps data)
+    .\ollama-stack.ps1 uninstall --remove-volumes     # Remove stack and delete all data
 
     .\ollama-stack.ps1 extensions list               # List all extensions
     .\ollama-stack.ps1 extensions enable dia-tts-mcp # Enable TTS extension
@@ -951,6 +1148,9 @@ function Main {
         }
         { $_ -in @("extensions", "ext") } {
             Invoke-Extensions $Arguments
+        }
+        "uninstall" {
+            Invoke-Uninstall $Arguments
         }
         { $_ -in @("help", "--help", "-h") } {
             Show-Help

@@ -112,6 +112,16 @@ case $install_method in
         echo ""
         print_info "Option 3 - Copy to user bin:"
         print_color $YELLOW "mkdir -p ~/.local/bin && cp $TOOL_PATH ~/.local/bin/ && export PATH=\"~/.local/bin:\$PATH\""
+        echo ""
+        print_info "Option 4 - Re-run with admin privileges:"
+        print_color $YELLOW "sudo $0"
+        echo ""
+        print_error "Installation failed - manual steps required above"
+        echo ""
+        print_info "Until installed, use the tool directly from project directory:"
+        print_color $BLUE "  ./ollama-stack start"
+        print_color $BLUE "  ./ollama-stack status"
+        exit 1
         ;;
 esac
 

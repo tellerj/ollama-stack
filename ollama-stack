@@ -738,6 +738,154 @@ except Exception as e:
     print_color $WHITE "  Running: $([ "$running" = "Yes" ] && echo "🟢 Yes" || echo "🔴 No")"
 }
 
+cmd_uninstall() {
+    local force=false
+    local remove_volumes=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -f|--force)
+                force=true
+                shift
+                ;;
+            --remove-volumes)
+                remove_volumes=true
+                shift
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                echo "Usage: ollama-stack uninstall [--force] [--remove-volumes]"
+                exit 1
+                ;;
+        esac
+    done
+    
+    print_header "Ollama Stack Uninstall"
+    
+    if [ "$force" != "true" ]; then
+        print_color $YELLOW "This will completely remove the Ollama Stack:"
+        print_color $WHITE "  • Stop all running containers"
+        print_color $WHITE "  • Remove all containers"
+        print_color $WHITE "  • Remove all Docker images"
+        print_color $WHITE "  • Remove Docker network"
+        if [ "$remove_volumes" = "true" ]; then
+            print_color $RED "  • Remove all volumes (DELETES ALL DATA!)"
+        else
+            print_color $GREEN "  • Keep volumes (data preserved)"
+        fi
+        print_color $WHITE "  • Disable all extensions"
+        echo ""
+        
+        read -p "Are you sure you want to continue? (y/N): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_color $GREEN "Uninstall cancelled."
+            exit 0
+        fi
+    fi
+    
+    # Stop all services first
+    print_color $CYAN "Stopping all services..."
+    cmd_stop --platform auto
+    
+    # Stop and remove extension containers
+    print_color $CYAN "Stopping and removing extension containers..."
+    for extension_dir in "$EXTENSIONS_DIR"/*; do
+        if [ -d "$extension_dir" ]; then
+            extension=$(basename "$extension_dir")
+            if [ -f "$extension_dir/docker-compose.yml" ]; then
+                print_color $WHITE "  Removing extension: $extension"
+                cd "$extension_dir"
+                docker compose down --remove-orphans 2>/dev/null || true
+                cd "$SCRIPT_DIR"
+                
+                # Disable extension
+                disable_extension "$extension"
+            fi
+        fi
+    done
+    
+    # Remove main stack containers
+    print_color $CYAN "Removing main stack containers..."
+    docker compose down --remove-orphans 2>/dev/null || true
+    
+    # Remove images
+    print_color $CYAN "Removing Docker images..."
+    local images_to_remove=(
+        "ollama/ollama"
+        "ghcr.io/open-webui/open-webui"
+        "ghcr.io/open-webui/mcpo"
+    )
+    
+    for image in "${images_to_remove[@]}"; do
+        if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "^$image"; then
+            print_color $WHITE "  Removing image: $image"
+            docker rmi $(docker images "$image" -q) 2>/dev/null || true
+        fi
+    done
+    
+    # Remove extension images
+    for extension_dir in "$EXTENSIONS_DIR"/*; do
+        if [ -d "$extension_dir" ]; then
+            extension=$(basename "$extension_dir")
+            if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "^$extension"; then
+                print_color $WHITE "  Removing extension image: $extension"
+                docker rmi $(docker images "$extension" -q) 2>/dev/null || true
+            fi
+        fi
+    done
+    
+    # Remove volumes
+    if [ "$remove_volumes" = "true" ]; then
+        print_color $CYAN "Removing volumes..."
+        local volumes_to_remove=(
+            "ollama_data"
+            "webui_data"
+        )
+        
+        for volume in "${volumes_to_remove[@]}"; do
+            if docker volume ls --format "table {{.Name}}" | grep -q "^$volume\$"; then
+                print_color $WHITE "  Removing volume: $volume"
+                docker volume rm "$volume" 2>/dev/null || true
+            fi
+        done
+        
+        # Remove extension volumes
+        for extension_dir in "$EXTENSIONS_DIR"/*; do
+            if [ -d "$extension_dir" ]; then
+                extension=$(basename "$extension_dir")
+                # Look for volumes with extension name prefix
+                docker volume ls --format "table {{.Name}}" | grep "^${extension}" | while read -r volume; do
+                    if [ ! -z "$volume" ]; then
+                        print_color $WHITE "  Removing extension volume: $volume"
+                        docker volume rm "$volume" 2>/dev/null || true
+                    fi
+                done
+            fi
+        done
+    fi
+    
+    # Remove network
+    print_color $CYAN "Removing Docker network..."
+    if docker network ls --format "table {{.Name}}" | grep -q "^ollama-stack-network\$"; then
+        docker network rm ollama-stack-network 2>/dev/null || true
+    fi
+    
+    # Clean up any remaining containers
+    print_color $CYAN "Cleaning up remaining containers..."
+    docker container prune -f 2>/dev/null || true
+    
+    print_color $GREEN "✅ Ollama Stack uninstall completed!"
+    if [ "$remove_volumes" != "true" ]; then
+        print_color $YELLOW "Note: Data volumes were preserved. Use 'docker volume ls' to see them."
+    fi
+    
+    echo ""
+    print_color $WHITE "To remove Docker completely, run:"
+    print_color $WHITE "  docker system prune -a --volumes"
+}
+
 show_help() {
     cat << 'EOF'
 Ollama Stack - Unified CLI Tool
@@ -751,6 +899,7 @@ COMMANDS:
     status               Show stack and extension status
     logs [service]       View logs (all services or specific service)
     extensions           Manage extensions
+    uninstall            Completely remove the stack
 
 STACK OPTIONS:
     start:
@@ -764,6 +913,10 @@ STACK OPTIONS:
 
     logs:
         -f, --follow            Follow logs in real-time
+
+    uninstall:
+        -f, --force             Skip confirmation prompt
+        --remove-volumes        Remove data volumes (deletes all data)
 
 EXTENSION COMMANDS:
     extensions list             List all extensions
@@ -789,6 +942,8 @@ EXAMPLES:
     ollama-stack status                         # Show current status
     ollama-stack logs -f                        # Follow all logs
     ollama-stack logs webui                     # Show WebUI logs only
+    ollama-stack uninstall                      # Remove stack (keeps data)
+    ollama-stack uninstall --remove-volumes     # Remove stack and delete all data
 
     ollama-stack extensions list               # List all extensions
     ollama-stack extensions enable dia-tts-mcp # Enable TTS extension
@@ -833,6 +988,9 @@ main() {
             ;;
         extensions|ext)
             cmd_extensions "$@"
+            ;;
+        uninstall)
+            cmd_uninstall "$@"
             ;;
         help|--help|-h)
             show_help
