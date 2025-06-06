@@ -1,0 +1,49 @@
+{
+  "name": "dia-tts",
+  "displayName": "Dia TTS",
+  "description": "High-quality dialogue generation using Nari Labs Dia model",
+  "version": "1.0.0",
+  "type": "mcp-server",
+  "mcp": {
+    "serverName": "dia-tts",
+    "command": ["python", "/app/server.py"],
+    "transport": "stdio",
+    "capabilities": {
+      "tools": true,
+      "resources": true,
+      "prompts": true,
+      "sampling": false
+    }
+  },
+  "integration": {
+    "openwebui": {
+      "auto_register": true,
+      "tool_visibility": "enabled",
+      "mcpo_compatible": true
+    }
+  },
+  "requirements": {
+    "hf_token": {
+      "required": true,
+      "description": "HuggingFace token for accessing Dia model"
+    },
+    "memory": "16GB",
+    "gpu_memory": "10GB (recommended for optimal performance)"
+  },
+  "platforms": {
+    "cpu": {
+      "supported": true,
+      "performance": "slow"
+    },
+    "nvidia": {
+      "supported": true,
+      "performance": "optimal",
+      "requirements": ["nvidia-docker", "cuda"]
+    },
+    "apple": {
+      "supported": true,
+      "performance": "good",
+      "notes": "MPS acceleration available"
+    }
+  }
+}

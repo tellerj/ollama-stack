@@ -4,37 +4,34 @@ services:
   dia-tts-mcp:
     build: .
     container_name: dia-tts-mcp
-    ports:
-      - "8210:8000"  # HTTP endpoint for MCP over SSE
     environment:
       - HF_TOKEN=${HF_TOKEN:-}
       - PYTORCH_ENABLE_MPS_FALLBACK=1
-      - MCP_SERVER_NAME=dia-tts
+      - TRANSFORMERS_CACHE=/app/cache/transformers
+      - HF_HOME=/app/cache/huggingface
     volumes:
-      - dia_tts_cache:/root/.cache/huggingface
-      - dia_tts_models:/root/.cache/torch
-      - dia_tts_temp:/tmp/dia_tts
+      - dia_tts_cache:/app/cache
+      - dia_tts_temp:/tmp/dia_audio
     restart: unless-stopped
     mem_limit: 16g
     cpus: 8.0
+    networks:
+      - ollama-stack-network
+    # MCP servers use stdio - no exposed ports needed
+    # They integrate through the MCP proxy in the main stack
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
+      test: ["CMD", "/app/health_check.sh"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 120s
-    networks:
-      - dia-tts-network
 
 volumes:
   dia_tts_cache:
     name: dia_tts_cache
-  dia_tts_models:
-    name: dia_tts_models  
   dia_tts_temp:
     name: dia_tts_temp
 
 networks:
-  dia-tts-network:
-    name: dia-tts-network
-    driver: bridge 
+  ollama-stack-network:
+    external: true 

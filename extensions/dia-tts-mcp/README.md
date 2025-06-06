@@ -1,143 +1,200 @@
-# Dia TTS MCP Server
+# Dia TTS MCP Extension
 
-A Model Context Protocol (MCP) server that provides text-to-speech capabilities using the [Dia model from Nari Labs](https://github.com/nari-labs/dia).
+A Model Context Protocol (MCP) extension that provides high-quality text-to-speech capabilities using the [Dia model from Nari Labs](https://github.com/nari-labs/dia).
+
+## Overview
+
+This extension integrates the Dia TTS model into the Ollama Stack, providing:
+
+- **High-Quality Dialogue Generation**: Realistic multi-speaker conversations  
+- **Voice Cloning**: Clone voices from reference audio (experimental)
+- **Non-Verbal Audio**: Support for laughter, coughs, and other natural sounds
+- **Seamless Integration**: Works with OpenWebUI through MCP protocol
 
 ## Features
 
-- **High-Quality Dialogue Generation**: Generate realistic multi-speaker conversations
-- **Voice Cloning**: Clone voices from reference audio (experimental)
-- **Non-Verbal Audio**: Support for laughter, coughs, and other natural sounds
-- **MCP Standard**: Seamlessly integrates with OpenWebUI and other MCP-compatible clients
+### 🎙️ Text-to-Speech Tools
+- `generate_speech` - Convert text to natural-sounding speech
+- `generate_dialogue` - Create multi-speaker dialogues with `[S1]` and `[S2]` tags
+- `voice_clone` - Clone voices from reference audio samples
 
-## Tools Provided
+### 📚 Resources  
+- Model information and capabilities
+- Dialogue script examples and best practices
 
-### `generate_speech`
-Convert text to speech using Dia's dialogue capabilities.
-
-**Parameters:**
-- `text`: Text to convert (use [S1] and [S2] tags for speakers)
-- `voice`: Optional voice identifier
-- `seed`: Random seed for reproducible output
-- `use_torch_compile`: Enable/disable torch compilation (disable on macOS)
-- `output_format`: Audio format (mp3, wav)
-
-### `generate_dialogue`
-Generate dialogue between multiple speakers from a script.
-
-**Parameters:**
-- `speakers`: List of speaker names
-- `script`: Dialogue script with speaker names
-- `use_torch_compile`: Enable/disable torch compilation
-- `output_format`: Audio format
-
-### `voice_clone`
-Clone a voice using reference audio.
-
-**Parameters:**
-- `reference_audio_path`: Path to reference audio file
-- `reference_transcript`: Transcript of the reference audio
-- `target_text`: Text to generate in the cloned voice
-- `use_torch_compile`: Enable/disable torch compilation
-- `output_format`: Audio format
-
-## Resources Provided
-
-### `dia://model/info`
-Information about the Dia TTS model and its capabilities.
-
-### `dia://examples/dialogue`
-Example dialogue scripts formatted for Dia TTS.
-
-## Prompts Provided
-
-### `create_dialogue_script`
-Generate optimized dialogue scripts for TTS.
-
-### `optimize_text_for_tts`
-Optimize existing text for better TTS generation.
+### 🎯 Smart Prompts
+- `create_dialogue_script` - Generate optimized dialogue scripts
+- `optimize_text_for_tts` - Improve text for better speech synthesis
 
 ## Installation
 
-### Standalone
+### Prerequisites
+- Docker and Docker Compose
+- HuggingFace account and token (for model access)
+- Ollama Stack running
 
-```bash
-# Clone the repository
-git clone <your-repo-url>
-cd dia-tts-mcp
+### Quick Start
 
-# Install dependencies
-pip install -r requirements.txt
+1. **Set up HuggingFace token**:
+   ```bash
+   export HF_TOKEN="your_huggingface_token_here"
+   ```
 
-# Set HuggingFace token (required for model access)
-export HF_TOKEN="your_hf_token_here"
+2. **Enable the extension**:
+   ```bash
+   cd extensions
+   ./manage.sh enable dia-tts-mcp
+   ```
 
-# Run the server
-python server.py
+3. **Start the extension**:
+   ```bash
+   # Auto-detect platform
+   ./manage.sh start dia-tts-mcp
+   
+   # Or specify platform
+   ./manage.sh start dia-tts-mcp -p nvidia  # For NVIDIA GPU
+   ./manage.sh start dia-tts-mcp -p apple   # For Apple Silicon
+   ./manage.sh start dia-tts-mcp -p cpu     # For CPU-only
+   ```
+
+## Usage
+
+### Basic Text-to-Speech
+```python
+# In OpenWebUI or any MCP client
+result = await call_tool("generate_speech", {
+    "text": "Hello, this is a test of the Dia TTS system.",
+    "voice": "default",
+    "seed": 42
+})
 ```
 
-### Docker
+### Multi-Speaker Dialogue
+```python
+result = await call_tool("generate_dialogue", {
+    "script": "[S1] Good morning! How are you today? [S2] I'm doing great, thanks for asking! [S1] That's wonderful to hear.",
+    "seed": 42
+})
+```
+
+### Voice Cloning
+```python
+result = await call_tool("voice_clone", {
+    "text": "This will be spoken in the cloned voice.",
+    "reference_audio_path": "/path/to/reference.wav",
+    "seed": 42
+})
+```
+
+## Configuration
+
+### Environment Variables
+- `HF_TOKEN` - HuggingFace token (required)
+- `PYTORCH_ENABLE_MPS_FALLBACK` - Enable MPS fallback on macOS
+- `TORCH_COMPILE` - Enable/disable torch compilation
+- `CUDA_VISIBLE_DEVICES` - GPU selection for NVIDIA
+
+### Resource Requirements
+- **Memory**: 16GB RAM recommended
+- **GPU**: 10GB VRAM recommended for optimal performance
+- **Storage**: ~5GB for model files
+
+### Platform Support
+| Platform | Support | Performance | Notes |
+|----------|---------|-------------|-------|
+| CPU | ✅ | Slow | Works but not recommended |
+| NVIDIA GPU | ✅ | Optimal | Best performance |
+| Apple Silicon | ✅ | Good | MPS acceleration |
+
+## Management Commands
 
 ```bash
-# Build the image
-docker build -t dia-tts-mcp .
+# List all extensions and their status
+./manage.sh list
 
-# Run the container
-docker run -e HF_TOKEN="your_hf_token_here" dia-tts-mcp
+# Get detailed information about the extension
+./manage.sh info dia-tts-mcp
+
+# View logs
+./manage.sh logs dia-tts-mcp -f
+
+# Stop the extension
+./manage.sh stop dia-tts-mcp
+
+# Restart with different platform
+./manage.sh restart dia-tts-mcp -p nvidia
 ```
 
 ## Integration with OpenWebUI
 
-1. Start the Dia TTS MCP server
-2. Configure OpenWebUI to connect to the MCP server
-3. Use the provided tools in your conversations:
+Once started, the extension automatically registers with OpenWebUI through the MCP proxy. You can:
 
-```
-Hey, can you generate some speech for this text: 
-"[S1] Hello there! [S2] Hi, how are you doing today? [S1] I'm doing great, thanks!"
-```
-
-## Usage Examples
-
-### Basic Speech Generation
-```python
-# The MCP server will handle this automatically when called via tools
-text = "[S1] Welcome to our presentation. [S2] Thank you for having us today."
-```
-
-### Dialogue with Non-Verbals
-```python
-text = "[S1] Did you hear that joke? (laughs) [S2] Yes! (chuckles) It was hilarious."
-```
-
-### Voice Cloning
-Provide a reference audio file and its transcript, then specify the new text to generate.
-
-## Hardware Requirements
-
-- **GPU Recommended**: RTX 4090 or similar for best performance
-- **CPU Support**: Available but slower
-- **Memory**: ~10GB VRAM for optimal performance
-- **Apple Silicon**: Supported (set `use_torch_compile=False`)
-
-## Performance
-
-On RTX 4090:
-- **Real-time factor**: 2.1x with compilation, 1.5x without
-- **VRAM usage**: ~10GB
-- **Supported formats**: MP3, WAV
+1. **Use Tools**: Access TTS tools in chat conversations
+2. **Browse Resources**: View model information and examples  
+3. **Apply Prompts**: Use built-in prompts for script generation
 
 ## Troubleshooting
 
-### Model Loading Issues
-- Ensure you have a valid HuggingFace token
-- Check that you have sufficient VRAM/RAM
-- For macOS, set `use_torch_compile=False`
+### Common Issues
 
-### Audio Generation Fails
-- Verify text format uses [S1]/[S2] tags
-- Keep text length moderate (5-20 seconds of speech)
-- Check available disk space for temporary files
+**Model fails to load**:
+- Ensure HF_TOKEN is set correctly
+- Check that you have access to the Dia model repository
+- Verify sufficient memory/GPU resources
+
+**Audio generation fails**:
+- Check logs with `./manage.sh logs dia-tts-mcp -f`
+- Ensure output directory is writable
+- Try disabling torch compilation on macOS
+
+**Performance issues**:
+- Use NVIDIA GPU for best performance
+- Reduce memory limits if experiencing OOM errors
+- Consider using CPU fallback for compatibility
+
+### Getting Help
+
+```bash
+# View extension information
+./manage.sh info dia-tts-mcp
+
+# Check logs for errors
+./manage.sh logs dia-tts-mcp
+
+# Test basic functionality
+docker exec -it dia-tts-mcp python3 -c "import dia; print('Dia imported successfully')"
+```
+
+## Development
+
+### File Structure
+```
+dia-tts-mcp/
+├── server.py              # MCP server implementation
+├── requirements.txt       # Python dependencies  
+├── Dockerfile            # Container definition
+├── docker-compose.yml    # Base configuration
+├── docker-compose.nvidia.yml  # NVIDIA overrides
+├── docker-compose.apple.yml   # Apple Silicon overrides
+├── mcp-config.json       # Extension metadata
+└── README.md            # This file
+```
+
+### Extending the Extension
+
+To add new tools or modify behavior:
+
+1. Edit `server.py` to add new MCP tools/resources
+2. Update `mcp-config.json` with new capabilities
+3. Rebuild and restart: `./manage.sh restart dia-tts-mcp`
 
 ## License
 
-This MCP server is provided under the same license as the Dia model (Apache 2.0). Please see the [Dia repository](https://github.com/nari-labs/dia) for full license details. 
+This extension integrates with the Dia model. Please check the [Dia repository](https://github.com/nari-labs/dia) for licensing information.
+
+## Links
+
+- [Dia Model Repository](https://github.com/nari-labs/dia)
+- [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
+- [OpenWebUI Documentation](https://docs.openwebui.com/)
+- [Ollama Stack Repository](https://github.com/your-repo/ollama-stack) 

@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "extensions": {
+    "dia-tts": {
+      "name": "Dia TTS",
+      "description": "High-quality dialogue generation using Nari Labs Dia model",
+      "type": "mcp-server",
+      "version": "1.0.0",
+      "status": "available",
+      "platforms": ["cpu", "nvidia", "apple"],
+      "requirements": {
+        "memory": "16GB",
+        "gpu_memory": "10GB (recommended)",
+        "hf_token": true
+      },
+      "mcp": {
+        "command": ["python", "/app/server.py"],
+        "transport": "stdio",
+        "tools": ["generate_speech", "generate_dialogue", "voice_clone"],
+        "resources": ["dia://model/info", "dia://examples/dialogue"],
+        "prompts": ["create_dialogue_script", "optimize_text_for_tts"]
+      },
+      "ports": {
+        "internal": 8000,
+        "external": null
+      },
+      "networks": ["ollama-stack-network"]
+    }
+  },
+  "enabled": []
+}
