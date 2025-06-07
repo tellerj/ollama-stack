@@ -30,8 +30,8 @@ git clone https://github.com/tellerj/ollama-stack.git
 cd ollama-stack
 
 # Install the CLI tool
-./install.sh      # Unix/macOS
-.\install.ps1     # Windows
+./install-ollama-stack.sh      # Unix/macOS
+.\install-ollama-stack.ps1     # Windows
    
 # Start the stack
 ollama-stack start
@@ -92,8 +92,8 @@ ollama-stack/
 ├── ollama-stack.ps1           # Main CLI (Windows)  
 ├── docker-compose*.yml        # Service configurations
 ├── docs/                      # Documentation
-├── install.sh                # Unix/macOS installer
-├── install.ps1               # Windows installer
+├── install-ollama-stack.sh   # Unix/macOS installer
+├── install-ollama-stack.ps1  # Windows installer
 ├── extensions/                # Extension system
 └── tools/                     # Additional tools
 ```

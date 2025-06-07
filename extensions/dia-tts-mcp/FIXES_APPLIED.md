@@ -74,12 +74,17 @@
 
 ## 🚀 Next Steps
 
-### 1. Set Required Environment Variables
+### 1. Install CLI (if not already done)
+```bash
+./install-ollama-stack.sh
+```
+
+### 2. Set Required Environment Variables
 ```bash
 export HF_TOKEN="your_huggingface_token_here"
 ```
 
-### 2. Start Main Stack and Enable Extension
+### 3. Start Main Stack and Enable Extension
 ```bash
 ollama-stack start
 ollama-stack extensions enable dia-tts-mcp
@@ -87,13 +92,13 @@ ollama-stack extensions start dia-tts-mcp
 ollama-stack extensions logs dia-tts-mcp -f
 ```
 
-### 3. Test MCP Server
+### 4. Test MCP Server
 ```bash
 cd extensions/dia-tts-mcp
 python3 test_server.py
 ```
 
-### 4. Verify Integration
+### 5. Verify Integration
 - Check that extension appears in OpenWebUI tools
 - Test basic text-to-speech functionality
 - Verify dialogue generation works

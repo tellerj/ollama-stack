@@ -16,8 +16,8 @@ ollama-stack/
 │   ├── CLI_USAGE.md              
 │   ├── WINDOWS_SETUP.md          
 │   └── UNIFIED_CLI_SUMMARY.md    
-├── install.sh                  # Unix/macOS installer
-├── install.ps1                 # Windows installer
+├── install-ollama-stack.sh     # Unix/macOS installer
+├── install-ollama-stack.ps1    # Windows installer
 ├── extensions/                 # Extension system
 │   ├── dia-tts-mcp/              
 │   └── registry.json             
@@ -43,8 +43,8 @@ ollama-stack/
 
 ### Installation
 ```bash
-./install.sh     # Unix/macOS
-.\install.ps1    # Windows
+./install-ollama-stack.sh     # Unix/macOS
+.\install-ollama-stack.ps1    # Windows
 ```
 
 ## File Reference
@@ -55,8 +55,8 @@ ollama-stack/
 | `ollama-stack.ps1` | Windows CLI tool |
 | `docs/CLI_USAGE.md` | Complete CLI reference |
 | `docs/WINDOWS_SETUP.md` | Windows setup guide |
-| `install.sh` | Unix/macOS installation script |
-| `install.ps1` | Windows installation script |
+| `install-ollama-stack.sh` | Unix/macOS installation script |
+| `install-ollama-stack.ps1` | Windows installation script |
 | `extensions/` | Extension packages |
 | `docker-compose*.yml` | Service configurations |
 
@@ -69,7 +69,7 @@ Project restructured for better organization. Installation scripts moved to root
 | Task | Command/Location |
 |------|------------------|
 | Start the stack | `./ollama-stack start` |
-| Install system-wide | `./install.sh` |
+| Install system-wide | `./install-ollama-stack.sh` |
 | Full CLI reference | `docs/CLI_USAGE.md` |
 | Windows setup | `docs/WINDOWS_SETUP.md` |
 | Add extension | `extensions/` directory |

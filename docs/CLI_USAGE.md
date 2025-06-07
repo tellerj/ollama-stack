@@ -9,7 +9,7 @@ The **Ollama Stack** now features a unified command-line interface that combines
 **Unix/macOS:**
 ```bash
 # Make the CLI tool system-wide accessible
-./install.sh
+./install-ollama-stack.sh
 
 # Or use directly from the project directory
 ./ollama-stack --help
@@ -18,7 +18,7 @@ The **Ollama Stack** now features a unified command-line interface that combines
 **Windows (PowerShell):**
 ```powershell
 # Make the CLI tool system-wide accessible
-.\install.ps1
+.\install-ollama-stack.ps1
 
 # Or use directly from the project directory
 .\ollama-stack.ps1 --help
@@ -238,7 +238,7 @@ Status:
 ### **Complete Setup from Scratch**
 ```bash
 # 1. Install CLI tool
-./install.sh
+./install-ollama-stack.sh
 
 # 2. Set required environment variables
 export HF_TOKEN="your_huggingface_token_here"
@@ -417,7 +417,7 @@ ollama-stack start --help              # Command-specific help (if implemented)
 
 ## 🎯 **Next Steps**
 
-1. **Install the CLI:** Run `./install.sh`
+1. **Install the CLI:** Run `./install-ollama-stack.sh`
 2. **Set up environment:** Export your `HF_TOKEN`
 3. **Start the stack:** `ollama-stack start`
 4. **Enable extensions:** `ollama-stack extensions enable dia-tts-mcp`

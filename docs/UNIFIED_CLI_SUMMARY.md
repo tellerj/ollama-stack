@@ -34,7 +34,7 @@ ollama-stack extensions info <ext>    # Detailed extension information
 - **Override capability** with `-p` flag when needed
 
 ### **📦 Easy Installation**
-- **System-wide installation** with `./install.sh`
+- **System-wide installation** with `./install-ollama-stack.sh`
 - **Smart PATH detection** and user guidance
 - **Works from project directory** without installation
 
@@ -125,7 +125,7 @@ ollama-stack extensions logs dia-tts-mcp -f
 
 ### **Quick Start**
 ```bash
-./install.sh                                    # One-time setup
+./install-ollama-stack.sh                       # One-time setup
 export HF_TOKEN="your_token"                    # Environment setup
 ollama-stack start                              # Start everything
 ollama-stack extensions enable dia-tts-mcp      # Enable TTS

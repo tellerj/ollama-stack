@@ -28,8 +28,8 @@ ollama-stack-1/
 ├── docker-compose.apple.yml        # Apple Silicon optimizations
 ├── ollama-stack                    # Unified CLI tool (Unix/macOS)
 ├── ollama-stack.ps1                # Unified CLI tool (Windows)
-├── install.sh                      # Unix/macOS installer
-├── install.ps1                     # Windows installer
+├── install-ollama-stack.sh         # Unix/macOS installer
+├── install-ollama-stack.ps1        # Windows installer
 ├── README.md                       # Project documentation
 ├── docs/                           # Documentation
 ├── extensions/                     # Extension framework (see @project-extensions)
@@ -124,7 +124,7 @@ Extensions → ollama-stack-network (shared communication)
 ## Usage Patterns
 
 ### Standard Workflow
-1. **Install CLI**: `./install.sh` (one-time setup)
+1. **Install CLI**: `./install-ollama-stack.sh` (one-time setup)
 2. **Start Stack**: `ollama-stack start` (auto-detects platform)
 3. **Access Interface**: Browser to `http://localhost:8080`
 4. **Download Models**: Through OpenWebUI or Ollama CLI
@@ -134,7 +134,7 @@ Extensions → ollama-stack-network (shared communication)
 ### Common Operations
 ```bash
 # Install CLI tool (one-time)
-./install.sh
+./install-ollama-stack.sh
 
 # Start the stack
 ollama-stack start
@@ -191,4 +191,4 @@ For adding new AI services, tools, or capabilities, see the **@project-extension
 3. **Respect platform detection** - CLI auto-detects and optimizes for your platform
 4. **Monitor resource usage** - AI workloads are resource-intensive
 5. **Test across platforms** - ensure compatibility with CPU/GPU/Apple Silicon
-6. **Install system-wide** - use `./install.sh` for better user experience 
+6. **Install system-wide** - use `./install-ollama-stack.sh` for better user experience 

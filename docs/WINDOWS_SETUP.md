@@ -23,7 +23,7 @@ cd ollama-stack-1
 
 ### 2. Install CLI Tool
 ```powershell
-.\install.ps1
+.\install-ollama-stack.ps1
 ```
 
 ### 3. Configure PowerShell (if needed)
