@@ -530,6 +530,34 @@ function Invoke-Start {
     
     Test-DockerRunning
     
+    # Check if stack is already running
+    $runningContainers = @()
+    try {
+        $composeOutput = docker compose ps -q 2>$null
+        if ($composeOutput) {
+            $runningContainers = $composeOutput | Where-Object { $_ -and $_.Trim() }
+        }
+    } catch {
+        # Ignore errors
+    }
+    
+    if ($runningContainers.Count -gt 0) {
+        Write-Warning "Stack is already running with $($runningContainers.Count) container(s)!"
+        Write-Status "Current services:"
+        try {
+            docker compose ps --format "table {{.Service}}`t{{.Status}}`t{{.Ports}}" 2>$null
+        } catch {
+            # Ignore errors
+        }
+        Write-Host ""
+        Write-Status "Options:"
+        Write-Status "  • Visit: http://localhost:8080 (if WebUI is running)"
+        Write-Status "  • Restart: ollama-stack.ps1 restart"
+        Write-Status "  • Status: ollama-stack.ps1 status"
+        Write-Status "  • Stop: ollama-stack.ps1 stop"
+        return
+    }
+    
     # Store infrastructure names for reliable operations
     Set-InfrastructureNames
     
@@ -680,6 +708,61 @@ function Invoke-Stop {
         Write-Error "Failed to stop stack: $($_.Exception.Message)"
         exit 1
     }
+}
+
+function Invoke-Restart {
+    param([string[]]$Args)
+    
+    $platform = "auto"
+    
+    # Parse arguments (same as start command)
+    for ($i = 0; $i -lt $Args.Length; $i++) {
+        switch ($Args[$i]) {
+            { $_ -in @("-p", "--platform") } {
+                if ($i + 1 -lt $Args.Length) {
+                    $platform = $Args[$i + 1]
+                    if ($platform -notin @("auto", "cpu", "nvidia", "apple")) {
+                        Write-Error "Platform must be 'auto', 'cpu', 'nvidia', or 'apple'"
+                        exit 1
+                    }
+                    $i++
+                } else {
+                    Write-Error "Platform argument requires a value"
+                    exit 1
+                }
+            }
+            default {
+                Write-Error "Unknown option: $($Args[$i])"
+                exit 1
+            }
+        }
+    }
+    
+    Write-Header "Restarting Ollama Stack"
+    
+    # Detect platform
+    if ($platform -eq "auto") {
+        $platform = Get-Platform
+        Write-Status "Auto-detected platform: $platform"
+    } else {
+        Write-Status "Using specified platform: $platform"
+    }
+    
+    Test-DockerRunning
+    
+    # Get compose files
+    $composeFiles = Get-ComposeFiles -Platform $platform
+    
+    Write-Status "Stopping current stack..."
+    try {
+        $stopCmd = @("docker", "compose") + $composeFiles + @("down")
+        & $stopCmd[0] $stopCmd[1..($stopCmd.Length-1)] | Out-Null
+    } catch {
+        # Ignore stop errors
+    }
+    
+    Write-Status "Starting stack..."
+    Invoke-Start @("-p", $platform)
 }
 
 function Invoke-Status {
@@ -1925,6 +2008,7 @@ USAGE:
 COMMANDS:
     start                Start the core stack
     stop                 Stop the core stack
+    restart              Restart the core stack
     status               Show stack and extension status
     logs [service]       View logs (all services or specific service)
     extensions           Manage extensions
@@ -2024,6 +2108,9 @@ function Main {
         }
         "stop" {
             Invoke-Stop $Arguments
+        }
+        "restart" {
+            Invoke-Restart $Arguments
         }
         "status" {
             Invoke-Status

@@ -463,6 +463,22 @@ cmd_start() {
     
     check_docker
     
+    # Check if stack is already running
+    local running_containers=$(docker compose ps -q 2>/dev/null || true)
+    if [ -n "$running_containers" ]; then
+        local container_count=$(echo "$running_containers" | wc -l | tr -d ' ')
+        print_warning "Stack is already running with $container_count container(s)!"
+        print_status "Current services:"
+        docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || true
+        echo ""
+        print_status "Options:"
+        print_status "  • Visit: http://localhost:8080 (if WebUI is running)"
+        print_status "  • Restart: ollama-stack restart"
+        print_status "  • Status: ollama-stack status"
+        print_status "  • Stop: ollama-stack stop"
+        return 0
+    fi
+    
     # Store infrastructure names for reliable operations
     store_infrastructure_names
     
@@ -586,6 +602,49 @@ cmd_stop() {
         print_error "Failed to stop stack"
         exit 1
     fi
+}
+
+cmd_restart() {
+    local platform="auto"
+    
+    # Parse arguments (same as start command)
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -p|--platform)
+                platform="$2"
+                if [[ ! "$platform" =~ ^(auto|cpu|nvidia|apple)$ ]]; then
+                    print_error "Platform must be 'auto', 'cpu', 'nvidia', or 'apple'"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+    done
+    
+    print_header "Restarting Ollama Stack"
+    
+    # Detect platform
+    if [ "$platform" = "auto" ]; then
+        platform=$(detect_platform)
+        print_status "Auto-detected platform: $platform"
+    else
+        print_status "Using specified platform: $platform"
+    fi
+    
+    check_docker
+    
+    # Get compose files
+    local compose_files=($(get_compose_files $platform))
+    
+    print_status "Stopping current stack..."
+    docker compose "${compose_files[@]}" down || true
+    
+    print_status "Starting stack..."
+    cmd_start -p "$platform"
 }
 
 cmd_status() {
@@ -1611,6 +1670,7 @@ USAGE:
 COMMANDS:
     start                Start the core stack
     stop                 Stop the core stack
+    restart              Restart the core stack
     status               Show stack and extension status
     logs [service]       View logs (all services or specific service)
     extensions           Manage extensions
@@ -1713,6 +1773,9 @@ main() {
             ;;
         stop)
             cmd_stop "$@"
+            ;;
+        restart)
+            cmd_restart "$@"
             ;;
         status)
             cmd_status "$@"
