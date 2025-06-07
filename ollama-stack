@@ -123,6 +123,30 @@ store_infrastructure_names() {
             echo "WEBUI_VOLUME_NAME=${project_name}_webui_data" >> "$env_file"
             echo "NETWORK_NAME=${project_name}_network" >> "$env_file"
         fi
+        
+        # Add or update stack state tracking
+        if ! grep -q "^# Stack state tracking" "$env_file" 2>/dev/null; then
+            echo "" >> "$env_file"
+            echo "# Stack state tracking" >> "$env_file"
+        fi
+        
+        # Update version (remove old if exists, add new)
+        grep -v "^STACK_VERSION=" "$env_file" > "${env_file}.tmp" 2>/dev/null || cp "$env_file" "${env_file}.tmp"
+        echo "STACK_VERSION=2.1.0" >> "${env_file}.tmp"
+        
+        # Update detected platform
+        local detected_platform=$(detect_platform)
+        grep -v "^PLATFORM_DETECTED=" "${env_file}.tmp" > "${env_file}.tmp2" 2>/dev/null || cp "${env_file}.tmp" "${env_file}.tmp2"
+        echo "PLATFORM_DETECTED=${detected_platform}" >> "${env_file}.tmp2"
+        
+        # Update timestamp
+        local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S 2>/dev/null || echo "unknown")
+        grep -v "^LAST_UPDATE=" "${env_file}.tmp2" > "${env_file}.tmp3" 2>/dev/null || cp "${env_file}.tmp2" "${env_file}.tmp3"
+        echo "LAST_UPDATE=${timestamp}" >> "${env_file}.tmp3"
+        
+        # Replace original file
+        mv "${env_file}.tmp3" "$env_file"
+        rm -f "${env_file}.tmp" "${env_file}.tmp2" 2>/dev/null || true
     fi
 }
 

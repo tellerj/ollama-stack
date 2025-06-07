@@ -137,6 +137,31 @@ function Set-InfrastructureNames {
                 "WEBUI_VOLUME_NAME=${projectName}_webui_data" | Add-Content $envFile
                 "NETWORK_NAME=${projectName}_network" | Add-Content $envFile
             }
+            
+            # Add or update stack state tracking
+            if (-not ($envContent -match "^# Stack state tracking")) {
+                "" | Add-Content $envFile
+                "# Stack state tracking" | Add-Content $envFile
+            }
+            
+            # Update stack metadata (remove old entries and add new ones)
+            $envContent = Get-Content $envFile -ErrorAction SilentlyContinue
+            $updatedContent = $envContent | Where-Object { 
+                $_ -notmatch "^STACK_VERSION=" -and 
+                $_ -notmatch "^PLATFORM_DETECTED=" -and 
+                $_ -notmatch "^LAST_UPDATE=" 
+            }
+            
+            # Add updated metadata
+            $detectedPlatform = Get-Platform
+            $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            
+            $updatedContent += "STACK_VERSION=2.1.0"
+            $updatedContent += "PLATFORM_DETECTED=$detectedPlatform"
+            $updatedContent += "LAST_UPDATE=$timestamp"
+            
+            # Write back to file
+            $updatedContent | Set-Content $envFile -ErrorAction Stop
         } catch {
             Write-Warning "Failed to update infrastructure names: $($_.Exception.Message)"
         }
