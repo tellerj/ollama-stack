@@ -105,8 +105,30 @@ check_docker() {
     fi
 }
 
+# Store infrastructure names in .env for reliable operations
+store_infrastructure_names() {
+    local env_file=".env"
+    local project_name=""
+    
+    # Get current project name (directory name or docker-compose project)
+    project_name=$(basename "$(pwd)")
+    
+    # Add infrastructure naming if not already present
+    if [ -f "$env_file" ]; then
+        if ! grep -q "^PROJECT_NAME=" "$env_file" 2>/dev/null; then
+            echo "" >> "$env_file"
+            echo "# Infrastructure naming - exact names for reliable operations" >> "$env_file"
+            echo "PROJECT_NAME=${project_name}" >> "$env_file"
+            echo "OLLAMA_VOLUME_NAME=${project_name}_ollama_data" >> "$env_file"
+            echo "WEBUI_VOLUME_NAME=${project_name}_webui_data" >> "$env_file"
+            echo "NETWORK_NAME=${project_name}_network" >> "$env_file"
+        fi
+    fi
+}
+
 # Smart WEBUI_SECRET_KEY management for fresh vs existing installs
 manage_webui_secret_key() {
+    # Create .env in the directory where docker-compose files are located (script directory)
     local env_file=".env"
     local webui_volume_exists=false
     local backup_file="${env_file}.backup"
@@ -122,8 +144,18 @@ manage_webui_secret_key() {
     fi
     
     # Check if webui_data volume exists (indicates existing installation)
-    if docker volume ls --format "{{.Name}}" 2>/dev/null | grep -q "^ollama-stack-1_webui_data$\|^webui_data$"; then
-        webui_volume_exists=true
+    # First try to use exact name from .env, fallback to detection for backward compatibility
+    local volume_name=""
+    if [ -f "$env_file" ] && grep -q "^WEBUI_VOLUME_NAME=" "$env_file" 2>/dev/null; then
+        volume_name=$(grep "^WEBUI_VOLUME_NAME=" "$env_file" | cut -d'=' -f2)
+        if docker volume ls --format "{{.Name}}" 2>/dev/null | grep -q "^${volume_name}$"; then
+            webui_volume_exists=true
+        fi
+    else
+        # Fallback to pattern detection for backward compatibility
+        if docker volume ls --format "{{.Name}}" 2>/dev/null | grep -q "webui_data"; then
+            webui_volume_exists=true
+        fi
     fi
     
     if [ "$webui_volume_exists" = true ]; then
@@ -175,15 +207,15 @@ manage_webui_secret_key() {
             fi
         else
             # Create new .env file with header
-            cat > "$env_file" 2>/dev/null << 'EOF' || {
-                print_error "Failed to create $env_file"
-                return 1
-            }
+            if ! cat > "$env_file" 2>/dev/null << 'EOF'; then
 # Ollama Stack Environment Variables
 # This file is automatically managed by ollama-stack
 # WEBUI_SECRET_KEY will be generated after initial setup
 
 EOF
+                print_error "Failed to create $env_file"
+                return 1
+            fi
         fi
     fi
     
@@ -406,6 +438,9 @@ cmd_start() {
     fi
     
     check_docker
+    
+    # Store infrastructure names for reliable operations
+    store_infrastructure_names
     
     # Smart WEBUI_SECRET_KEY management for fresh vs existing installs
     if ! manage_webui_secret_key; then
@@ -1111,17 +1146,20 @@ cmd_uninstall() {
     # Remove volumes
     if [ "$remove_volumes" = "true" ]; then
         print_status "Removing volumes..."
-        local volumes_to_remove=(
-            "ollama_data"
-            "webui_data"
-        )
         
-        for volume in "${volumes_to_remove[@]}"; do
-            if docker volume ls --format "table {{.Name}}" | grep -q "^$volume\$"; then
-                print_status "  Removing volume: $volume"
-                docker volume rm "$volume" 2>/dev/null || true
-            fi
-        done
+        # Find volumes using Docker Compose project name patterns
+        local project_volumes=$(docker volume ls --format "{{.Name}}" | grep -E "(ollama-stack.*ollama_data|ollama-stack.*webui_data|.*_ollama_data|.*_webui_data)" 2>/dev/null || true)
+        
+        if [ -n "$project_volumes" ]; then
+            while IFS= read -r volume; do
+                if [ -n "$volume" ]; then
+                    print_status "  Removing volume: $volume"
+                    docker volume rm "$volume" 2>/dev/null || true
+                fi
+            done <<< "$project_volumes"
+        else
+            print_status "  No ollama-stack volumes found"
+        fi
         
         # Remove extension volumes
         for extension_dir in "$EXTENSIONS_DIR"/*; do
@@ -1156,6 +1194,12 @@ cmd_uninstall() {
         if [ -f "$install_path" ]; then
             print_status "  Removing command: $install_path"
             rm -f "$install_path" 2>/dev/null || true
+        fi
+        
+        # Clean up generated files in project directory
+        if [ -d "$project_path" ]; then
+            print_status "  Removing generated files (.env, backups)"
+            rm -f "$project_path/.env" "$project_path/.env.backup" 2>/dev/null || true
         fi
         
         # Clean up shell PATH modifications
@@ -1247,8 +1291,8 @@ cmd_cleanup() {
         fi
     done
     
-    # Find orphaned volumes
-    local orphaned_volumes=$(docker volume ls --format "{{.Name}}" | grep -E "(ollama|webui)" | grep -v "ollama-stack-1" 2>/dev/null || true)
+    # Find orphaned volumes  
+    local orphaned_volumes=$(docker volume ls --format "{{.Name}}" | grep -E "(ollama-stack.*ollama_data|ollama-stack.*webui_data|.*_ollama_data|.*_webui_data)" 2>/dev/null || true)
     
     # Find orphaned networks
     local orphaned_networks=$(docker network ls --format "{{.Name}}" | grep "ollama" | grep -v "ollama-stack-network" 2>/dev/null || true)
@@ -1370,6 +1414,9 @@ cmd_update() {
     fi
     
     check_docker
+
+    # Set up environment (ensures consistent .env state)
+    manage_webui_secret_key
     
     # Get compose files
     local compose_files=($(get_compose_files $platform))

@@ -12,8 +12,10 @@ services:
   # Modify webui to connect to native Ollama on the host
   webui:
     environment:
-      # Override: Point to host machine's Ollama instance
+      # Override: Point to host machine's Ollama instance  
       - OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+      # Disable internal Ollama proxy path (use direct API instead)
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # WEBUI_SECRET_KEY will be set dynamically by start command when needed
 
   # MCP Proxy uses its base configuration from docker-compose.yml

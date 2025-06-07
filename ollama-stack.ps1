@@ -118,6 +118,31 @@ function Test-DockerRunning {
     }
 }
 
+# Store infrastructure names in .env for reliable operations
+function Set-InfrastructureNames {
+    $envFile = ".env"
+    
+    # Get current project name (directory name)
+    $projectName = Split-Path -Leaf (Get-Location)
+    
+    # Add infrastructure naming if not already present
+    if (Test-Path $envFile) {
+        try {
+            $envContent = Get-Content $envFile -ErrorAction SilentlyContinue
+            if (-not ($envContent -match "^PROJECT_NAME=")) {
+                "" | Add-Content $envFile
+                "# Infrastructure naming - exact names for reliable operations" | Add-Content $envFile
+                "PROJECT_NAME=$projectName" | Add-Content $envFile
+                "OLLAMA_VOLUME_NAME=${projectName}_ollama_data" | Add-Content $envFile
+                "WEBUI_VOLUME_NAME=${projectName}_webui_data" | Add-Content $envFile
+                "NETWORK_NAME=${projectName}_network" | Add-Content $envFile
+            }
+        } catch {
+            Write-Warning "Failed to update infrastructure names: $($_.Exception.Message)"
+        }
+    }
+}
+
 # Smart WEBUI_SECRET_KEY management for fresh vs existing installs
 function Set-WebuiSecretKey {
     $envFile = ".env"
@@ -137,10 +162,27 @@ function Set-WebuiSecretKey {
     }
     
     # Check if webui_data volume exists (indicates existing installation)
+    # First try to use exact name from .env, fallback to detection for backward compatibility
     try {
         $volumes = docker volume ls --format "{{.Name}}" 2>$null
-        if ($volumes -match "^ollama-stack-1_webui_data$|^webui_data$") {
-            $webuiVolumeExists = $true
+        $volumeName = ""
+        
+        if (Test-Path $envFile) {
+            $envContent = Get-Content $envFile -ErrorAction SilentlyContinue
+            $volumeNameLine = $envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }
+            if ($volumeNameLine) {
+                $volumeName = ($volumeNameLine -split "=")[1]
+                if ($volumes -match "^$([regex]::Escape($volumeName))$") {
+                    $webuiVolumeExists = $true
+                }
+            }
+        }
+        
+        if (-not $webuiVolumeExists) {
+            # Fallback to pattern detection for backward compatibility
+            if ($volumes -match "webui_data") {
+                $webuiVolumeExists = $true
+            }
         }
     } catch {
         Write-Warning "Failed to check Docker volumes: $($_.Exception.Message)"
@@ -462,6 +504,9 @@ function Invoke-Start {
     }
     
     Test-DockerRunning
+    
+    # Store infrastructure names for reliable operations
+    Set-InfrastructureNames
     
     # Smart WEBUI_SECRET_KEY management for fresh vs existing installs
     if (-not (Set-WebuiSecretKey)) {
@@ -1287,21 +1332,43 @@ function Invoke-Uninstall {
     # Remove volumes
     if ($removeVolumes) {
         Write-Status "Removing volumes..."
-        $volumesToRemove = @(
-            "ollama_data",
-            "webui_data"
-        )
-        
-        foreach ($volume in $volumesToRemove) {
-            try {
-                $existingVolumes = docker volume ls --format "table {{.Name}}" 2>$null
-                if ($existingVolumes -match "^$([regex]::Escape($volume))$") {
-                    Write-Status "  Removing volume: $volume"
-                    docker volume rm $volume 2>$null | Out-Null
+o        
+        try {
+            # Find volumes using exact names from .env if available, fallback to patterns
+            $allVolumes = docker volume ls --format "{{.Name}}" 2>$null
+            $projectVolumes = @()
+            
+            # Try to get exact volume names from .env
+            if (Test-Path ".env") {
+                $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
+                $ollamaVolume = ($envContent | Where-Object { $_ -match "^OLLAMA_VOLUME_NAME=" }) -replace "OLLAMA_VOLUME_NAME=", ""
+                $webuiVolume = ($envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }) -replace "WEBUI_VOLUME_NAME=", ""
+                
+                if ($ollamaVolume -and ($allVolumes -contains $ollamaVolume)) {
+                    $projectVolumes += $ollamaVolume
                 }
-            } catch {
-                # Ignore errors
+                if ($webuiVolume -and ($allVolumes -contains $webuiVolume)) {
+                    $projectVolumes += $webuiVolume
+                }
             }
+            
+            # Fallback to pattern matching for backward compatibility
+            if ($projectVolumes.Count -eq 0) {
+                $projectVolumes = $allVolumes | Where-Object { $_ -match "(ollama-stack.*ollama_data|ollama-stack.*webui_data|.*_ollama_data|.*_webui_data)" }
+            }
+            
+            if ($projectVolumes.Count -gt 0) {
+                foreach ($volume in $projectVolumes) {
+                    if ($volume -and $volume.Trim()) {
+                        Write-Status "  Removing volume: $volume"
+                        docker volume rm $volume.Trim() 2>$null | Out-Null
+                    }
+                }
+            } else {
+                Write-Status "  No ollama-stack volumes found"
+            }
+        } catch {
+            # Ignore errors
         }
         
         # Remove extension volumes
@@ -1326,8 +1393,19 @@ function Invoke-Uninstall {
     Write-Status "Removing Docker network..."
     try {
         $existingNetworks = docker network ls --format "table {{.Name}}" 2>$null
-        if ($existingNetworks -match "^ollama-stack-network$") {
-            docker network rm ollama-stack-network 2>$null | Out-Null
+        $networkName = "ollama-stack-network"  # default fallback
+        
+        # Try to get exact network name from .env
+        if (Test-Path ".env") {
+            $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
+            $envNetworkName = ($envContent | Where-Object { $_ -match "^NETWORK_NAME=" }) -replace "NETWORK_NAME=", ""
+            if ($envNetworkName) {
+                $networkName = $envNetworkName
+            }
+        }
+        
+        if ($existingNetworks -match "^$([regex]::Escape($networkName))$") {
+            docker network rm $networkName 2>$null | Out-Null
         }
     } catch {
         # Ignore errors
@@ -1352,6 +1430,19 @@ function Invoke-Uninstall {
                 Remove-Item $installPath -Force -ErrorAction Stop
             } catch {
                 Write-Warning "    Warning: Could not remove $installPath"
+            }
+        }
+        
+        # Clean up generated files in project directory
+        if (Test-Path $projectPath) {
+            Write-Status "  Removing generated files (.env, backups)"
+            try {
+                $envFile = Join-Path $projectPath ".env"
+                $backupFile = Join-Path $projectPath ".env.backup"
+                if (Test-Path $envFile) { Remove-Item $envFile -Force -ErrorAction SilentlyContinue }
+                if (Test-Path $backupFile) { Remove-Item $backupFile -Force -ErrorAction SilentlyContinue }
+            } catch {
+                # Ignore errors - these will be removed with project directory anyway
             }
         }
         
@@ -1465,8 +1556,28 @@ function Invoke-Cleanup {
         }
     }
     
-    # Find orphaned volumes
-    $orphanedVolumes = docker volume ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "(ollama|webui)" -and $_ -notmatch "ollama-stack-1" }
+    # Find orphaned volumes using exact names if available, fallback to patterns
+    $allVolumes = docker volume ls --format "{{.Name}}" 2>$null
+    $orphanedVolumes = @()
+    
+    # Try to get exact volume names from .env first
+    if (Test-Path ".env") {
+        $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
+        $ollamaVolume = ($envContent | Where-Object { $_ -match "^OLLAMA_VOLUME_NAME=" }) -replace "OLLAMA_VOLUME_NAME=", ""
+        $webuiVolume = ($envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }) -replace "WEBUI_VOLUME_NAME=", ""
+        
+        if ($ollamaVolume -and ($allVolumes -contains $ollamaVolume)) {
+            $orphanedVolumes += $ollamaVolume
+        }
+        if ($webuiVolume -and ($allVolumes -contains $webuiVolume)) {
+            $orphanedVolumes += $webuiVolume
+        }
+    }
+    
+    # Fallback to pattern matching if no exact names found
+    if ($orphanedVolumes.Count -eq 0) {
+        $orphanedVolumes = $allVolumes | Where-Object { $_ -match "(ollama-stack.*ollama_data|ollama-stack.*webui_data|.*_ollama_data|.*_webui_data)" }
+    }
     
     # Find orphaned networks
     $orphanedNetworks = docker network ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "ollama" -and $_ -ne "ollama-stack-network" }
@@ -1606,6 +1717,13 @@ function Invoke-Update {
     }
     
     Test-DockerRunning
+
+    # Set up environment (ensures consistent .env state)
+    Set-InfrastructureNames
+    if (-not (Set-WebuiSecretKey)) {
+        Write-Error "Failed to manage environment configuration"
+        exit 1
+    }
     
     # Get compose files
     $composeFiles = Get-ComposeFiles $platform
