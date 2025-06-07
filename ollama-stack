@@ -378,9 +378,49 @@ cmd_status() {
         return 1
     fi
     
+    # Check for zombie containers from other installations
+    local current_containers=$(docker compose ps -q 2>/dev/null | xargs -I {} docker inspect --format '{{.Name}}' {} 2>/dev/null | sed 's/^\/*//' || true)
+    local all_containers=$(docker ps -a --format "{{.Names}}" | grep -E "(webui|ollama|mcp_proxy)" 2>/dev/null || true)
+    
+    local zombie_containers=""
+    for container in $all_containers; do
+        if [[ ! "$current_containers" =~ (^|[[:space:]])$container($|[[:space:]]) ]]; then
+            if [ -z "$zombie_containers" ]; then
+                zombie_containers="$container"
+            else
+                zombie_containers="$zombie_containers $container"
+            fi
+        fi
+    done
+    
+    if [ -n "$zombie_containers" ]; then
+        print_warning "Found containers from other installations:"
+        for container in $zombie_containers; do
+            local status=$(docker ps -a --format "{{.Status}}" --filter "name=$container" 2>/dev/null)
+            local ports=$(docker ps -a --format "{{.Ports}}" --filter "name=$container" 2>/dev/null)
+            print_status "  • $container ($status) $ports"
+        done
+        print_status "Use 'ollama-stack cleanup' to remove orphaned resources"
+        echo ""
+    fi
+    
     # Check core services
     print_status "Core Services:"
-    docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || print_warning "No core services running"
+    local core_services=$(docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null)
+    if [ -n "$core_services" ]; then
+        echo "$core_services"
+    else
+        print_warning "No core services running"
+    fi
+    
+    # Check for orphaned volumes
+    local all_ollama_volumes=$(docker volume ls --format "table {{.Name}}" | grep -E "(ollama|webui)" | grep -v "ollama-stack-1" 2>/dev/null || true)
+    if [ -n "$all_ollama_volumes" ]; then
+        print_warning "Found volumes from other installations:"
+        echo "$all_ollama_volumes" | sed 's/^/  /'
+        print_status "Use 'ollama-stack cleanup --volumes' to remove them"
+        echo ""
+    fi
     
     # Check extensions
     print_status "Extensions:"
@@ -1004,6 +1044,134 @@ EOF
     fi
 }
 
+cmd_cleanup() {
+    local remove_volumes=false
+    local force=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --volumes)
+                remove_volumes=true
+                shift
+                ;;
+            -f|--force)
+                force=true
+                shift
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                echo "Usage: ollama-stack cleanup [--volumes] [--force]"
+                exit 1
+                ;;
+        esac
+    done
+    
+    print_header "Ollama Stack Cleanup"
+    
+    # Check Docker
+    if ! docker info >/dev/null 2>&1; then
+        print_error "Docker is not running"
+        return 1
+    fi
+    
+    # Find all ollama-stack related containers (including stopped ones)
+    local all_containers=$(docker ps -a --format "{{.Names}}" | grep -E "(webui|ollama|mcp_proxy)" 2>/dev/null || true)
+    local current_containers=$(docker compose ps -q 2>/dev/null | xargs -I {} docker inspect --format '{{.Name}}' {} 2>/dev/null | sed 's/^\/*//' || true)
+    
+    # Find zombie containers (not managed by current compose)
+    local zombie_containers=""
+    for container in $all_containers; do
+        if [[ ! "$current_containers" =~ "$container" ]]; then
+            zombie_containers="$zombie_containers $container"
+        fi
+    done
+    
+    # Find orphaned volumes
+    local orphaned_volumes=$(docker volume ls --format "{{.Name}}" | grep -E "(ollama|webui)" | grep -v "ollama-stack-1" 2>/dev/null || true)
+    
+    # Find orphaned networks
+    local orphaned_networks=$(docker network ls --format "{{.Name}}" | grep "ollama" | grep -v "ollama-stack-network" 2>/dev/null || true)
+    
+    if [ -z "$zombie_containers" ] && [ -z "$orphaned_volumes" ] && [ -z "$orphaned_networks" ]; then
+        print_success "No orphaned ollama-stack resources found!"
+        return 0
+    fi
+    
+    print_warning "Found orphaned ollama-stack resources:"
+    
+    if [ -n "$zombie_containers" ]; then
+        print_status "Containers from other installations:"
+        for container in $zombie_containers; do
+            local status=$(docker ps -a --format "{{.Status}}" --filter "name=$container" 2>/dev/null)
+            print_status "  • $container ($status)"
+        done
+    fi
+    
+    if [ -n "$orphaned_volumes" ] && [ "$remove_volumes" = "true" ]; then
+        print_error "Volumes to remove (THIS WILL DELETE DATA!):"
+        for volume in $orphaned_volumes; do
+            print_error "  • $volume"
+        done
+    elif [ -n "$orphaned_volumes" ]; then
+        print_status "Volumes found (use --volumes to remove):"
+        for volume in $orphaned_volumes; do
+            print_status "  • $volume"
+        done
+    fi
+    
+    if [ -n "$orphaned_networks" ]; then
+        print_status "Networks to remove:"
+        for network in $orphaned_networks; do
+            print_status "  • $network"
+        done
+    fi
+    
+    if [ "$force" != "true" ]; then
+        echo ""
+        read -p "Remove these orphaned resources? (y/N): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_success "Cleanup cancelled."
+            exit 0
+        fi
+    fi
+    
+    # Remove zombie containers
+    if [ -n "$zombie_containers" ]; then
+        print_status "Removing orphaned containers..."
+        for container in $zombie_containers; do
+            print_status "  Stopping and removing: $container"
+            docker stop "$container" 2>/dev/null || true
+            docker rm "$container" 2>/dev/null || true
+        done
+    fi
+    
+    # Remove orphaned volumes if requested
+    if [ -n "$orphaned_volumes" ] && [ "$remove_volumes" = "true" ]; then
+        print_status "Removing orphaned volumes..."
+        for volume in $orphaned_volumes; do
+            print_status "  Removing volume: $volume"
+            docker volume rm "$volume" 2>/dev/null || true
+        done
+    fi
+    
+    # Remove orphaned networks
+    if [ -n "$orphaned_networks" ]; then
+        print_status "Removing orphaned networks..."
+        for network in $orphaned_networks; do
+            print_status "  Removing network: $network"
+            docker network rm "$network" 2>/dev/null || true
+        done
+    fi
+    
+    print_success "Cleanup completed!"
+    
+    if [ -n "$orphaned_volumes" ] && [ "$remove_volumes" != "true" ]; then
+        print_warning "Note: Volumes were preserved. Use 'ollama-stack cleanup --volumes' to remove them."
+    fi
+}
+
 cmd_update() {
     local platform="auto"
     local force=false
@@ -1168,6 +1336,7 @@ COMMANDS:
     logs [service]       View logs (all services or specific service)
     extensions           Manage extensions
     update               Update to latest versions
+    cleanup              Remove orphaned containers and resources
     uninstall            Completely remove the stack and installation
 
 STACK OPTIONS:
@@ -1185,6 +1354,10 @@ STACK OPTIONS:
 
     update:
         -p, --platform TYPE      Platform: auto, cpu, nvidia, apple (default: auto)
+        -f, --force             Skip confirmation prompt
+
+    cleanup:
+        --volumes               Also remove orphaned volumes (DELETES DATA!)
         -f, --force             Skip confirmation prompt
 
     uninstall:
@@ -1217,6 +1390,8 @@ EXAMPLES:
     ollama-stack stop --remove-volumes          # Stop and delete all data
     ollama-stack update                         # Update to latest versions
     ollama-stack update --force                 # Update without confirmation
+    ollama-stack cleanup                        # Remove orphaned containers/networks
+    ollama-stack cleanup --volumes              # Also remove orphaned volumes (DANGER!)
     ollama-stack status                         # Show current status
     ollama-stack logs -f                        # Follow all logs
     ollama-stack logs webui                     # Show WebUI logs only
@@ -1271,6 +1446,9 @@ main() {
             ;;
         update)
             cmd_update "$@"
+            ;;
+        cleanup)
+            cmd_cleanup "$@"
             ;;
         uninstall)
             cmd_uninstall "$@"

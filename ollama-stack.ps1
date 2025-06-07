@@ -431,6 +431,42 @@ function Invoke-Status {
         return
     }
     
+    # Check for zombie containers from other installations
+    try {
+        $currentContainers = @()
+        $composeContainers = docker compose ps -q 2>$null
+        if ($composeContainers) {
+            foreach ($containerId in $composeContainers) {
+                $containerName = docker inspect --format '{{.Name}}' $containerId 2>$null
+                if ($containerName) {
+                    $currentContainers += $containerName.TrimStart('/')
+                }
+            }
+        }
+        
+        $allContainers = docker ps -a --format "{{.Names}}" 2>$null | Where-Object { $_ -match "(webui|ollama|mcp_proxy)" }
+        $zombieContainers = @()
+        
+        foreach ($container in $allContainers) {
+            if ($container -and $container -notin $currentContainers) {
+                $zombieContainers += $container
+            }
+        }
+        
+        if ($zombieContainers.Count -gt 0) {
+            Write-Warning "Found containers from other installations:"
+            foreach ($container in $zombieContainers) {
+                $status = docker ps -a --format "{{.Status}}" --filter "name=$container" 2>$null
+                $ports = docker ps -a --format "{{.Ports}}" --filter "name=$container" 2>$null
+                Write-Status "  • $container ($status) $ports"
+            }
+            Write-Status "Use 'ollama-stack.ps1 cleanup' to remove orphaned resources"
+            Write-Host ""
+        }
+    } catch {
+        # Ignore errors in zombie detection
+    }
+    
     # Check core services
     Write-Status "Core Services:"
     try {
@@ -442,6 +478,19 @@ function Invoke-Status {
         }
     } catch {
         Write-Warning "Failed to get service status"
+    }
+    
+    # Check for orphaned volumes
+    try {
+        $allOllamaVolumes = docker volume ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "(ollama|webui)" -and $_ -notmatch "ollama-stack-1" }
+        if ($allOllamaVolumes.Count -gt 0) {
+            Write-Warning "Found volumes from other installations:"
+            $allOllamaVolumes | ForEach-Object { Write-Host "  $_" }
+            Write-Status "Use 'ollama-stack.ps1 cleanup --volumes' to remove them"
+            Write-Host ""
+        }
+    } catch {
+        # Ignore errors in volume detection
     }
     
     # Check extensions
@@ -1163,6 +1212,163 @@ del "$cleanupScript" 2>nul
     }
 }
 
+function Invoke-Cleanup {
+    param([string[]]$Args)
+    
+    $removeVolumes = $false
+    $force = $false
+    
+    # Parse arguments
+    $i = 0
+    while ($i -lt $Args.Length) {
+        switch ($Args[$i]) {
+            "--volumes" {
+                $removeVolumes = $true
+            }
+            { $_ -in @("-f", "--force") } {
+                $force = $true
+            }
+            default {
+                Write-Error "Unknown option: $($Args[$i])"
+                Write-Host "Usage: ollama-stack.ps1 cleanup [--volumes] [--force]"
+                exit 1
+            }
+        }
+        $i++
+    }
+    
+    Write-Header "Ollama Stack Cleanup"
+    
+    # Check Docker
+    try {
+        $null = docker info 2>$null
+    } catch {
+        Write-Error "Docker is not running"
+        return
+    }
+    
+    # Find all ollama-stack related containers (including stopped ones)
+    $allContainers = docker ps -a --format "{{.Names}}" 2>$null | Where-Object { $_ -match "(webui|ollama|mcp_proxy)" }
+    $currentContainers = @()
+    
+    try {
+        $composeContainers = docker compose ps -q 2>$null
+        if ($composeContainers) {
+            foreach ($containerId in $composeContainers) {
+                $containerName = docker inspect --format '{{.Name}}' $containerId 2>$null
+                if ($containerName) {
+                    $currentContainers += $containerName.TrimStart('/')
+                }
+            }
+        }
+    } catch {
+        # Ignore errors
+    }
+    
+    # Find zombie containers (not managed by current compose)
+    $zombieContainers = @()
+    foreach ($container in $allContainers) {
+        if ($container -and $container -notin $currentContainers) {
+            $zombieContainers += $container
+        }
+    }
+    
+    # Find orphaned volumes
+    $orphanedVolumes = docker volume ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "(ollama|webui)" -and $_ -notmatch "ollama-stack-1" }
+    
+    # Find orphaned networks
+    $orphanedNetworks = docker network ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "ollama" -and $_ -ne "ollama-stack-network" }
+    
+    if ($zombieContainers.Count -eq 0 -and $orphanedVolumes.Count -eq 0 -and $orphanedNetworks.Count -eq 0) {
+        Write-Success "No orphaned ollama-stack resources found!"
+        return
+    }
+    
+    Write-Warning "Found orphaned ollama-stack resources:"
+    
+    if ($zombieContainers.Count -gt 0) {
+        Write-Status "Containers from other installations:"
+        foreach ($container in $zombieContainers) {
+            $status = docker ps -a --format "{{.Status}}" --filter "name=$container" 2>$null
+            Write-Status "  • $container ($status)"
+        }
+    }
+    
+    if ($orphanedVolumes.Count -gt 0 -and $removeVolumes) {
+        Write-Error "Volumes to remove (THIS WILL DELETE DATA!):"
+        foreach ($volume in $orphanedVolumes) {
+            Write-Error "  • $volume"
+        }
+    } elseif ($orphanedVolumes.Count -gt 0) {
+        Write-Status "Volumes found (use --volumes to remove):"
+        foreach ($volume in $orphanedVolumes) {
+            Write-Status "  • $volume"
+        }
+    }
+    
+    if ($orphanedNetworks.Count -gt 0) {
+        Write-Status "Networks to remove:"
+        foreach ($network in $orphanedNetworks) {
+            Write-Status "  • $network"
+        }
+    }
+    
+    if (-not $force) {
+        Write-Host ""
+        $response = Read-Host "Remove these orphaned resources? (y/N)"
+        if ($response -notmatch "^[Yy]$") {
+            Write-Success "Cleanup cancelled."
+            exit 0
+        }
+    }
+    
+    # Remove zombie containers
+    if ($zombieContainers.Count -gt 0) {
+        Write-Status "Removing orphaned containers..."
+        foreach ($container in $zombieContainers) {
+            Write-Status "  Stopping and removing: $container"
+            try {
+                docker stop $container 2>$null | Out-Null
+                docker rm $container 2>$null | Out-Null
+            } catch {
+                # Ignore errors
+            }
+        }
+    }
+    
+    # Remove orphaned volumes if requested
+    if ($orphanedVolumes.Count -gt 0 -and $removeVolumes) {
+        Write-Status "Removing orphaned volumes..."
+        foreach ($volume in $orphanedVolumes) {
+            Write-Status "  Removing volume: $volume"
+            try {
+                docker volume rm $volume 2>$null | Out-Null
+            } catch {
+                # Ignore errors
+            }
+        }
+    }
+    
+    # Remove orphaned networks
+    if ($orphanedNetworks.Count -gt 0) {
+        Write-Status "Removing orphaned networks..."
+        foreach ($network in $orphanedNetworks) {
+            Write-Status "  Removing network: $network"
+            try {
+                docker network rm $network 2>$null | Out-Null
+            } catch {
+                # Ignore errors
+            }
+        }
+    }
+    
+    Write-Success "Cleanup completed!"
+    
+    if ($orphanedVolumes.Count -gt 0 -and -not $removeVolumes) {
+        Write-Warning "Note: Volumes were preserved. Use 'ollama-stack.ps1 cleanup --volumes' to remove them."
+    }
+}
+
 function Invoke-Update {
     param([string[]]$Args)
     
@@ -1388,6 +1594,7 @@ COMMANDS:
     logs [service]       View logs (all services or specific service)
     extensions           Manage extensions
     update               Update to latest versions
+    cleanup              Remove orphaned containers and resources
     uninstall            Completely remove the stack and installation
 
 STACK OPTIONS:
@@ -1405,6 +1612,10 @@ STACK OPTIONS:
 
     update:
         -p, --platform TYPE      Platform: auto, cpu, nvidia, apple (default: auto)
+        -f, --force             Skip confirmation prompt
+
+    cleanup:
+        --volumes               Also remove orphaned volumes (DELETES DATA!)
         -f, --force             Skip confirmation prompt
 
     uninstall:
@@ -1437,6 +1648,8 @@ EXAMPLES:
     .\ollama-stack.ps1 stop --remove-volumes          # Stop and delete all data
     .\ollama-stack.ps1 update                         # Update to latest versions
     .\ollama-stack.ps1 update --force                 # Update without confirmation
+    .\ollama-stack.ps1 cleanup                        # Remove orphaned containers/networks
+    .\ollama-stack.ps1 cleanup --volumes              # Also remove orphaned volumes (DANGER!)
     .\ollama-stack.ps1 status                         # Show current status
     .\ollama-stack.ps1 logs -f                        # Follow all logs
     .\ollama-stack.ps1 logs webui                     # Show WebUI logs only
@@ -1488,6 +1701,9 @@ function Main {
         }
         "update" {
             Invoke-Update $Arguments
+        }
+        "cleanup" {
+            Invoke-Cleanup $Arguments
         }
         "uninstall" {
             Invoke-Uninstall $Arguments

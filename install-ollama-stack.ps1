@@ -62,6 +62,53 @@ if (-not (Test-Path $ToolPath)) {
     exit 1
 }
 
+# Check for existing installations
+$existingInstall = ""
+try {
+    $null = Get-Command ollama-stack -ErrorAction Stop
+    $existingCommand = Get-Command ollama-stack
+    $existingInstall = $existingCommand.Source
+    Write-Warning "Found existing ollama-stack installation at: $existingInstall"
+    
+    Write-Host ""
+    Write-Status "Current installation details:"
+    Write-Status "  Command: $existingInstall"
+    if ($existingCommand.CommandType -eq "Application") {
+        $installDir = Split-Path $existingInstall
+        Write-Status "  Install directory: $installDir"
+    }
+    
+    Write-Host ""
+    Write-Status "For most updates, you should use the update command instead:"
+    Write-Success "  ollama-stack update    # Updates Docker images (Ollama, WebUI, etc.)"
+    Write-Status "  ollama-stack --help    # See all available commands"
+    
+    Write-Host ""
+    Write-Warning "The install script is only needed for CLI tool updates:"
+    Write-Status "  • New ollama-stack script features"
+    Write-Status "  • Updated docker-compose configurations"
+    Write-Status "  • New extensions in the extensions/ directory"
+    Write-Status "  • Bug fixes in the CLI tool itself"
+    
+    Write-Host ""
+    Write-Warning "This will OVERWRITE the CLI installation files!"
+    Write-Status "  • All scripts and compose files will be replaced"
+    Write-Status "  • Extension configurations will be preserved"
+    Write-Status "  • Running containers will NOT be affected"
+    Write-Status "  • No backup will be created"
+    
+    Write-Host ""
+    $response = Read-Host "Continue with CLI tool update? (y/N)"
+    if ($response -notmatch "^[Yy]$") {
+        Write-Status "CLI update cancelled."
+        Write-Status "Run 'ollama-stack update' to update Docker images instead."
+        exit 0
+    }
+    Write-Host ""
+} catch {
+    # Command not found - this is a new installation
+}
+
 # Determine installation method
 $installMethod = ""
 $installPath = ""
@@ -169,34 +216,43 @@ powershell.exe -ExecutionPolicy Bypass -File "$projectInstallPath\ollama-stack.p
             Write-Status "Project files: $projectInstallPath"
             
             # Check if user bin is in PATH
-            $pathDirs = $env:PATH -split ";"
+            $pathDirs = $env:PATH -split ";" | Where-Object { $_ }
             $userBinDir = Split-Path $installPath
             if ($userBinDir -notin $pathDirs) {
                 Write-Warning "$userBinDir is not in your PATH"
                 
-                # Add to PATH automatically
-                try {
-                    Write-Status "Adding $userBinDir to user PATH..."
-                    [Environment]::SetEnvironmentVariable('PATH', $env:PATH + ";$userBinDir", 'User')
-                    
-                    # Update current session PATH
-                    $env:PATH += ";$userBinDir"
-                    
-                    Write-Success "Added $userBinDir to user PATH"
-                    Write-Status "PATH updated for current and future sessions"
-                } catch {
-                    Write-Warning "Failed to update PATH automatically: $($_.Exception.Message)"
-                    Write-Status "Please add manually using one of these options:"
-                    
-                    Write-Status "Option 1 - PowerShell:"
-                    Write-Status "[Environment]::SetEnvironmentVariable('PATH', `$env:PATH + ';$userBinDir', 'User')"
-                    
-                    Write-Status "Option 2 - GUI:"
-                    Write-Status "1. Press Win+R, type 'sysdm.cpl', press Enter"
-                    Write-Status "2. Click 'Environment Variables'"
-                    Write-Status "3. In User variables, select 'Path' and click 'Edit'"
-                    Write-Status "4. Click 'New' and add: $userBinDir"
-                    Write-Status "5. Click OK on all dialogs"
+                # Check if already in user PATH environment variable (avoid duplicates)
+                $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+                $userPathDirs = $userPath -split ";" | Where-Object { $_ }
+                
+                if ($userBinDir -notin $userPathDirs) {
+                    # Add to PATH automatically
+                    try {
+                        Write-Status "Adding $userBinDir to user PATH..."
+                        $newUserPath = if ($userPath) { "$userPath;$userBinDir" } else { $userBinDir }
+                        [Environment]::SetEnvironmentVariable('PATH', $newUserPath, 'User')
+                        
+                        # Update current session PATH
+                        $env:PATH += ";$userBinDir"
+                        
+                                                Write-Success "Added $userBinDir to user PATH"
+                        Write-Status "PATH updated for current and future sessions"
+                    } catch {
+                        Write-Warning "Failed to update PATH automatically: $($_.Exception.Message)"
+                        Write-Status "Please add manually using one of these options:"
+                        
+                        Write-Status "Option 1 - PowerShell:"
+                        Write-Status "[Environment]::SetEnvironmentVariable('PATH', `$env:PATH + ';$userBinDir', 'User')"
+                        
+                        Write-Status "Option 2 - GUI:"
+                        Write-Status "1. Press Win+R, type 'sysdm.cpl', press Enter"
+                        Write-Status "2. Click 'Environment Variables'"
+                        Write-Status "3. In User variables, select 'Path' and click 'Edit'"
+                        Write-Status "4. Click 'New' and add: $userBinDir"
+                        Write-Status "5. Click OK on all dialogs"
+                    }
+                } else {
+                    Write-Status "$userBinDir already in user PATH"
                 }
             } else {
                 Write-Status "You can now use 'ollama-stack' from any command prompt"
@@ -237,6 +293,7 @@ powershell.exe -ExecutionPolicy Bypass -File "$projectInstallPath\ollama-stack.p
 if ($installMethod -ne "manual") {
     Write-Header "Quick Start"
     Write-Status "ollama-stack start                          # Start the stack"
+    Write-Status "ollama-stack update                         # Update Docker images"
     Write-Status "ollama-stack extensions enable dia-tts-mcp  # Enable TTS extension"
     Write-Status "ollama-stack extensions start dia-tts-mcp   # Start TTS extension"
     Write-Status "ollama-stack status                         # Check status"

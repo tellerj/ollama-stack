@@ -52,6 +52,54 @@ if [ ! -f "$TOOL_PATH" ]; then
     exit 1
 fi
 
+# Check for existing installations
+existing_install=""
+if command -v ollama-stack >/dev/null 2>&1; then
+    existing_path=$(which ollama-stack)
+    existing_install="$existing_path"
+    print_warning "Found existing ollama-stack installation at: $existing_path"
+    
+    # Try to get version info
+    if [ -x "$existing_path" ]; then
+        echo ""
+        print_status "Current installation details:"
+        if ollama-stack --help >/dev/null 2>&1; then
+            install_dir=$(dirname "$(readlink -f "$existing_path" 2>/dev/null || echo "$existing_path")")
+            print_status "  Command: $existing_path"
+            print_status "  Install directory: $install_dir"
+        fi
+    fi
+    
+    echo ""
+    print_status "For most updates, you should use the update command instead:"
+    print_success "  ollama-stack update    # Updates Docker images (Ollama, WebUI, etc.)"
+    print_status "  ollama-stack --help    # See all available commands"
+    
+    echo ""
+    print_warning "The install script is only needed for CLI tool updates:"
+    print_status "  • New ollama-stack script features"
+    print_status "  • Updated docker-compose configurations"  
+    print_status "  • New extensions in the extensions/ directory"
+    print_status "  • Bug fixes in the CLI tool itself"
+    
+    echo ""
+    print_warning "This will OVERWRITE the CLI installation files!"
+    print_status "  • All scripts and compose files will be replaced"
+    print_status "  • Extension configurations will be preserved"
+    print_status "  • Running containers will NOT be affected"
+    print_status "  • No backup will be created"
+    
+    echo ""
+    read -p "Continue with CLI tool update? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_status "CLI update cancelled."
+        print_status "Run 'ollama-stack update' to update Docker images instead."
+        exit 0
+    fi
+    echo ""
+fi
+
 # Make sure it's executable
 chmod +x "$TOOL_PATH"
 
@@ -162,21 +210,23 @@ EOF
                 *) shell_config="$HOME/.profile" ;;
             esac
             
-            # Add to PATH automatically
+            # Add to PATH automatically (avoid duplicates)
             path_export="export PATH=\"$bin_dir:\$PATH\""
-            if [ -f "$shell_config" ] && ! grep -q "$bin_dir" "$shell_config"; then
-                echo "" >> "$shell_config"
-                echo "# Added by ollama-stack installer" >> "$shell_config"
-                echo "$path_export" >> "$shell_config"
-                print_success "Added $bin_dir to PATH in $shell_config"
-                print_status "Restart your terminal or run: source $shell_config"
+            if [ -f "$shell_config" ]; then
+                if ! grep -q "$bin_dir" "$shell_config"; then
+                    echo "" >> "$shell_config"
+                    echo "# Added by ollama-stack installer" >> "$shell_config"
+                    echo "$path_export" >> "$shell_config"
+                    print_success "Added $bin_dir to PATH in $shell_config"
+                    print_status "Restart your terminal or run: source $shell_config"
+                else
+                    print_status "$bin_dir already in $shell_config"
+                fi
             elif [ ! -f "$shell_config" ]; then
                 echo "# Added by ollama-stack installer" > "$shell_config"
                 echo "$path_export" >> "$shell_config"
                 print_success "Created $shell_config and added $bin_dir to PATH"
                 print_status "Restart your terminal or run: source $shell_config"
-            else
-                print_status "$bin_dir already in $shell_config"
             fi
             
             # Also export for current session
@@ -220,6 +270,7 @@ esac
 
 print_header "Quick Start"
 print_status "ollama-stack start                          # Start the stack"
+print_status "ollama-stack update                         # Update Docker images"
 print_status "ollama-stack extensions enable dia-tts-mcp  # Enable TTS extension"
 print_status "ollama-stack extensions start dia-tts-mcp   # Start TTS extension"
 print_status "ollama-stack status                         # Check status"
