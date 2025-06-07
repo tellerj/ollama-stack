@@ -1002,9 +1002,6 @@ EOF
         print_success "Installation files removed!"
         print_warning "Note: Restart your terminal or run 'hash -r' to clear command cache."
     fi
-    
-    print_status "To remove Docker completely, run:"
-    print_status "  docker system prune -a --volumes"
 }
 
 cmd_update() {

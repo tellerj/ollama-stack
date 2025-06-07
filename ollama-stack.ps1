@@ -1161,9 +1161,6 @@ del "$cleanupScript" 2>nul
         Write-Success "Installation files removed!"
         Write-Warning "Note: Restart your terminal to clear command cache."
     }
-    
-    Write-Status "To remove Docker completely, run:"
-    Write-Status "  docker system prune -a --volumes"
 }
 
 function Invoke-Update {
