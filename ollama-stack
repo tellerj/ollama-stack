@@ -105,6 +105,154 @@ check_docker() {
     fi
 }
 
+# Smart WEBUI_SECRET_KEY management for fresh vs existing installs
+manage_webui_secret_key() {
+    local env_file=".env"
+    local webui_volume_exists=false
+    local backup_file="${env_file}.backup"
+    
+    # Validate environment file permissions and backup if needed
+    if [ -f "$env_file" ]; then
+        if [ ! -w "$env_file" ]; then
+            print_warning "Environment file $env_file is not writable"
+            return 1
+        fi
+        # Create backup of existing .env file
+        cp "$env_file" "$backup_file" 2>/dev/null || true
+    fi
+    
+    # Check if webui_data volume exists (indicates existing installation)
+    if docker volume ls --format "{{.Name}}" 2>/dev/null | grep -q "^ollama-stack-1_webui_data$\|^webui_data$"; then
+        webui_volume_exists=true
+    fi
+    
+    if [ "$webui_volume_exists" = true ]; then
+        # Existing installation - ensure we have a persistent key
+        local has_key=false
+        if [ -f "$env_file" ] && grep -q "^WEBUI_SECRET_KEY=" "$env_file" 2>/dev/null; then
+            has_key=true
+        fi
+        
+        if [ "$has_key" = false ]; then
+            print_status "Existing installation detected - generating persistent secret key"
+            
+            # Ensure we can generate a secure key
+            if ! command -v openssl >/dev/null 2>&1; then
+                print_warning "OpenSSL not found, using fallback key generation"
+                local secret_key="ollama-stack-$(date +%s)-$(shuf -i 1000-9999 -n 1 2>/dev/null || echo $RANDOM)"
+            else
+                local secret_key=$(openssl rand -hex 32 2>/dev/null)
+                if [ -z "$secret_key" ]; then
+                    print_warning "OpenSSL key generation failed, using fallback"
+                    secret_key="ollama-stack-$(date +%s)-$(shuf -i 1000-9999 -n 1 2>/dev/null || echo $RANDOM)"
+                fi
+            fi
+            
+            # Add key to .env file
+            if echo "WEBUI_SECRET_KEY=$secret_key" >> "$env_file" 2>/dev/null; then
+                print_success "Secret key generated and saved to $env_file"
+            else
+                print_error "Failed to write secret key to $env_file"
+                return 1
+            fi
+        else
+            print_status "Using existing secret key for user session persistence"
+        fi
+    else
+        # Fresh installation - no key needed (triggers initial setup screen)
+        print_status "Fresh installation detected - initial admin setup will be required"
+        
+        # Create or clean .env file
+        if [ -f "$env_file" ]; then
+            # Remove any existing WEBUI_SECRET_KEY to ensure fresh setup
+            if grep -v "^WEBUI_SECRET_KEY=" "$env_file" > "$env_file.tmp" 2>/dev/null; then
+                mv "$env_file.tmp" "$env_file" 2>/dev/null || {
+                    print_warning "Failed to clean existing .env file"
+                    rm -f "$env_file.tmp" 2>/dev/null || true
+                }
+            else
+                print_warning "Failed to process existing .env file"
+            fi
+        else
+            # Create new .env file with header
+            cat > "$env_file" 2>/dev/null << 'EOF' || {
+                print_error "Failed to create $env_file"
+                return 1
+            }
+# Ollama Stack Environment Variables
+# This file is automatically managed by ollama-stack
+# WEBUI_SECRET_KEY will be generated after initial setup
+
+EOF
+        fi
+    fi
+    
+    # Validate .env file format
+    if [ -f "$env_file" ]; then
+        if ! validate_env_file "$env_file"; then
+            print_warning "Environment file validation failed, restoring backup"
+            if [ -f "$backup_file" ]; then
+                mv "$backup_file" "$env_file" 2>/dev/null || true
+            fi
+            return 1
+        fi
+        # Remove backup if validation successful
+        rm -f "$backup_file" 2>/dev/null || true
+    fi
+    
+    return 0
+}
+
+# Validate .env file format
+validate_env_file() {
+    local env_file="$1"
+    
+    if [ ! -f "$env_file" ]; then
+        return 1
+    fi
+    
+    # Check for basic syntax issues
+    while IFS= read -r line; do
+        # Skip empty lines and comments
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+        
+        # Check for valid KEY=VALUE format
+        if [[ ! "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            print_warning "Invalid line in $env_file: $line"
+            return 1
+        fi
+    done < "$env_file"
+    
+    return 0
+}
+
+# Validate Docker Compose environment integration
+validate_compose_environment() {
+    local compose_files=("$@")
+    
+    # Test if docker compose can parse config with current environment
+    if ! docker compose "${compose_files[@]}" config >/dev/null 2>&1; then
+        print_warning "Docker Compose configuration validation failed"
+        return 1
+    fi
+    
+    # Check if WEBUI_SECRET_KEY is properly resolved (only for existing installs)
+    local config_output
+    if config_output=$(docker compose "${compose_files[@]}" config 2>/dev/null); then
+        if echo "$config_output" | grep -q "WEBUI_SECRET_KEY.*\${WEBUI_SECRET_KEY}"; then
+            # Variable not resolved - check if it should be
+            if [ -f ".env" ] && grep -q "^WEBUI_SECRET_KEY=" ".env"; then
+                print_warning "WEBUI_SECRET_KEY variable not resolved by Docker Compose"
+                return 1
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
 # Wait for service health
 wait_for_service() {
     local service_name=$1
@@ -259,8 +407,20 @@ cmd_start() {
     
     check_docker
     
+    # Smart WEBUI_SECRET_KEY management for fresh vs existing installs
+    if ! manage_webui_secret_key; then
+        print_error "Failed to manage environment configuration"
+        print_status "You can manually create a .env file or run with --skip-env-check (not implemented)"
+        exit 1
+    fi
+    
     # Get compose files
     local compose_files=($(get_compose_files $platform))
+    
+    # Verify Docker Compose can read environment
+    if ! validate_compose_environment "${compose_files[@]}"; then
+        print_warning "Environment validation failed, but continuing..."
+    fi
     
     case $platform in
         nvidia)

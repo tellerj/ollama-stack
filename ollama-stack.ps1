@@ -118,6 +118,186 @@ function Test-DockerRunning {
     }
 }
 
+# Smart WEBUI_SECRET_KEY management for fresh vs existing installs
+function Set-WebuiSecretKey {
+    $envFile = ".env"
+    $backupFile = "$envFile.backup"
+    $webuiVolumeExists = $false
+    
+    # Validate environment file permissions and backup if needed
+    if (Test-Path $envFile) {
+        try {
+            # Test write permissions
+            $testContent = Get-Content $envFile -ErrorAction Stop
+            Copy-Item $envFile $backupFile -Force -ErrorAction Stop
+        } catch {
+            Write-Warning "Environment file $envFile is not accessible: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    
+    # Check if webui_data volume exists (indicates existing installation)
+    try {
+        $volumes = docker volume ls --format "{{.Name}}" 2>$null
+        if ($volumes -match "^ollama-stack-1_webui_data$|^webui_data$") {
+            $webuiVolumeExists = $true
+        }
+    } catch {
+        Write-Warning "Failed to check Docker volumes: $($_.Exception.Message)"
+    }
+    
+    if ($webuiVolumeExists) {
+        # Existing installation - ensure we have a persistent key
+        $hasKey = $false
+        if (Test-Path $envFile) {
+            try {
+                $envContent = Get-Content $envFile -ErrorAction SilentlyContinue
+                if ($envContent -match "^WEBUI_SECRET_KEY=") {
+                    $hasKey = $true
+                }
+            } catch {
+                Write-Warning "Failed to read existing .env file: $($_.Exception.Message)"
+            }
+        }
+        
+        if (-not $hasKey) {
+            Write-Status "Existing installation detected - generating persistent secret key"
+            
+            # Generate a secure random key
+            try {
+                Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
+                $randomKey = [System.Web.Security.Membership]::GeneratePassword(64, 0)
+            } catch {
+                # Fallback key generation
+                $randomKey = "ollama-stack-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())-$(Get-Random -Minimum 1000 -Maximum 9999)"
+                Write-Warning "Using fallback key generation method"
+            }
+            
+            # Add key to .env file
+            try {
+                "WEBUI_SECRET_KEY=$randomKey" | Add-Content $envFile -ErrorAction Stop
+                Write-Success "Secret key generated and saved to $envFile"
+            } catch {
+                Write-Error "Failed to write secret key to $envFile`: $($_.Exception.Message)"
+                return $false
+            }
+        } else {
+            Write-Status "Using existing secret key for user session persistence"
+        }
+    } else {
+        # Fresh installation - no key needed (triggers initial setup screen)
+        Write-Status "Fresh installation detected - initial admin setup will be required"
+        
+        # Create or clean .env file
+        try {
+            if (Test-Path $envFile) {
+                # Remove any existing WEBUI_SECRET_KEY to ensure fresh setup
+                $envContent = Get-Content $envFile -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch "^WEBUI_SECRET_KEY=" }
+                $envContent | Set-Content $envFile -ErrorAction Stop
+            } else {
+                # Create new .env file with header
+                $envTemplate = @"
+# Ollama Stack Environment Variables
+# This file is automatically managed by ollama-stack
+# WEBUI_SECRET_KEY will be generated after initial setup
+
+"@
+                $envTemplate | Set-Content $envFile -ErrorAction Stop
+            }
+        } catch {
+            Write-Error "Failed to create/update .env file: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    
+    # Validate .env file format
+    if (Test-Path $envFile) {
+        if (-not (Test-EnvFileFormat $envFile)) {
+            Write-Warning "Environment file validation failed, restoring backup"
+            if (Test-Path $backupFile) {
+                try {
+                    Move-Item $backupFile $envFile -Force -ErrorAction Stop
+                } catch {
+                    Write-Warning "Failed to restore backup: $($_.Exception.Message)"
+                }
+            }
+            return $false
+        }
+        # Remove backup if validation successful
+        if (Test-Path $backupFile) {
+            Remove-Item $backupFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+    
+    return $true
+}
+
+# Validate .env file format
+function Test-EnvFileFormat {
+    param([string]$EnvFile)
+    
+    if (-not (Test-Path $EnvFile)) {
+        return $false
+    }
+    
+    try {
+        $lines = Get-Content $EnvFile -ErrorAction Stop
+        foreach ($line in $lines) {
+            $trimmedLine = $line.Trim()
+            
+            # Skip empty lines and comments
+            if ([string]::IsNullOrWhiteSpace($trimmedLine) -or $trimmedLine.StartsWith('#')) {
+                continue
+            }
+            
+            # Check for valid KEY=VALUE format
+            if ($trimmedLine -notmatch '^[A-Za-z_][A-Za-z0-9_]*=') {
+                Write-Warning "Invalid line in $EnvFile`: $line"
+                return $false
+            }
+        }
+        return $true
+    } catch {
+        Write-Warning "Failed to validate $EnvFile`: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Validate Docker Compose environment integration
+function Test-ComposeEnvironment {
+    param([string[]]$ComposeFiles)
+    
+    # Test if docker compose can parse config with current environment
+    try {
+        $configCmd = @("docker", "compose") + $ComposeFiles + @("config")
+        $null = & $configCmd[0] $configCmd[1..($configCmd.Length-1)] 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Docker Compose configuration validation failed"
+            return $false
+        }
+    } catch {
+        Write-Warning "Failed to validate Docker Compose configuration: $($_.Exception.Message)"
+        return $false
+    }
+    
+    # Check if WEBUI_SECRET_KEY is properly resolved (only for existing installs)
+    try {
+        $configCmd = @("docker", "compose") + $ComposeFiles + @("config")
+        $configOutput = & $configCmd[0] $configCmd[1..($configCmd.Length-1)] 2>$null
+        if ($configOutput -match "WEBUI_SECRET_KEY.*\$\{WEBUI_SECRET_KEY\}") {
+            # Variable not resolved - check if it should be
+            if ((Test-Path ".env") -and (Get-Content ".env" -ErrorAction SilentlyContinue | Where-Object { $_ -match "^WEBUI_SECRET_KEY=" })) {
+                Write-Warning "WEBUI_SECRET_KEY variable not resolved by Docker Compose"
+                return $false
+            }
+        }
+    } catch {
+        Write-Warning "Failed to check environment variable resolution: $($_.Exception.Message)"
+    }
+    
+    return $true
+}
+
 # Wait for service health
 function Wait-ForService {
     param(
@@ -283,8 +463,20 @@ function Invoke-Start {
     
     Test-DockerRunning
     
+    # Smart WEBUI_SECRET_KEY management for fresh vs existing installs
+    if (-not (Set-WebuiSecretKey)) {
+        Write-Error "Failed to manage environment configuration"
+        Write-Status "You can manually create a .env file with WEBUI_SECRET_KEY"
+        exit 1
+    }
+    
     # Get compose files
     $composeFiles = Get-ComposeFiles -Platform $platform
+    
+    # Verify Docker Compose can read environment
+    if (-not (Test-ComposeEnvironment $composeFiles)) {
+        Write-Warning "Environment validation failed, but continuing..."
+    }
     
     switch ($platform) {
         "nvidia" {

@@ -14,7 +14,7 @@ services:
     environment:
       # Override: Point to host machine's Ollama instance
       - OLLAMA_API_BASE_URL=http://host.docker.internal:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-ollama-stack-default-secret-key}
+      # WEBUI_SECRET_KEY will be set dynamically by start command when needed
 
   # MCP Proxy uses its base configuration from docker-compose.yml
   # No override needed for Apple Silicon 
