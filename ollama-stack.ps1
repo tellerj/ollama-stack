@@ -196,7 +196,7 @@ function Set-WebuiSecretKey {
             $envContent = Get-Content $envFile -ErrorAction SilentlyContinue
             $volumeNameLine = $envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }
             if ($volumeNameLine) {
-                $volumeName = ($volumeNameLine -split "=")[1]
+                $volumeName = ($volumeNameLine -split "=", 2)[1]
                 if ($volumes -match "^$([regex]::Escape($volumeName))$") {
                     $webuiVolumeExists = $true
                 }
@@ -776,24 +776,24 @@ function Invoke-Status {
         return
     }
     
-    # Check for zombie containers from other installations
-    try {
-        $currentContainers = @()
-        $composeContainers = docker compose ps -q 2>$null
-        if ($composeContainers) {
-            foreach ($containerId in $composeContainers) {
-                $containerName = docker inspect --format '{{.Name}}' $containerId 2>$null
-                if ($containerName) {
-                    $currentContainers += $containerName.TrimStart('/')
-                }
-            }
+    # Get our installation name from .env
+    $projectName = "ollama-stack"  # default
+    if (Test-Path ".env") {
+        $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
+        $projectLine = $envContent | Where-Object { $_ -match "^PROJECT_NAME=" }
+        if ($projectLine) {
+            $projectName = ($projectLine -split "=", 2)[1]
         }
-        
-        $allContainers = docker ps -a --format "{{.Names}}" 2>$null | Where-Object { $_ -match "(webui|ollama|mcp_proxy)" }
+    }
+    
+    # Check for zombie containers from other installations using labels
+    try {
+        $ourContainers = docker ps -a --filter "label=ollama-stack.installation=$projectName" --format "{{.Names}}" 2>$null | Where-Object { $_ }
+        $allOllamaContainers = docker ps -a --filter "label=ollama-stack.installation" --format "{{.Names}}" 2>$null | Where-Object { $_ }
         $zombieContainers = @()
         
-        foreach ($container in $allContainers) {
-            if ($container -and $container -notin $currentContainers) {
+        foreach ($container in $allOllamaContainers) {
+            if ($container -and $container -notin $ourContainers) {
                 $zombieContainers += $container
             }
         }
@@ -1440,7 +1440,7 @@ function Invoke-Uninstall {
     # Remove volumes
     if ($removeVolumes) {
         Write-Status "Removing volumes..."
-o        
+        
         try {
             # Find volumes using exact names from .env if available, fallback to patterns
             $allVolumes = docker volume ls --format "{{.Name}}" 2>$null
@@ -1449,8 +1449,11 @@ o
             # Try to get exact volume names from .env
             if (Test-Path ".env") {
                 $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
-                $ollamaVolume = ($envContent | Where-Object { $_ -match "^OLLAMA_VOLUME_NAME=" }) -replace "OLLAMA_VOLUME_NAME=", ""
-                $webuiVolume = ($envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }) -replace "WEBUI_VOLUME_NAME=", ""
+                $ollamaVolumeLine = $envContent | Where-Object { $_ -match "^OLLAMA_VOLUME_NAME=" }
+                $webuiVolumeLine = $envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }
+                
+                $ollamaVolume = if ($ollamaVolumeLine) { ($ollamaVolumeLine -split "=", 2)[1] } else { "" }
+                $webuiVolume = if ($webuiVolumeLine) { ($webuiVolumeLine -split "=", 2)[1] } else { "" }
                 
                 if ($ollamaVolume -and ($allVolumes -contains $ollamaVolume)) {
                     $projectVolumes += $ollamaVolume
@@ -1506,9 +1509,9 @@ o
         # Try to get exact network name from .env
         if (Test-Path ".env") {
             $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
-            $envNetworkName = ($envContent | Where-Object { $_ -match "^NETWORK_NAME=" }) -replace "NETWORK_NAME=", ""
-            if ($envNetworkName) {
-                $networkName = $envNetworkName
+            $networkLine = $envContent | Where-Object { $_ -match "^NETWORK_NAME=" }
+            if ($networkLine) {
+                $networkName = ($networkLine -split "=", 2)[1]
             }
         }
         
@@ -1638,25 +1641,26 @@ function Invoke-Cleanup {
         return
     }
     
-    # Find all ollama-stack related containers (including stopped ones)
-    $allContainers = docker ps -a --format "{{.Names}}" 2>$null | Where-Object { $_ -match "(webui|ollama|mcp_proxy)" }
-    $currentContainers = @()
-    
-    try {
-        $composeContainers = docker compose ps -q 2>$null
-        if ($composeContainers) {
-            foreach ($containerId in $composeContainers) {
-                $containerName = docker inspect --format '{{.Name}}' $containerId 2>$null
-                if ($containerName) {
-                    $currentContainers += $containerName.TrimStart('/')
-                }
-            }
+    # Get our installation name from .env
+    $projectName = "ollama-stack"  # default
+    if (Test-Path ".env") {
+        $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
+        $projectLine = $envContent | Where-Object { $_ -match "^PROJECT_NAME=" }
+        if ($projectLine) {
+            $projectName = ($projectLine -split "=", 2)[1]
         }
-    } catch {
-        # Ignore errors
     }
     
-    # Find zombie containers (not managed by current compose)
+    # Find all ollama-stack related containers using Docker labels (robust approach)
+    try {
+        $allContainers = docker ps -a --filter "label=ollama-stack.installation" --format "{{.Names}}" 2>$null | Where-Object { $_ }
+        $currentContainers = docker ps -a --filter "label=ollama-stack.installation=$projectName" --format "{{.Names}}" 2>$null | Where-Object { $_ }
+    } catch {
+        $allContainers = @()
+        $currentContainers = @()
+    }
+    
+    # Find zombie containers (not managed by current installation)
     $zombieContainers = @()
     foreach ($container in $allContainers) {
         if ($container -and $container -notin $currentContainers) {
@@ -1671,8 +1675,11 @@ function Invoke-Cleanup {
     # Try to get exact volume names from .env first
     if (Test-Path ".env") {
         $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
-        $ollamaVolume = ($envContent | Where-Object { $_ -match "^OLLAMA_VOLUME_NAME=" }) -replace "OLLAMA_VOLUME_NAME=", ""
-        $webuiVolume = ($envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }) -replace "WEBUI_VOLUME_NAME=", ""
+        $ollamaVolumeLine = $envContent | Where-Object { $_ -match "^OLLAMA_VOLUME_NAME=" }
+        $webuiVolumeLine = $envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }
+        
+        $ollamaVolume = if ($ollamaVolumeLine) { ($ollamaVolumeLine -split "=", 2)[1] } else { "" }
+        $webuiVolume = if ($webuiVolumeLine) { ($webuiVolumeLine -split "=", 2)[1] } else { "" }
         
         if ($ollamaVolume -and ($allVolumes -contains $ollamaVolume)) {
             $orphanedVolumes += $ollamaVolume

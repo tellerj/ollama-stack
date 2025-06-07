@@ -656,13 +656,16 @@ cmd_status() {
         return 1
     fi
     
-    # Check for zombie containers from other installations
-    local current_containers=$(docker compose ps -q 2>/dev/null | xargs -I {} docker inspect --format '{{.Name}}' {} 2>/dev/null | sed 's/^\/*//' || true)
-    local all_containers=$(docker ps -a --format "{{.Names}}" | grep -E "(webui|ollama|mcp_proxy)" 2>/dev/null || true)
+    # Get our installation name from .env
+    local project_name=$(grep "^PROJECT_NAME=" ".env" 2>/dev/null | cut -d'=' -f2 || echo "ollama-stack")
+    
+    # Check for zombie containers from other installations using labels
+    local our_containers=$(docker ps -a --filter "label=ollama-stack.installation=${project_name}" --format "{{.Names}}" 2>/dev/null || true)
+    local all_ollama_containers=$(docker ps -a --filter "label=ollama-stack.installation" --format "{{.Names}}" 2>/dev/null || true)
     
     local zombie_containers=""
-    for container in $all_containers; do
-        if [[ ! "$current_containers" =~ (^|[[:space:]])$container($|[[:space:]]) ]]; then
+    for container in $all_ollama_containers; do
+        if [[ ! "$our_containers" =~ (^|[[:space:]])$container($|[[:space:]]) ]]; then
             if [ -z "$zombie_containers" ]; then
                 zombie_containers="$container"
             else
@@ -1391,9 +1394,12 @@ cmd_cleanup() {
         return 1
     fi
     
-    # Find all ollama-stack related containers (including stopped ones)
-    local all_containers=$(docker ps -a --format "{{.Names}}" | grep -E "(webui|ollama|mcp_proxy)" 2>/dev/null || true)
-    local current_containers=$(docker compose ps -q 2>/dev/null | xargs -I {} docker inspect --format '{{.Name}}' {} 2>/dev/null | sed 's/^\/*//' || true)
+    # Get our installation name from .env
+    local project_name=$(grep "^PROJECT_NAME=" ".env" 2>/dev/null | cut -d'=' -f2 || echo "ollama-stack")
+    
+    # Find all ollama-stack related containers (including stopped ones) using labels
+    local all_containers=$(docker ps -a --filter "label=ollama-stack.installation" --format "{{.Names}}" 2>/dev/null || true)
+    local current_containers=$(docker ps -a --filter "label=ollama-stack.installation=${project_name}" --format "{{.Names}}" 2>/dev/null || true)
     
     # Find zombie containers (not managed by current compose)
     local zombie_containers=""
