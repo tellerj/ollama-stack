@@ -11,13 +11,13 @@ if ($Help) {
     Write-Host @"
 Ollama Stack CLI Installation Script
 
-Usage: .\install.ps1 [options]
+Usage: .\install-ollama-stack.ps1 [options]
 
 Options:
   -Help            Show this help message
 
 Examples:
-  .\install.ps1                      # Install with automatic detection
+  .\install-ollama-stack.ps1         # Install with automatic detection
 "@
     exit 0
 }

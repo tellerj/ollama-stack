@@ -180,7 +180,7 @@ ollama-stack extensions info dia-tts-mcp        # Check extension details
 - **NVIDIA GPU**: Detects and utilizes CUDA acceleration through Docker
 - **CPU Fallback**: Works on any Windows system with Docker Desktop
 - **PowerShell Integration**: Full feature parity with Unix version
-- **Windows-specific installer** (`install.ps1`) and documentation
+- **Windows-specific installer** (`install-ollama-stack.ps1`) and documentation
 
 Both versions provide:
 - **Identical functionality** and command structure
