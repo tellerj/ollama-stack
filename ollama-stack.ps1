@@ -27,12 +27,12 @@ function Write-ColorOutput {
 function Write-Header {
     param([string]$Message)
     Write-Host ""
-    Write-ColorOutput "==== $Message ====" -ForegroundColor Cyan
+    Write-ColorOutput "==== $Message ====" -ForegroundColor White
 }
 
 function Write-Status {
     param([string]$Message)
-    Write-ColorOutput "[*] $Message" -ForegroundColor Blue
+    Write-ColorOutput "[*] $Message" -ForegroundColor Cyan
 }
 
 function Write-Success {
@@ -73,6 +73,40 @@ function Get-Platform {
     return "cpu"
 }
 
+# Check for available updates
+function Test-ForUpdates {
+    param([string]$Platform)
+    
+    # Simple check: if images are older than 7 days, suggest update
+    $oldImages = @()
+    
+    # Check core images based on platform  
+    $imagesToCheck = @()
+    if ($Platform -ne "apple") {
+        $imagesToCheck += "ollama/ollama:latest"
+    }
+    $imagesToCheck += "ghcr.io/open-webui/open-webui:main", "ghcr.io/open-webui/mcpo:main"
+    
+    foreach ($image in $imagesToCheck) {
+        try {
+            # Check if image is older than 7 days using CreatedSince
+            $imageInfo = docker images --format "table {{.Repository}}:{{.Tag}}`t{{.CreatedSince}}" 2>$null | Where-Object { $_ -match [regex]::Escape($image) }
+            if ($imageInfo -and ($imageInfo -match "[8-9] days ago|[1-9][0-9] days ago|[1-9] weeks ago|[1-9] months ago")) {
+                $serviceName = ($image -split '/')[1..999] -join '/' -replace ':.*', ''
+                $oldImages += $serviceName
+            }
+        } catch {
+            # Ignore errors when checking for updates
+        }
+    }
+    
+    # Display simple notification if old images found
+    if ($oldImages.Count -gt 0) {
+        Write-Warning "Some images may have updates available"
+        Write-Status "Run 'ollama-stack.ps1 update' to get the latest versions"
+    }
+}
+
 # Check if Docker is running
 function Test-DockerRunning {
     try {
@@ -108,7 +142,7 @@ function Wait-ForService {
         
         Start-Sleep -Seconds 5
         $elapsed += 5
-        Write-ColorOutput "   Still waiting... ($elapsed/$MaxWaitSeconds seconds)" -ForegroundColor Gray
+        Write-Status "Still waiting... ($elapsed/$MaxWaitSeconds seconds)"
     }
     
     Write-Error "$ServiceName failed to start within $MaxWaitSeconds seconds"
@@ -254,40 +288,45 @@ function Invoke-Start {
     
     switch ($platform) {
         "nvidia" {
-            Write-ColorOutput "Using NVIDIA GPU acceleration" -ForegroundColor Magenta
+            Write-Status "Using NVIDIA GPU acceleration"
         }
         "apple" {
-            Write-ColorOutput "Using Apple Silicon configuration" -ForegroundColor Magenta
+            Write-Status "Using Apple Silicon configuration"
             Write-Warning "Make sure native Ollama app is running!"
         }
         "cpu" {
-            Write-ColorOutput "Using CPU-only configuration" -ForegroundColor Magenta
+            Write-Status "Using CPU-only configuration"
         }
     }
     
     # Start core stack
     Write-Status "Starting core stack..."
-    $dockerCmd = @("docker", "compose") + $composeFiles + @("up", "-d")
     
-    try {
-        & $dockerCmd[0] $dockerCmd[1..($dockerCmd.Length-1)]
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to start core stack"
-            exit 1
+    # Pull latest images if update flag is set
+    if ($autoUpdate) {
+        Write-Status "Pulling latest images..."
+        try {
+            $pullCmd = @("docker", "compose") + $composeFiles + @("pull")
+            & $pullCmd[0] $pullCmd[1..($pullCmd.Length-1)] 2>$null
+        } catch {
+            Write-Warning "Failed to pull some images, continuing with existing images..."
         }
-    } catch {
-        Write-Error "Failed to start core stack: $($_.Exception.Message)"
+    }
+    
+    $composeCmd = @("docker", "compose") + $composeFiles + @("up", "-d")
+    $result = & $composeCmd[0] $composeCmd[1..($composeCmd.Length-1)] 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to start core stack: $result"
         exit 1
     }
     
     # Wait for services
     Write-Status "Waiting for core services..."
     
-    if ($platform -ne "apple") {
-        if (-not (Wait-ForService -ServiceName "Ollama" -Url "http://localhost:11434")) {
-            Write-Error "Ollama failed to start"
-            exit 1
-        }
+    # Always check Ollama health - it's required for Open WebUI
+    if (-not (Wait-ForService -ServiceName "Ollama" -Url "http://localhost:11434")) {
+        Write-Error "Ollama failed to start"
+        exit 1
     }
     
     if (-not (Wait-ForService -ServiceName "Open WebUI" -Url "http://localhost:8080")) {
@@ -301,15 +340,17 @@ function Invoke-Start {
     }
     
     Write-Header "Stack Started Successfully!"
-    Write-ColorOutput "Services:" -ForegroundColor White
-    Write-ColorOutput "  • Open WebUI: http://localhost:8080" -ForegroundColor Green
-    if ($platform -ne "apple") {
-        Write-ColorOutput "  • Ollama API: http://localhost:11434" -ForegroundColor Green
-    }
-    Write-ColorOutput "  • MCP Proxy: http://localhost:8200" -ForegroundColor Green
-    Write-ColorOutput "  • MCP Docs: http://localhost:8200/docs" -ForegroundColor Green
-    Write-Host ""
+    Write-Status "Services:"
+    Write-Success "  • Open WebUI: http://localhost:8080"
+    Write-Success "  • Ollama API: http://localhost:11434"
+    Write-Success "  • MCP Proxy: http://localhost:8200"
+    Write-Success "  • MCP Docs: http://localhost:8200/docs"
     Write-Success "Ready! Visit http://localhost:8080 to get started."
+    
+    # Check for updates if we didn't just update
+    if (-not $autoUpdate) {
+        Test-ForUpdates -Platform $platform
+    }
 }
 
 function Invoke-Stop {
@@ -391,7 +432,7 @@ function Invoke-Status {
     }
     
     # Check core services
-    Write-ColorOutput "Core Services:" -ForegroundColor Cyan
+    Write-Status "Core Services:"
     try {
         $services = docker compose ps --format "table {{.Service}}`t{{.Status}}`t{{.Ports}}" 2>$null
         if ($services) {
@@ -404,8 +445,7 @@ function Invoke-Status {
     }
     
     # Check extensions
-    Write-Host ""
-    Write-ColorOutput "Extensions:" -ForegroundColor Cyan
+    Write-Status "Extensions:"
     Invoke-ExtensionsList
 }
 
@@ -504,18 +544,18 @@ function Invoke-ExtensionsList {
         }
         
         $enabled = Test-ExtensionEnabled $extName
-        $statusIcon = "❌"
+        $statusIcon = "[DISABLED]"
         $statusText = "disabled"
         
         if ($enabled) {
-            $statusIcon = "✅"
+            $statusIcon = "[ENABLED]"
             $statusText = "enabled"
             
             # Check if running
             try {
                 $runningContainers = docker ps --format "table {{.Names}}" 2>$null
                 if ($runningContainers -match "^$extName$") {
-                    $statusIcon = "🟢"
+                    $statusIcon = "[RUNNING]"
                     $statusText = "running"
                 }
             } catch {
@@ -523,7 +563,7 @@ function Invoke-ExtensionsList {
             }
         }
         
-        Write-ColorOutput "  $statusIcon $extName ($statusText)" -ForegroundColor White
+        Write-Status "  $statusIcon $extName ($statusText)"
         
         # Get description
         $configFile = Join-Path $_.FullName "mcp-config.json"
@@ -531,7 +571,7 @@ function Invoke-ExtensionsList {
             try {
                 $config = Get-Content $configFile | ConvertFrom-Json
                 if ($config.description) {
-                    Write-ColorOutput "      $($config.description)" -ForegroundColor Gray
+                    Write-Status "      $($config.description)"
                 }
             } catch {
                 # Ignore JSON errors
@@ -779,52 +819,48 @@ function Invoke-ExtensionsInfo {
         try {
             $config = Get-Content $configFile | ConvertFrom-Json
             
-            Write-Host "Name: $($config.displayName)"
-            Write-Host "Version: $($config.version)"
-            Write-Host "Type: $($config.type)"
-            Write-Host "Description: $($config.description)"
-            Write-Host ""
+            Write-Status "Name: $($config.displayName)"
+            Write-Status "Version: $($config.version)"
+            Write-Status "Type: $($config.type)"
+            Write-Status "Description: $($config.description)"
             
             # MCP info
             $mcp = $config.mcp
             $caps = $mcp.capabilities
-            Write-Host "MCP Configuration:"
-            Write-Host "  Server Name: $($mcp.serverName)"
-            Write-Host "  Transport: $($mcp.transport)"
-            Write-Host "  Tools: $(if ($caps.tools) { '✅' } else { '❌' })"
-            Write-Host "  Resources: $(if ($caps.resources) { '✅' } else { '❌' })"
-            Write-Host "  Prompts: $(if ($caps.prompts) { '✅' } else { '❌' })"
-            Write-Host ""
+            Write-Status "MCP Configuration:"
+            Write-Status "  Server Name: $($mcp.serverName)"
+            Write-Status "  Transport: $($mcp.transport)"
+            Write-Status "  Tools: $(if ($caps.tools) { 'Yes' } else { 'No' })"
+            Write-Status "  Resources: $(if ($caps.resources) { 'Yes' } else { 'No' })"
+            Write-Status "  Prompts: $(if ($caps.prompts) { 'Yes' } else { 'No' })"
             
             # Platform support
-            Write-Host "Platform Support:"
+            Write-Status "Platform Support:"
             $config.platforms.PSObject.Properties | ForEach-Object {
                 $platform = $_.Name
                 $info = $_.Value
-                $supported = if ($info.supported) { '✅' } else { '❌' }
+                $supported = if ($info.supported) { 'Yes' } else { 'No' }
                 $perf = $info.performance
-                Write-Host "  $platform`: $supported (performance: $perf)"
+                Write-Status "  $platform`: $supported (performance: $perf)"
             }
-            Write-Host ""
             
             # Requirements
             if ($config.requirements) {
-                Write-Host "Requirements:"
+                Write-Status "Requirements:"
                 $config.requirements.PSObject.Properties | ForEach-Object {
                     $req = $_.Name
                     $desc = $_.Value
                     if ($desc -is [PSCustomObject] -and $desc.description) {
                         $reqText = $desc.description
                         $required = if ($desc.required) { " (required)" } else { "" }
-                        Write-Host "  $req`: $reqText$required"
+                        Write-Status "  $req`: $reqText$required"
                     } else {
-                        Write-Host "  $req`: $desc"
+                        Write-Status "  $req`: $desc"
                     }
                 }
-                Write-Host ""
             }
         } catch {
-            Write-Host "Error reading config: $($_.Exception.Message)"
+            Write-Error "Error reading config: $($_.Exception.Message)"
         }
     }
     
@@ -840,9 +876,9 @@ function Invoke-ExtensionsInfo {
         # Ignore docker errors
     }
     
-    Write-ColorOutput "Status:" -ForegroundColor Cyan
-    Write-ColorOutput "  Enabled: $(if ($enabled) { '✅ Yes' } else { '❌ No' })" -ForegroundColor White
-    Write-ColorOutput "  Running: $(if ($running -eq 'Yes') { '🟢 Yes' } else { '🔴 No' })" -ForegroundColor White
+    Write-Status "Status:"
+    Write-Status "  Enabled: $(if ($enabled) { 'Yes' } else { 'No' })"
+    Write-Status "  Running: $(if ($running -eq 'Yes') { 'Yes' } else { 'No' })"
 }
 
 function Invoke-Uninstall {
@@ -850,6 +886,7 @@ function Invoke-Uninstall {
     
     $force = $false
     $removeVolumes = $false
+    $removeImages = $false
     
     # Parse arguments
     $i = 0
@@ -861,9 +898,12 @@ function Invoke-Uninstall {
             "--remove-volumes" {
                 $removeVolumes = $true
             }
+            "--remove-images" {
+                $removeImages = $true
+            }
             default {
                 Write-Error "Unknown option: $($Args[$i])"
-                Write-Host "Usage: ollama-stack.ps1 uninstall [--force] [--remove-volumes]"
+                Write-Host "Usage: ollama-stack.ps1 uninstall [--force] [--remove-volumes] [--remove-images]"
                 exit 1
             }
         }
@@ -872,39 +912,70 @@ function Invoke-Uninstall {
     
     Write-Header "Ollama Stack Uninstall"
     
-    if (-not $force) {
-        Write-ColorOutput "This will completely remove the Ollama Stack:" -ForegroundColor Yellow
-        Write-ColorOutput "  • Stop all running containers" -ForegroundColor White
-        Write-ColorOutput "  • Remove all containers" -ForegroundColor White
-        Write-ColorOutput "  • Remove all Docker images" -ForegroundColor White
-        Write-ColorOutput "  • Remove Docker network" -ForegroundColor White
-        if ($removeVolumes) {
-            Write-ColorOutput "  • Remove all volumes (DELETES ALL DATA!)" -ForegroundColor Red
+    # Detect if we're running from an installed location
+    $isInstalled = $false
+    $installType = ""
+    $installPath = ""
+    $projectPath = ""
+    
+    # Check common installation locations
+    $userLocalShare = Join-Path $env:USERPROFILE ".local\share\ollama-stack"
+    $programFilesPath = Join-Path $env:ProgramFiles "ollama-stack"
+    
+    if ($ScriptDir -eq $userLocalShare -or $ScriptDir -eq $programFilesPath) {
+        $isInstalled = $true
+        $projectPath = $ScriptDir
+        if ($ScriptDir -eq $programFilesPath) {
+            $installType = "system"
+            $installPath = Join-Path $env:ProgramFiles "ollama-stack\ollama-stack.bat"
         } else {
-            Write-ColorOutput "  • Keep volumes (data preserved)" -ForegroundColor Green
+            $installType = "user"
+            $installPath = Join-Path $env:USERPROFILE ".local\bin\ollama-stack.bat"
         }
-        Write-ColorOutput "  • Disable all extensions" -ForegroundColor White
-        Write-Host ""
+    }
+    
+    if (-not $force) {
+        Write-Warning "This will completely remove the Ollama Stack:"
+        Write-Status "  • Stop all running containers"
+        Write-Status "  • Remove all containers"
+        if ($removeImages) {
+            Write-Status "  • Remove all Docker images"
+        } else {
+            Write-Success "  • Keep Docker images (faster future installs)"
+        }
+        Write-Status "  • Remove Docker network"
+        if ($removeVolumes) {
+            Write-Error "  • Remove all volumes (DELETES ALL DATA!)"
+        } else {
+            Write-Success "  • Keep volumes (data preserved)"
+        }
+        Write-Status "  • Disable all extensions"
+        
+        if ($isInstalled) {
+            Write-Status "  • Remove installation files"
+            Write-Status "  • Remove ollama-stack command"
+            Write-Status "  • Clean up PATH modifications"
+        }
         
         $response = Read-Host "Are you sure you want to continue? (y/N)"
         if ($response -notmatch "^[Yy]$") {
-            Write-ColorOutput "Uninstall cancelled." -ForegroundColor Green
+            Write-Success "Uninstall cancelled."
             exit 0
         }
     }
     
     # Stop all services first
-    Write-ColorOutput "Stopping all services..." -ForegroundColor Cyan
+    Write-Status "Stopping all services..."
     Invoke-Stop @("--platform", "auto")
     
     # Stop and remove extension containers
-    Write-ColorOutput "Stopping and removing extension containers..." -ForegroundColor Cyan
+    Write-Status "Stopping and removing extension containers..."
     $extensionDirs = Get-ChildItem $ExtensionsDir -Directory -ErrorAction SilentlyContinue
     foreach ($extensionDir in $extensionDirs) {
         $extension = $extensionDir.Name
         $dockerCompose = Join-Path $extensionDir.FullName "docker-compose.yml"
         if (Test-Path $dockerCompose) {
-            Write-ColorOutput "  Removing extension: $extension" -ForegroundColor White
+            Write-Status "  Removing extension: $extension"
             $originalLocation = Get-Location
             try {
                 Set-Location $extensionDir.FullName
@@ -916,61 +987,65 @@ function Invoke-Uninstall {
             }
             
             # Disable extension
-            Disable-Extension $extension
+            Update-Registry -Extension $extension -Action "disable"
         }
     }
     
     # Remove main stack containers
-    Write-ColorOutput "Removing main stack containers..." -ForegroundColor Cyan
+    Write-Status "Removing main stack containers..."
     try {
         docker compose down --remove-orphans 2>$null | Out-Null
     } catch {
         # Ignore errors
     }
     
-    # Remove images
-    Write-ColorOutput "Removing Docker images..." -ForegroundColor Cyan
-    $imagesToRemove = @(
-        "ollama/ollama",
-        "ghcr.io/open-webui/open-webui",
-        "ghcr.io/open-webui/mcpo"
-    )
-    
-    foreach ($image in $imagesToRemove) {
-        try {
-            $existingImages = docker images --format "table {{.Repository}}:{{.Tag}}" 2>$null
-            if ($existingImages -match "^$([regex]::Escape($image))") {
-                Write-ColorOutput "  Removing image: $image" -ForegroundColor White
-                $imageIds = docker images "$image" -q 2>$null
-                if ($imageIds) {
-                    docker rmi $imageIds 2>$null | Out-Null
+    # Remove images if requested
+    if ($removeImages) {
+        Write-Status "Removing Docker images..."
+        $imagesToRemove = @(
+            "ollama/ollama",
+            "ghcr.io/open-webui/open-webui",
+            "ghcr.io/open-webui/mcpo"
+        )
+        
+        foreach ($image in $imagesToRemove) {
+            try {
+                $existingImages = docker images --format "table {{.Repository}}:{{.Tag}}" 2>$null
+                if ($existingImages -match "^$([regex]::Escape($image))") {
+                    Write-Status "  Removing image: $image"
+                    $imageIds = docker images "$image" -q 2>$null
+                    if ($imageIds) {
+                        docker rmi $imageIds 2>$null | Out-Null
+                    }
                 }
+            } catch {
+                # Ignore errors
             }
-        } catch {
-            # Ignore errors
         }
-    }
-    
-    # Remove extension images
-    foreach ($extensionDir in $extensionDirs) {
-        $extension = $extensionDir.Name
-        try {
-            $existingImages = docker images --format "table {{.Repository}}:{{.Tag}}" 2>$null
-            if ($existingImages -match "^$([regex]::Escape($extension))") {
-                Write-ColorOutput "  Removing extension image: $extension" -ForegroundColor White
-                $imageIds = docker images "$extension" -q 2>$null
-                if ($imageIds) {
-                    docker rmi $imageIds 2>$null | Out-Null
+        
+        # Remove extension images
+        foreach ($extensionDir in $extensionDirs) {
+            $extension = $extensionDir.Name
+            try {
+                $existingImages = docker images --format "table {{.Repository}}:{{.Tag}}" 2>$null
+                if ($existingImages -match "^$([regex]::Escape($extension))") {
+                    Write-Status "  Removing extension image: $extension"
+                    $imageIds = docker images "$extension" -q 2>$null
+                    if ($imageIds) {
+                        docker rmi $imageIds 2>$null | Out-Null
+                    }
                 }
+            } catch {
+                # Ignore errors
             }
-        } catch {
-            # Ignore errors
         }
+    } else {
+        Write-Status "Keeping Docker images for faster future installs..."
     }
     
     # Remove volumes
     if ($removeVolumes) {
-        Write-ColorOutput "Removing volumes..." -ForegroundColor Cyan
+        Write-Status "Removing volumes..."
         $volumesToRemove = @(
             "ollama_data",
             "webui_data"
@@ -980,7 +1055,7 @@ function Invoke-Uninstall {
             try {
                 $existingVolumes = docker volume ls --format "table {{.Name}}" 2>$null
                 if ($existingVolumes -match "^$([regex]::Escape($volume))$") {
-                    Write-ColorOutput "  Removing volume: $volume" -ForegroundColor White
+                    Write-Status "  Removing volume: $volume"
                     docker volume rm $volume 2>$null | Out-Null
                 }
             } catch {
@@ -996,7 +1071,7 @@ function Invoke-Uninstall {
                 $extensionVolumes = $existingVolumes | Where-Object { $_ -match "^$([regex]::Escape($extension))" }
                 foreach ($volume in $extensionVolumes) {
                     if ($volume -and $volume.Trim()) {
-                        Write-ColorOutput "  Removing extension volume: $volume" -ForegroundColor White
+                        Write-Status "  Removing extension volume: $volume"
                         docker volume rm $volume.Trim() 2>$null | Out-Null
                     }
                 }
@@ -1007,7 +1082,7 @@ function Invoke-Uninstall {
     }
     
     # Remove network
-    Write-ColorOutput "Removing Docker network..." -ForegroundColor Cyan
+    Write-Status "Removing Docker network..."
     try {
         $existingNetworks = docker network ls --format "table {{.Name}}" 2>$null
         if ($existingNetworks -match "^ollama-stack-network$") {
@@ -1018,21 +1093,274 @@ function Invoke-Uninstall {
     }
     
     # Clean up any remaining containers
-    Write-ColorOutput "Cleaning up remaining containers..." -ForegroundColor Cyan
+    Write-Status "Cleaning up remaining containers..."
     try {
         docker container prune -f 2>$null | Out-Null
     } catch {
         # Ignore errors
     }
     
-    Write-ColorOutput "✅ Ollama Stack uninstall completed!" -ForegroundColor Green
-    if (-not $removeVolumes) {
-        Write-ColorOutput "Note: Data volumes were preserved. Use 'docker volume ls' to see them." -ForegroundColor Yellow
+    # Clean up installation files if installed
+    if ($isInstalled) {
+        Write-Status "Removing installation files..."
+        
+        # Remove the wrapper batch file
+        if (Test-Path $installPath) {
+            Write-Status "  Removing command: $installPath"
+            try {
+                Remove-Item $installPath -Force -ErrorAction Stop
+            } catch {
+                Write-Warning "    Warning: Could not remove $installPath"
+            }
+        }
+        
+        # Clean up PATH modifications
+        if ($installType -eq "user") {
+            Write-Status "  Cleaning up PATH modifications"
+            $userBinDir = Split-Path $installPath
+            
+            try {
+                # Get current user PATH
+                $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+                if ($currentPath -and $currentPath.Contains($userBinDir)) {
+                    Write-Status "    Removing from user PATH"
+                    $newPath = ($currentPath -split ';' | Where-Object { $_ -ne $userBinDir }) -join ';'
+                    [Environment]::SetEnvironmentVariable('PATH', $newPath, 'User')
+                }
+                
+                # Update current session PATH
+                $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -ne $userBinDir }) -join ';'
+            } catch {
+                Write-Warning "    Warning: Could not clean up PATH modifications"
+            }
+        }
+        
+        # Remove project files
+        if (Test-Path $projectPath) {
+            Write-Status "  Removing project files: $projectPath"
+            
+            # Create a cleanup script to remove the project directory after this script exits
+            $cleanupScript = Join-Path $env:TEMP "ollama-stack-cleanup-$PID.bat"
+            $cleanupContent = @"
+@echo off
+timeout /t 2 /nobreak >nul
+rmdir /s /q "$projectPath" 2>nul
+del "$cleanupScript" 2>nul
+"@
+            $cleanupContent | Set-Content $cleanupScript
+            Start-Process -FilePath $cleanupScript -WindowStyle Hidden
+        }
     }
     
-    Write-Host ""
-    Write-ColorOutput "To remove Docker completely, run:" -ForegroundColor White
-    Write-ColorOutput "  docker system prune -a --volumes" -ForegroundColor White
+    Write-Success "Ollama Stack uninstall completed!"
+    if (-not $removeVolumes) {
+        Write-Warning "Note: Data volumes were preserved. Use 'docker volume ls' to see them."
+    }
+    
+    if ($isInstalled) {
+        Write-Success "Installation files removed!"
+        Write-Warning "Note: Restart your terminal to clear command cache."
+    }
+    
+    Write-Status "To remove Docker completely, run:"
+    Write-Status "  docker system prune -a --volumes"
+}
+
+function Invoke-Update {
+    param([string[]]$Args)
+    
+    $platform = "auto"
+    $force = $false
+    
+    # Parse arguments
+    $i = 0
+    while ($i -lt $Args.Length) {
+        switch ($Args[$i]) {
+            { $_ -in @("-p", "--platform") } {
+                if ($i + 1 -ge $Args.Length) {
+                    Write-Error "Platform option requires a value"
+                    exit 1
+                }
+                $platform = $Args[$i + 1]
+                if ($platform -notin @("auto", "cpu", "nvidia", "apple")) {
+                    Write-Error "Platform must be 'auto', 'cpu', 'nvidia', or 'apple'"
+                    exit 1
+                }
+                $i += 2
+            }
+            { $_ -in @("-f", "--force") } {
+                $force = $true
+                $i++
+            }
+            default {
+                Write-Error "Unknown option: $($Args[$i])"
+                Write-Host "Usage: ollama-stack.ps1 update [-p|--platform TYPE] [-f|--force]"
+                exit 1
+            }
+        }
+    }
+    
+    Write-Header "Updating Ollama Stack"
+    
+    # Detect platform
+    if ($platform -eq "auto") {
+        $platform = Get-Platform
+        Write-Status "Auto-detected platform: $platform"
+    } else {
+        Write-Status "Using specified platform: $platform"
+    }
+    
+    Test-DockerRunning
+    
+    # Get compose files
+    $composeFiles = Get-ComposeFiles $platform
+    
+    # Check if stack is running
+    $runningContainers = 0
+    try {
+        $psCmd = @("docker", "compose") + $composeFiles + @("ps", "-q")
+        $runningOutput = & $psCmd[0] $psCmd[1..($psCmd.Length-1)] 2>$null
+        if ($runningOutput) {
+            $runningContainers = ($runningOutput | Measure-Object).Count
+        }
+    } catch {
+        # Ignore errors
+    }
+    
+    $wasRunning = $runningContainers -gt 0
+    
+    if ($wasRunning) {
+        if (-not $force) {
+            Write-Warning "The stack is currently running. This update will:"
+            Write-Status "  • Stop all running containers"
+            Write-Status "  • Pull latest Docker images"
+            Write-Status "  • Restart with updated images"
+            Write-Success "  • Keep all data volumes (no data loss)"
+            
+            $response = Read-Host "Continue with update? (y/N)"
+            if ($response -notmatch "^[Yy]$") {
+                Write-Success "Update cancelled."
+                exit 0
+            }
+        }
+        
+        Write-Status "Stopping running containers..."
+        $downCmd = @("docker", "compose") + $composeFiles + @("down")
+        & $downCmd[0] $downCmd[1..($downCmd.Length-1)] 2>$null | Out-Null
+    }
+    
+    # Pull latest images
+    Write-Status "Pulling latest images..."
+    $imagesToUpdate = @(
+        "ollama/ollama:latest",
+        "ghcr.io/open-webui/open-webui:main",
+        "ghcr.io/open-webui/mcpo:main"
+    )
+    
+    $pullFailed = $false
+    foreach ($image in $imagesToUpdate) {
+        Write-Status "  Pulling $image..."
+        try {
+            docker pull $image 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Failed to pull $image"
+                $pullFailed = $true
+            }
+        } catch {
+            Write-Warning "Failed to pull $image"
+            $pullFailed = $true
+        }
+    }
+    
+    # Also pull using compose (in case there are platform-specific overrides)
+    Write-Status "Pulling images via compose..."
+    try {
+        $pullCmd = @("docker", "compose") + $composeFiles + @("pull")
+        & $pullCmd[0] $pullCmd[1..($pullCmd.Length-1)] 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Some compose images failed to pull, continuing with available images..."
+        }
+    } catch {
+        Write-Warning "Some compose images failed to pull, continuing with available images..."
+    }
+    
+    # Update extensions if any are enabled
+    Write-Status "Updating enabled extensions..."
+    $extensionDirs = Get-ChildItem $ExtensionsDir -Directory -ErrorAction SilentlyContinue
+    foreach ($extensionDir in $extensionDirs) {
+        $extension = $extensionDir.Name
+        $dockerCompose = Join-Path $extensionDir.FullName "docker-compose.yml"
+        if ((Test-Path $dockerCompose) -and (Test-ExtensionEnabled $extension)) {
+            Write-Status "  Updating extension: $extension"
+            $originalLocation = Get-Location
+            try {
+                Set-Location $extensionDir.FullName
+                docker compose pull 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "Failed to pull $extension images"
+                }
+            } catch {
+                Write-Warning "Failed to pull $extension images"
+            } finally {
+                Set-Location $originalLocation
+            }
+        }
+    }
+    
+    if ($wasRunning) {
+        Write-Status "Restarting stack with updated images..."
+        $upCmd = @("docker", "compose") + $composeFiles + @("up", "-d")
+        $result = & $upCmd[0] $upCmd[1..($upCmd.Length-1)] 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to restart stack after update: $result"
+            exit 1
+        }
+        
+        # Wait for services to be ready
+        Write-Status "Waiting for services to be ready..."
+        
+        # Always check Ollama health - it's required for Open WebUI
+        Wait-ForService "Ollama" "http://localhost:11434"
+        
+        Wait-ForService "Open WebUI" "http://localhost:8080"
+        Wait-ForService "MCP Proxy" "http://localhost:8200/docs"
+        
+        # Restart enabled extensions
+        foreach ($extensionDir in $extensionDirs) {
+            $extension = $extensionDir.Name
+            $dockerCompose = Join-Path $extensionDir.FullName "docker-compose.yml"
+            if ((Test-Path $dockerCompose) -and (Test-ExtensionEnabled $extension)) {
+                Write-Status "  Restarting extension: $extension"
+                $originalLocation = Get-Location
+                try {
+                    Set-Location $extensionDir.FullName
+                    docker compose up -d 2>$null | Out-Null
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Warning "Failed to restart $extension"
+                    }
+                } catch {
+                    Write-Warning "Failed to restart $extension"
+                } finally {
+                    Set-Location $originalLocation
+                }
+            }
+        }
+    }
+    
+    Write-Success "Update completed successfully!"
+    
+    if ($pullFailed) {
+        Write-Warning "Note: Some images failed to update. Check your internet connection and try again."
+    }
+    
+    if ($wasRunning) {
+        Write-Status "Updated services are now running:"
+        Write-Success "  • Open WebUI: http://localhost:8080"
+        Write-Success "  • Ollama API: http://localhost:11434"
+        Write-Success "  • MCP Proxy: http://localhost:8200"
+    } else {
+        Write-Status "Images updated. Run 'ollama-stack.ps1 start' to use the updated stack."
+    }
 }
 
 function Show-ExtensionsHelp {
@@ -1062,7 +1390,8 @@ COMMANDS:
     status               Show stack and extension status
     logs [service]       View logs (all services or specific service)
     extensions           Manage extensions
-    uninstall            Completely remove the stack
+    update               Update to latest versions
+    uninstall            Completely remove the stack and installation
 
 STACK OPTIONS:
     start:
@@ -1077,9 +1406,15 @@ STACK OPTIONS:
     logs:
         -f, --follow            Follow logs in real-time
 
+    update:
+        -p, --platform TYPE      Platform: auto, cpu, nvidia, apple (default: auto)
+        -f, --force             Skip confirmation prompt
+
     uninstall:
         -f, --force             Skip confirmation prompt
         --remove-volumes        Remove data volumes (deletes all data)
+        --remove-images         Remove Docker images (forces re-download)
+                               Note: Also removes installation files and PATH modifications
 
 EXTENSION COMMANDS:
     extensions list             List all extensions
@@ -1101,12 +1436,17 @@ EXTENSION OPTIONS:
 EXAMPLES:
     .\ollama-stack.ps1 start                          # Start with auto-detected platform
     .\ollama-stack.ps1 start -p nvidia                # Force NVIDIA GPU acceleration
+    .\ollama-stack.ps1 start --update                 # Start and update to latest versions
     .\ollama-stack.ps1 stop --remove-volumes          # Stop and delete all data
+    .\ollama-stack.ps1 update                         # Update to latest versions
+    .\ollama-stack.ps1 update --force                 # Update without confirmation
     .\ollama-stack.ps1 status                         # Show current status
     .\ollama-stack.ps1 logs -f                        # Follow all logs
     .\ollama-stack.ps1 logs webui                     # Show WebUI logs only
-    .\ollama-stack.ps1 uninstall                      # Remove stack (keeps data)
-    .\ollama-stack.ps1 uninstall --remove-volumes     # Remove stack and delete all data
+    .\ollama-stack.ps1 uninstall                      # Remove stack and installation (keeps data and images)
+    .\ollama-stack.ps1 uninstall --remove-volumes     # Remove everything including all data (keeps images)
+    .\ollama-stack.ps1 uninstall --remove-images      # Remove stack, installation, and Docker images
+    .\ollama-stack.ps1 uninstall --remove-volumes --remove-images  # Remove everything completely
 
     .\ollama-stack.ps1 extensions list               # List all extensions
     .\ollama-stack.ps1 extensions enable dia-tts-mcp # Enable TTS extension
@@ -1115,7 +1455,7 @@ EXAMPLES:
 
 ACCESS POINTS:
     Open WebUI: http://localhost:8080
-    Ollama API: http://localhost:11434 (except Apple Silicon)
+    Ollama API: http://localhost:11434
     MCP Proxy:  http://localhost:8200
     MCP Docs:   http://localhost:8200/docs
 
@@ -1148,6 +1488,9 @@ function Main {
         }
         { $_ -in @("extensions", "ext") } {
             Invoke-Extensions $Arguments
+        }
+        "update" {
+            Invoke-Update $Arguments
         }
         "uninstall" {
             Invoke-Uninstall $Arguments

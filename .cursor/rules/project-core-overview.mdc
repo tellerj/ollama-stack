@@ -26,11 +26,12 @@ ollama-stack-1/
 ├── docker-compose.yml              # Core stack definition
 ├── docker-compose.nvidia.yml       # NVIDIA GPU optimizations
 ├── docker-compose.apple.yml        # Apple Silicon optimizations
-├── start-stack.sh                  # Unix startup script
-├── start-stack.ps1                 # Windows startup script
-├── stop-stack.sh                   # Unix shutdown script
-├── stop-stack.ps1                  # Windows shutdown script
+├── ollama-stack                    # Unified CLI tool (Unix/macOS)
+├── ollama-stack.ps1                # Unified CLI tool (Windows)
+├── install.sh                      # Unix/macOS installer
+├── install.ps1                     # Windows installer
 ├── README.md                       # Project documentation
+├── docs/                           # Documentation
 ├── extensions/                     # Extension framework (see @project-extensions)
 └── tools/                         # Additional tools directory
 ```
@@ -45,7 +46,7 @@ ollama-stack-1/
 
 ### 2. Open WebUI Service (`open-webui`)
 - **Purpose**: Modern web interface for AI interactions
-- **Port**: 3000 (exposed for browser access)
+- **Port**: 8080 (exposed for browser access)
 - **Features**: Chat interface, model management, tool integration
 - **Storage**: `webui_data` volume for user data
 - **Dependencies**: Connects to Ollama and MCP Proxy
@@ -78,10 +79,10 @@ ollama-stack-1/
 
 ## Startup & Management
 
-### Automated Startup Scripts
-- **`start-stack.sh`** (Unix/macOS): Detects platform and starts appropriate stack
-- **`start-stack.ps1`** (Windows): PowerShell equivalent with platform detection
-- **Features**: Health checks, error handling, colored output, detached mode
+### Unified CLI Tool
+- **`ollama-stack`** (Unix/macOS): Unified CLI for all stack management operations
+- **`ollama-stack.ps1`** (Windows): PowerShell equivalent with full feature parity
+- **Features**: Platform detection, service management, extension management, health checks, colored output
 
 ### Platform Detection Logic
 ```bash
@@ -104,7 +105,7 @@ Extensions → ollama-stack-network (shared communication)
 - `MCP_API_KEY`: Authentication for MCP proxy (default: "mcp-proxy-key")
 
 ## Network Architecture
-- **External Access**: Only Open WebUI (port 3000) exposed to host
+- **External Access**: Only Open WebUI (port 8080) exposed to host
 - **Internal Communication**: All services on `ollama-stack-network`
 - **Service Discovery**: Docker DNS resolution between services
 - **Security**: MCP proxy and Ollama not directly accessible from outside
@@ -123,28 +124,37 @@ Extensions → ollama-stack-network (shared communication)
 ## Usage Patterns
 
 ### Standard Workflow
-1. **Start Stack**: `./start-stack.sh` (auto-detects platform)
-2. **Access Interface**: Browser to `http://localhost:3000`
-3. **Download Models**: Through OpenWebUI or Ollama CLI
-4. **Add Extensions**: See @project-extensions for modular service addition
-5. **Monitor**: Use `docker compose logs -f` for troubleshooting
+1. **Install CLI**: `./install.sh` (one-time setup)
+2. **Start Stack**: `ollama-stack start` (auto-detects platform)
+3. **Access Interface**: Browser to `http://localhost:8080`
+4. **Download Models**: Through OpenWebUI or Ollama CLI
+5. **Add Extensions**: `ollama-stack extensions enable <name>`
+6. **Monitor**: Use `ollama-stack status` and `ollama-stack logs`
 
 ### Common Operations
 ```bash
+# Install CLI tool (one-time)
+./install.sh
+
 # Start the stack
-./start-stack.sh
+ollama-stack start
 
 # Stop the stack  
-./stop-stack.sh
+ollama-stack stop
 
 # View logs
-docker compose logs -f
+ollama-stack logs -f
 
 # Check service status
-docker compose ps
+ollama-stack status
 
-# Update images
-docker compose pull && ./start-stack.sh
+# Manage extensions
+ollama-stack extensions list
+ollama-stack extensions enable dia-tts-mcp
+ollama-stack extensions start dia-tts-mcp
+
+# Update images and start
+ollama-stack start -u
 ```
 
 ## Integration Points
@@ -156,13 +166,13 @@ docker compose pull && ./start-stack.sh
 
 ### For Development
 - **Local Models**: Access Ollama API at `http://localhost:11434`
-- **Web Interface**: Extend OpenWebUI at `http://localhost:3000`
+- **Web Interface**: Extend OpenWebUI at `http://localhost:8080`
 - **Tool Development**: Create MCP servers for custom functionality
 
 ## Troubleshooting
 
 ### Common Issues
-- **Port conflicts**: Ensure 3000, 11434, 8200 are available
+- **Port conflicts**: Ensure 8080, 11434, 8200 are available
 - **GPU access**: Verify NVIDIA Docker runtime or MPS availability
 - **Memory limits**: Monitor resource usage with `docker stats`
 - **Network isolation**: Check `ollama-stack-network` exists
@@ -177,7 +187,8 @@ For adding new AI services, tools, or capabilities, see the **@project-extension
 
 ## Best Practices for AI Agents
 1. **Never modify core compose files** - use extension system instead
-2. **Respect platform detection** - use provided startup scripts
-3. **Monitor resource usage** - AI workloads are resource-intensive
-4. **Test across platforms** - ensure compatibility with CPU/GPU/Apple Silicon
-5. **Use provided tooling** - leverage startup scripts and management utilities 
+2. **Use the unified CLI** - `ollama-stack` provides all management functionality
+3. **Respect platform detection** - CLI auto-detects and optimizes for your platform
+4. **Monitor resource usage** - AI workloads are resource-intensive
+5. **Test across platforms** - ensure compatibility with CPU/GPU/Apple Silicon
+6. **Install system-wide** - use `./install.sh` for better user experience 

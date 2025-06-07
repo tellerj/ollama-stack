@@ -9,7 +9,7 @@ The **Ollama Stack** now features a unified command-line interface that combines
 **Unix/macOS:**
 ```bash
 # Make the CLI tool system-wide accessible
-./scripts/install.sh
+./install.sh
 
 # Or use directly from the project directory
 ./ollama-stack --help
@@ -18,7 +18,7 @@ The **Ollama Stack** now features a unified command-line interface that combines
 **Windows (PowerShell):**
 ```powershell
 # Make the CLI tool system-wide accessible
-.\scripts\install.ps1
+.\install.ps1
 
 # Or use directly from the project directory
 .\ollama-stack.ps1 --help
@@ -324,10 +324,10 @@ If you were using the old separate scripts, here's the migration:
 
 | Old Command | New Command |
 |-------------|-------------|
-| `./start-stack.sh` | `ollama-stack start` |
-| `./start-stack.sh -p nvidia` | `ollama-stack start -p nvidia` |
-| `./stop-stack.sh` | `ollama-stack stop` |
-| `./stop-stack.sh --remove-volumes` | `ollama-stack stop --remove-volumes` |
+| Legacy scripts (removed) | `ollama-stack start` |
+| Legacy scripts (removed) | `ollama-stack start -p nvidia` |
+| Legacy scripts (removed) | `ollama-stack stop` |
+| Legacy scripts (removed) | `ollama-stack stop --remove-volumes` |
 | `cd extensions && ./manage.sh list` | `ollama-stack extensions list` |
 | `./manage.sh enable dia-tts-mcp` | `ollama-stack extensions enable dia-tts-mcp` |
 | `./manage.sh start dia-tts-mcp` | `ollama-stack extensions start dia-tts-mcp` |

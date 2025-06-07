@@ -16,13 +16,8 @@ ollama-stack/
 │   ├── CLI_USAGE.md              
 │   ├── WINDOWS_SETUP.md          
 │   └── UNIFIED_CLI_SUMMARY.md    
-├── scripts/                    # Utility and legacy scripts
-│   ├── install.sh                
-│   ├── install.ps1               
-│   ├── start-stack.sh            
-│   ├── start-stack.ps1           
-│   ├── stop-stack.sh             
-│   └── stop-stack.ps1            
+├── install.sh                  # Unix/macOS installer
+├── install.ps1                 # Windows installer
 ├── extensions/                 # Extension system
 │   ├── dia-tts-mcp/              
 │   └── registry.json             
@@ -32,9 +27,8 @@ ollama-stack/
 
 ## Organization Rules
 
-- **Root**: Primary executables and core configuration
+- **Root**: Primary executables, installers, and core configuration
 - **docs/**: All documentation
-- **scripts/**: Installation and legacy scripts  
 - **extensions/**: Self-contained extension packages
 - **tools/**: Additional utilities
 
@@ -49,14 +43,8 @@ ollama-stack/
 
 ### Installation
 ```bash
-./scripts/install.sh     # Unix/macOS
-.\scripts\install.ps1    # Windows
-```
-
-### Legacy Scripts
-```bash
-./scripts/start-stack.sh -p nvidia
-./scripts/stop-stack.sh -v
+./install.sh     # Unix/macOS
+.\install.ps1    # Windows
 ```
 
 ## File Reference
@@ -67,29 +55,22 @@ ollama-stack/
 | `ollama-stack.ps1` | Windows CLI tool |
 | `docs/CLI_USAGE.md` | Complete CLI reference |
 | `docs/WINDOWS_SETUP.md` | Windows setup guide |
-| `scripts/install.*` | Installation scripts |
-| `scripts/start-stack.*` | Legacy start scripts |
+| `install.sh` | Unix/macOS installation script |
+| `install.ps1` | Windows installation script |
 | `extensions/` | Extension packages |
 | `docker-compose*.yml` | Service configurations |
 
 ## Migration Notes
 
-Scripts moved from root to subdirectories for organization. All existing functionality preserved.
-
-| Old Location | New Location |
-|--------------|--------------|
-| `./start-stack.sh` | `./scripts/start-stack.sh` |
-| `./install.sh` | `./scripts/install.sh` |
-| `./CLI_USAGE.md` | `./docs/CLI_USAGE.md` |
+Project restructured for better organization. Installation scripts moved to root for easier access, legacy start/stop scripts removed as the main CLI tool now handles all functionality.
 
 ## Quick Reference
 
 | Task | Command/Location |
 |------|------------------|
 | Start the stack | `./ollama-stack start` |
-| Install system-wide | `./scripts/install.sh` |
+| Install system-wide | `./install.sh` |
 | Full CLI reference | `docs/CLI_USAGE.md` |
 | Windows setup | `docs/WINDOWS_SETUP.md` |
-| Legacy scripts | `./scripts/start-stack.sh` |
 | Add extension | `extensions/` directory |
 | Modify services | `docker-compose*.yml` | 

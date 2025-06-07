@@ -74,32 +74,26 @@
 
 ## 🚀 Next Steps
 
-### 1. Enable and Test Extension
-```bash
-cd extensions
-./manage.sh enable dia-tts-mcp
-./manage.sh start dia-tts-mcp -p auto
-./manage.sh logs dia-tts-mcp -f
-```
-
-### 2. Set Required Environment Variables
+### 1. Set Required Environment Variables
 ```bash
 export HF_TOKEN="your_huggingface_token_here"
 ```
 
-### 3. Start Main Stack
+### 2. Start Main Stack and Enable Extension
 ```bash
-cd ..
-./start-stack.sh
+ollama-stack start
+ollama-stack extensions enable dia-tts-mcp
+ollama-stack extensions start dia-tts-mcp
+ollama-stack extensions logs dia-tts-mcp -f
 ```
 
-### 4. Test MCP Server
+### 3. Test MCP Server
 ```bash
 cd extensions/dia-tts-mcp
 python3 test_server.py
 ```
 
-### 5. Verify Integration
+### 4. Verify Integration
 - Check that extension appears in OpenWebUI tools
 - Test basic text-to-speech functionality
 - Verify dialogue generation works
@@ -109,8 +103,8 @@ python3 test_server.py
 
 ### Extension Won't Start
 1. Check Docker network exists: `docker network ls | grep ollama`
-2. Verify main stack is running: `docker compose ps`
-3. Check logs: `./manage.sh logs dia-tts-mcp -f`
+2. Verify main stack is running: `ollama-stack status`
+3. Check logs: `ollama-stack extensions logs dia-tts-mcp -f`
 
 ### Model Loading Issues
 1. Verify HF_TOKEN is set: `echo $HF_TOKEN`

@@ -46,7 +46,5 @@
       ]
     }
   },
-  "enabled": [
-    "dia-tts-mcp"
-  ]
+  "enabled": []
 }

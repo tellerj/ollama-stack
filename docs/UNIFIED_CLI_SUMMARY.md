@@ -61,7 +61,7 @@ ollama-stack extensions info <ext>    # Detailed extension information
 ### **Before (Multiple Scripts)**
 ```bash
 # Starting stack
-./start-stack.sh -p nvidia
+ollama-stack start -p nvidia
 
 # Managing extensions
 cd extensions
