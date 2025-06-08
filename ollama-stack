@@ -105,7 +105,38 @@ check_docker() {
     fi
 }
 
-# Store infrastructure names in .env for reliable operations
+# Create foundational .env file with deterministic variables (for install-time setup)
+create_foundational_env() {
+    local target_dir="${1:-.}"
+    local env_file="$target_dir/.env"
+    local project_name=""
+    
+    # Get project name from target directory name
+    project_name=$(basename "$(cd "$target_dir" && pwd)")
+    
+    # Create foundational .env file with header and deterministic variables
+    cat > "$env_file" << EOF
+# Ollama Stack Environment Variables
+# This file is automatically managed by ollama-stack
+# WEBUI_SECRET_KEY will be generated after initial setup
+
+# Infrastructure naming - exact names for reliable operations
+PROJECT_NAME=${project_name}
+OLLAMA_VOLUME_NAME=${project_name}_ollama_data
+WEBUI_VOLUME_NAME=${project_name}_webui_data
+NETWORK_NAME=${project_name}_network
+EOF
+
+    if [ $? -eq 0 ]; then
+        print_status "Created foundational .env file with project name: $project_name"
+        return 0
+    else
+        print_error "Failed to create foundational .env file"
+        return 1
+    fi
+}
+
+# Store/update infrastructure names and runtime metadata in .env
 store_infrastructure_names() {
     local env_file=".env"
     local project_name=""
@@ -113,7 +144,13 @@ store_infrastructure_names() {
     # Get current project name (directory name or docker-compose project)
     project_name=$(basename "$(pwd)")
     
-    # Add infrastructure naming if not already present
+    # Ensure .env exists (create foundational if missing)
+    if [ ! -f "$env_file" ]; then
+        print_status "No .env file found, creating foundational environment..."
+        create_foundational_env "."
+    fi
+    
+    # Add infrastructure naming if not already present (backward compatibility)
     if [ -f "$env_file" ]; then
         if ! grep -q "^PROJECT_NAME=" "$env_file" 2>/dev/null; then
             echo "" >> "$env_file"
@@ -558,6 +595,10 @@ cmd_stop() {
         case $1 in
             -p|--platform)
                 platform="$2"
+                if [[ ! "$platform" =~ ^(auto|cpu|nvidia|apple)$ ]]; then
+                    print_error "Platform must be 'auto', 'cpu', 'nvidia', or 'apple'"
+                    exit 1
+                fi
                 shift 2
                 ;;
             -v|--remove-volumes)
@@ -573,34 +614,154 @@ cmd_stop() {
     
     print_header "Stopping Ollama Stack"
     
-    if [ "$platform" = "auto" ]; then
-        platform=$(detect_platform)
-    fi
+    # Use the original directory that was saved before cd to script dir
     
     check_docker
     
-    # Get compose files
-    local compose_files=($(get_compose_files $platform))
+    # Discovery-based approach: Find ALL running ollama-stack containers using labels
+    local all_running_containers=$(docker ps --filter "label=ollama-stack.installation" --format "{{.Names}}" 2>/dev/null || true)
     
-    # Build command
-    local compose_cmd=("docker" "compose" "${compose_files[@]}")
-    
-    if [ "$remove_volumes" = true ]; then
-        print_warning "Removing volumes (all data will be deleted)..."
-        compose_cmd+=("down" "-v")
-    else
-        compose_cmd+=("down")
+    if [ -z "$all_running_containers" ]; then
+        print_success "No ollama-stack containers are currently running"
+        return 0
     fi
     
-    # Execute
-    if "${compose_cmd[@]}"; then
-        print_success "Stack stopped successfully"
-        if [ "$remove_volumes" = true ]; then
-            print_success "Volumes removed successfully"
-        fi
+    # Group containers by installation (using a simple approach for compatibility)
+    local installation_list=""
+    local container_list=""
+    
+    for container in $all_running_containers; do
+        local installation=$(docker inspect "$container" --format '{{index .Config.Labels "ollama-stack.installation"}}' 2>/dev/null || echo "unknown")
+        installation_list="$installation_list $installation"
+        container_list="$container_list $container"
+    done
+    
+    # If we were invoked from a directory with .env, prioritize that installation
+    local project_name=""
+    if [ -f "$ORIGINAL_DIR/.env" ]; then
+        project_name=$(grep "^PROJECT_NAME=" "$ORIGINAL_DIR/.env" 2>/dev/null | cut -d'=' -f2 || echo "")
+        print_status "Found .env in original directory, will prioritize: $project_name"
+    fi
+    
+    # Get unique installations
+    local unique_installations=$(echo $installation_list | tr ' ' '\n' | sort -u | tr '\n' ' ')
+    local unique_count=$(echo $unique_installations | wc -w)
+    
+    # Determine which installation(s) to stop
+    local target_installation=""
+    local target_containers=""
+    
+    # Check if current directory matches any installation
+    local current_installation_containers=""
+    if [ -n "$project_name" ]; then
+        for i in $(seq 1 $(echo $installation_list | wc -w)); do
+            local inst=$(echo $installation_list | cut -d' ' -f$i)
+            local cont=$(echo $container_list | cut -d' ' -f$i)
+            if [ "$inst" = "$project_name" ]; then
+                current_installation_containers="$current_installation_containers $cont"
+            fi
+        done
+    fi
+    
+    if [ -n "$current_installation_containers" ]; then
+        # Stop the installation matching current directory
+        target_installation="$project_name"
+        target_containers="$current_installation_containers"
+        print_status "Found running stack for current directory: $project_name"
+    elif [ "$unique_count" -eq 1 ]; then
+        # Only one installation running, stop it
+        target_installation=$(echo $unique_installations | tr -d ' ')
+        target_containers="$all_running_containers"
+        print_status "Found single running stack: $target_installation"
     else
-        print_error "Failed to stop stack"
-        exit 1
+        # Multiple installations running, ask user to choose
+        print_warning "Multiple ollama-stack installations are running:"
+        local install_array=($unique_installations)
+        
+        for i in "${!install_array[@]}"; do
+            local install="${install_array[$i]}"
+            local containers=""
+            for j in $(seq 1 $(echo $installation_list | wc -w)); do
+                local inst=$(echo $installation_list | cut -d' ' -f$j)
+                local cont=$(echo $container_list | cut -d' ' -f$j)
+                if [ "$inst" = "$install" ]; then
+                    containers="$containers $cont"
+                fi
+            done
+            local container_count=$(echo $containers | wc -w)
+            print_status "  $((i+1)). $install ($container_count containers)"
+        done
+        
+        echo ""
+        read -p "Which installation would you like to stop? (1-${#install_array[@]}, or 'all'): " choice
+        
+        if [ "$choice" = "all" ]; then
+            target_installation="all"
+            target_containers="$all_running_containers"
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#install_array[@]} ]; then
+            target_installation="${install_array[$((choice-1))]}"
+            # Get containers for this installation
+            for j in $(seq 1 $(echo $installation_list | wc -w)); do
+                local inst=$(echo $installation_list | cut -d' ' -f$j)
+                local cont=$(echo $container_list | cut -d' ' -f$j)
+                if [ "$inst" = "$target_installation" ]; then
+                    target_containers="$target_containers $cont"
+                fi
+            done
+        else
+            print_error "Invalid choice. Aborting."
+            exit 1
+        fi
+    fi
+    
+    print_status "Stopping containers: $target_containers"
+    
+    # Stop containers
+    for container in $target_containers; do
+        print_status "  Stopping: $container"
+        docker stop "$container" 2>/dev/null || true
+    done
+    
+    # Remove containers
+    for container in $target_containers; do
+        print_status "  Removing: $container"
+        docker rm "$container" 2>/dev/null || true
+    done
+    
+    # Handle volume removal if requested
+    if [ "$remove_volumes" = "true" ]; then
+        print_warning "Removing volumes (all data will be deleted)..."
+        
+        # Get volume names for each installation
+        for container in $target_containers; do
+            local volumes=$(docker inspect "$container" --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' 2>/dev/null || true)
+            for volume in $volumes; do
+                if [[ "$volume" =~ (ollama|webui) ]]; then
+                    print_status "  Removing volume: $volume"
+                    docker volume rm "$volume" 2>/dev/null || true
+                fi
+            done
+        done
+    fi
+    
+    # Remove networks if they're empty
+    local networks=$(docker network ls --filter "name=ollama" --format "{{.Name}}" 2>/dev/null || true)
+    for network in $networks; do
+        local connected_containers=$(docker network inspect "$network" --format '{{len .Containers}}' 2>/dev/null || echo "0")
+        if [ "$connected_containers" = "0" ]; then
+            print_status "  Removing empty network: $network"
+            docker network rm "$network" 2>/dev/null || true
+        fi
+    done
+    
+    if [ "$target_installation" = "all" ]; then
+        print_success "All ollama-stack installations stopped successfully"
+    else
+        print_success "Ollama Stack ($target_installation) stopped successfully"
+    fi
+    
+    if [ "$remove_volumes" = "true" ]; then
+        print_success "Volumes removed successfully"
     fi
 }
 
@@ -695,10 +856,28 @@ cmd_status() {
     fi
     
     # Check for orphaned volumes
-    local all_ollama_volumes=$(docker volume ls --format "table {{.Name}}" | grep -E "(ollama|webui)" | grep -v "ollama-stack-1" 2>/dev/null || true)
-    if [ -n "$all_ollama_volumes" ]; then
+    local all_ollama_volumes=$(docker volume ls --format "{{.Name}}" 2>/dev/null | grep -E "(ollama|webui)" || true)
+    local orphaned_volumes=""
+    
+    # Filter out volumes that belong to this installation
+    for volume in $all_ollama_volumes; do
+        local is_ours=false
+        
+        # Check if this volume matches our expected volume names
+        if [ "$volume" = "$OLLAMA_VOLUME_NAME" ] || [ "$volume" = "$WEBUI_VOLUME_NAME" ]; then
+            is_ours=true
+        fi
+        
+        if [ "$is_ours" = "false" ]; then
+            orphaned_volumes="$orphaned_volumes $volume"
+        fi
+    done
+    
+    if [ -n "$orphaned_volumes" ]; then
         print_warning "Found volumes from other installations:"
-        echo "$all_ollama_volumes" | sed 's/^/  /'
+        for volume in $orphaned_volumes; do
+            print_status "  $volume"
+        done
         print_status "Use 'ollama-stack cleanup --volumes' to remove them"
         echo ""
     fi
@@ -1146,13 +1325,12 @@ cmd_uninstall() {
     if [ "$force" != "true" ]; then
         print_warning "This will completely remove the Ollama Stack:"
         print_status "  • Stop all running containers"
-        print_status "  • Remove all containers"
+        print_status "  • Remove all containers and orphaned resources"
         if [ "$remove_images" = "true" ]; then
             print_status "  • Remove all Docker images"
         else
             print_success "  • Keep Docker images (faster future installs)"
         fi
-        print_status "  • Remove Docker network"
         if [ "$remove_volumes" = "true" ]; then
             print_error "  • Remove all volumes (DELETES ALL DATA!)"
         else
@@ -1174,17 +1352,30 @@ cmd_uninstall() {
         fi
     fi
     
-    # Stop all services first
-    print_status "Stopping all services..."
-    cmd_stop --platform auto
+    # Check Docker
+    check_docker
     
-    # Stop and remove extension containers
-    print_status "Stopping and removing extension containers..."
+    # Step 1: Check if any stack is currently running and stop it using robust stop logic
+    print_status "Checking for running services..."
+    local running_containers=$(docker compose ps -q 2>/dev/null || true)
+    if [ -n "$running_containers" ]; then
+        print_status "Found running stack - stopping it properly..."
+        if [ "$remove_volumes" = "true" ]; then
+            cmd_stop --platform auto --remove-volumes
+        else
+            cmd_stop --platform auto
+        fi
+    else
+        print_status "No running stack detected"
+    fi
+    
+    # Step 2: Stop and disable all extensions
+    print_status "Stopping and disabling extensions..."
     for extension_dir in "$EXTENSIONS_DIR"/*; do
         if [ -d "$extension_dir" ]; then
             extension=$(basename "$extension_dir")
             if [ -f "$extension_dir/docker-compose.yml" ]; then
-                print_status "  Removing extension: $extension"
+                print_status "  Stopping extension: $extension"
                 cd "$extension_dir"
                 docker compose down --remove-orphans 2>/dev/null || true
                 cd "$SCRIPT_DIR"
@@ -1195,11 +1386,15 @@ cmd_uninstall() {
         fi
     done
     
-    # Remove main stack containers
-    print_status "Removing main stack containers..."
-    docker compose down --remove-orphans 2>/dev/null || true
+    # Step 3: Use robust cleanup logic to remove orphaned resources
+    print_status "Cleaning up orphaned resources..."
+    if [ "$remove_volumes" = "true" ]; then
+        cmd_cleanup --volumes --force
+    else
+        cmd_cleanup --force
+    fi
     
-    # Remove images if requested
+    # Step 4: Remove Docker images if requested
     if [ "$remove_images" = "true" ]; then
         print_status "Removing Docker images..."
         local images_to_remove=(
@@ -1209,9 +1404,9 @@ cmd_uninstall() {
         )
         
         for image in "${images_to_remove[@]}"; do
-            if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "^$image"; then
+            if docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep -q "^$image"; then
                 print_status "  Removing image: $image"
-                docker rmi $(docker images "$image" -q) 2>/dev/null || true
+                docker rmi $(docker images "$image" -q 2>/dev/null) 2>/dev/null || true
             fi
         done
         
@@ -1219,9 +1414,9 @@ cmd_uninstall() {
         for extension_dir in "$EXTENSIONS_DIR"/*; do
             if [ -d "$extension_dir" ]; then
                 extension=$(basename "$extension_dir")
-                if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "^$extension"; then
+                if docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep -q "^$extension"; then
                     print_status "  Removing extension image: $extension"
-                    docker rmi $(docker images "$extension" -q) 2>/dev/null || true
+                    docker rmi $(docker images "$extension" -q 2>/dev/null) 2>/dev/null || true
                 fi
             fi
         done
@@ -1229,79 +1424,7 @@ cmd_uninstall() {
         print_status "Keeping Docker images for faster future installs..."
     fi
     
-    # Remove volumes
-    if [ "$remove_volumes" = "true" ]; then
-        print_status "Removing volumes..."
-        
-        # Find volumes using exact names from .env if available, fallback to patterns
-        local project_volumes=""
-        local all_volumes=$(docker volume ls --format "{{.Name}}" 2>/dev/null || true)
-        
-        # Try to get exact volume names from .env first
-        if [ -f ".env" ]; then
-            local ollama_volume=$(grep "^OLLAMA_VOLUME_NAME=" ".env" 2>/dev/null | cut -d'=' -f2)
-            local webui_volume=$(grep "^WEBUI_VOLUME_NAME=" ".env" 2>/dev/null | cut -d'=' -f2)
-            
-            if [ -n "$ollama_volume" ] && echo "$all_volumes" | grep -q "^${ollama_volume}$"; then
-                project_volumes="$project_volumes $ollama_volume"
-            fi
-            if [ -n "$webui_volume" ] && echo "$all_volumes" | grep -q "^${webui_volume}$"; then
-                project_volumes="$project_volumes $webui_volume"
-            fi
-        fi
-        
-        # Fallback to pattern matching for backward compatibility
-        if [ -z "$project_volumes" ]; then
-            project_volumes=$(echo "$all_volumes" | grep -E "(ollama-stack.*ollama_data|ollama-stack.*webui_data|.*_ollama_data|.*_webui_data)" 2>/dev/null || true)
-        fi
-        
-        if [ -n "$project_volumes" ]; then
-            while IFS= read -r volume; do
-                if [ -n "$volume" ]; then
-                    print_status "  Removing volume: $volume"
-                    docker volume rm "$volume" 2>/dev/null || true
-                fi
-            done <<< "$project_volumes"
-        else
-            print_status "  No ollama-stack volumes found"
-        fi
-        
-        # Remove extension volumes
-        for extension_dir in "$EXTENSIONS_DIR"/*; do
-            if [ -d "$extension_dir" ]; then
-                extension=$(basename "$extension_dir")
-                # Look for volumes with extension name prefix
-                docker volume ls --format "table {{.Name}}" | grep "^${extension}" | while read -r volume; do
-                    if [ ! -z "$volume" ]; then
-                        print_status "  Removing extension volume: $volume"
-                        docker volume rm "$volume" 2>/dev/null || true
-                    fi
-                done
-            fi
-        done
-    fi
-    
-    # Remove network
-    print_status "Removing Docker network..."
-    local network_name="ollama-stack-network"  # default fallback
-    
-    # Try to get exact network name from .env
-    if [ -f ".env" ]; then
-        local env_network_name=$(grep "^NETWORK_NAME=" ".env" 2>/dev/null | cut -d'=' -f2)
-        if [ -n "$env_network_name" ]; then
-            network_name="$env_network_name"
-        fi
-    fi
-    
-    if docker network ls --format "table {{.Name}}" | grep -q "^${network_name}\$"; then
-        docker network rm "$network_name" 2>/dev/null || true
-    fi
-    
-    # Clean up any remaining containers
-    print_status "Cleaning up remaining containers..."
-    docker container prune -f 2>/dev/null || true
-    
-    # Clean up installation files if installed
+    # Step 5: Clean up installation files if installed
     if [ "$is_installed" = "true" ]; then
         print_status "Removing installation files..."
         
@@ -1388,64 +1511,94 @@ cmd_cleanup() {
     
     print_header "Ollama Stack Cleanup"
     
+    # Use the original directory that was saved before cd to script dir
+    
     # Check Docker
     if ! docker info >/dev/null 2>&1; then
         print_error "Docker is not running"
         return 1
     fi
     
-    # Get our installation name from .env
-    local project_name=$(grep "^PROJECT_NAME=" ".env" 2>/dev/null | cut -d'=' -f2 || echo "ollama-stack")
-    
-    # Find all ollama-stack related containers (including stopped ones) using labels
+    # Discovery-based approach: Find ALL ollama-stack installations
     local all_containers=$(docker ps -a --filter "label=ollama-stack.installation" --format "{{.Names}}" 2>/dev/null || true)
-    local current_containers=$(docker ps -a --filter "label=ollama-stack.installation=${project_name}" --format "{{.Names}}" 2>/dev/null || true)
     
-    # Find zombie containers (not managed by current compose)
+    # Also check for orphaned volumes even if no containers exist
+    local all_ollama_volumes=$(docker volume ls --format "{{.Name}}" 2>/dev/null | grep -E "(ollama|webui)" || true)
+    
+    if [ -z "$all_containers" ] && [ -z "$all_ollama_volumes" ]; then
+        print_success "No ollama-stack containers or volumes found!"
+        return 0
+    fi
+    
+    if [ -z "$all_containers" ] && [ -n "$all_ollama_volumes" ]; then
+        print_success "No ollama-stack containers found!"
+        # Continue to handle orphaned volumes only
+    fi
+    
+    # Group containers by installation to show what we found
+    local installation_list=""
     local zombie_containers=""
+    
     for container in $all_containers; do
-        if [[ ! "$current_containers" =~ "$container" ]]; then
-            zombie_containers="$zombie_containers $container"
-        fi
+        local installation=$(docker inspect "$container" --format '{{index .Config.Labels "ollama-stack.installation"}}' 2>/dev/null || echo "unknown")
+        installation_list="$installation_list $installation"
+        zombie_containers="$zombie_containers $container"
     done
     
-    # Find orphaned volumes using exact names if available, fallback to patterns
+    # Find orphaned volumes from container mounts AND standalone volumes
     local orphaned_volumes=""
-    local all_volumes=$(docker volume ls --format "{{.Name}}" 2>/dev/null || true)
     
-    # Try to get exact volume names from .env first
-    if [ -f ".env" ]; then
-        local ollama_volume=$(grep "^OLLAMA_VOLUME_NAME=" ".env" 2>/dev/null | cut -d'=' -f2)
-        local webui_volume=$(grep "^WEBUI_VOLUME_NAME=" ".env" 2>/dev/null | cut -d'=' -f2)
-        
-        if [ -n "$ollama_volume" ] && echo "$all_volumes" | grep -q "^${ollama_volume}$"; then
-            orphaned_volumes="$orphaned_volumes $ollama_volume"
-        fi
-        if [ -n "$webui_volume" ] && echo "$all_volumes" | grep -q "^${webui_volume}$"; then
-            orphaned_volumes="$orphaned_volumes $webui_volume"
-        fi
+    # Get volumes from all ollama-stack containers
+    if [ -n "$all_containers" ]; then
+        for container in $all_containers; do
+            local volumes=$(docker inspect "$container" --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' 2>/dev/null || true)
+            for volume in $volumes; do
+                if [[ "$volume" =~ (ollama|webui) ]]; then
+                    orphaned_volumes="$orphaned_volumes $volume"
+                fi
+            done
+        done
     fi
     
-    # Fallback to pattern matching if no exact names found
-    if [ -z "$orphaned_volumes" ]; then
-        orphaned_volumes=$(echo "$all_volumes" | grep -E "(ollama-stack.*ollama_data|ollama-stack.*webui_data|.*_ollama_data|.*_webui_data)" 2>/dev/null || true)
-    fi
+    # Also add any standalone volumes that match ollama/webui pattern
+    for volume in $all_ollama_volumes; do
+        orphaned_volumes="$orphaned_volumes $volume"
+    done
+    
+    # Remove duplicates
+    orphaned_volumes=$(echo "$orphaned_volumes" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')
     
     # Find orphaned networks
     local orphaned_networks=$(docker network ls --format "{{.Name}}" | grep "ollama" | grep -v "ollama-stack-network" 2>/dev/null || true)
     
     if [ -z "$zombie_containers" ] && [ -z "$orphaned_volumes" ] && [ -z "$orphaned_networks" ]; then
-        print_success "No orphaned ollama-stack resources found!"
+        print_success "No ollama-stack resources found!"
         return 0
     fi
     
-    print_warning "Found orphaned ollama-stack resources:"
+    print_warning "Found ollama-stack resources to clean up:"
     
     if [ -n "$zombie_containers" ]; then
-        print_status "Containers from other installations:"
-        for container in $zombie_containers; do
-            local status=$(docker ps -a --format "{{.Status}}" --filter "name=$container" 2>/dev/null)
-            print_status "  • $container ($status)"
+        print_status "Containers by installation:"
+        local unique_installations=$(echo $installation_list | tr ' ' '\n' | sort -u | tr '\n' ' ')
+        
+        for installation in $unique_installations; do
+            local containers=""
+            local container_array=($zombie_containers)
+            local installation_array=($installation_list)
+            
+            for i in "${!container_array[@]}"; do
+                if [ "${installation_array[$i]}" = "$installation" ]; then
+                    containers="$containers ${container_array[$i]}"
+                fi
+            done
+            
+            local container_count=$(echo $containers | wc -w)
+            print_status "  Installation: $installation ($container_count containers)"
+            for container in $containers; do
+                local status=$(docker ps -a --format "{{.Status}}" --filter "name=$container" 2>/dev/null)
+                print_status "    • $container ($status)"
+            done
         done
     fi
     
@@ -1762,6 +1915,9 @@ EOF
 
 # Main command dispatcher
 main() {
+    # Save the original directory before changing to script directory
+    export ORIGINAL_DIR="$(pwd)"
+    
     # Change to script directory
     cd "$SCRIPT_DIR"
     

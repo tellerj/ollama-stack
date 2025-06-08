@@ -39,6 +39,37 @@ print_error() {
     print_color $RED "[-] $1"
 }
 
+# Create foundational .env file with deterministic variables
+create_foundational_env() {
+    local target_dir="${1:-.}"
+    local env_file="$target_dir/.env"
+    local project_name=""
+    
+    # Get project name from target directory name
+    project_name=$(basename "$(cd "$target_dir" && pwd)")
+    
+    # Create foundational .env file with header and deterministic variables
+    cat > "$env_file" << EOF
+# Ollama Stack Environment Variables
+# This file is automatically managed by ollama-stack
+# WEBUI_SECRET_KEY will be generated after initial setup
+
+# Infrastructure naming - exact names for reliable operations
+PROJECT_NAME=${project_name}
+OLLAMA_VOLUME_NAME=${project_name}_ollama_data
+WEBUI_VOLUME_NAME=${project_name}_webui_data
+NETWORK_NAME=${project_name}_network
+EOF
+
+    if [ $? -eq 0 ]; then
+        print_status "Created foundational .env file with project name: $project_name"
+        return 0
+    else
+        print_error "Failed to create foundational .env file"
+        return 1
+    fi
+}
+
 # Get script directory (now in project root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
@@ -150,6 +181,12 @@ case $install_method in
         chmod +x "$project_install_path/ollama-stack"
         chmod +x "$project_install_path/ollama-stack.ps1"
         
+        # Create foundational .env file
+        print_status "Setting up foundational environment..."
+        if ! create_foundational_env "$project_install_path"; then
+            print_warning "Failed to create foundational .env file - it will be created on first start"
+        fi
+        
         # Create wrapper script
         cat > "$install_path" << 'EOF'
 #!/bin/bash
@@ -183,6 +220,12 @@ EOF
         # Make scripts executable
         chmod +x "$project_install_path/ollama-stack"
         chmod +x "$project_install_path/ollama-stack.ps1"
+        
+        # Create foundational .env file
+        print_status "Setting up foundational environment..."
+        if ! create_foundational_env "$project_install_path"; then
+            print_warning "Failed to create foundational .env file - it will be created on first start"
+        fi
         
         # Create wrapper script
         cat > "$install_path" << EOF

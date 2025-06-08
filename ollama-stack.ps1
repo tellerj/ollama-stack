@@ -118,14 +118,52 @@ function Test-DockerRunning {
     }
 }
 
-# Store infrastructure names in .env for reliable operations
+# Create foundational .env file with deterministic variables (for install-time setup)
+function New-FoundationalEnv {
+    param(
+        [string]$TargetDir = "."
+    )
+    
+    $envFile = Join-Path $TargetDir ".env"
+    $projectName = Split-Path -Leaf (Resolve-Path $TargetDir)
+    
+    # Create foundational .env file with header and deterministic variables
+    $envContent = @"
+# Ollama Stack Environment Variables
+# This file is automatically managed by ollama-stack
+# WEBUI_SECRET_KEY will be generated after initial setup
+
+# Infrastructure naming - exact names for reliable operations
+PROJECT_NAME=$projectName
+OLLAMA_VOLUME_NAME=${projectName}_ollama_data
+WEBUI_VOLUME_NAME=${projectName}_webui_data
+NETWORK_NAME=${projectName}_network
+"@
+
+    try {
+        $envContent | Set-Content $envFile -ErrorAction Stop
+        Write-Status "Created foundational .env file with project name: $projectName"
+        return $true
+    } catch {
+        Write-Error "Failed to create foundational .env file: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Store/update infrastructure names and runtime metadata in .env
 function Set-InfrastructureNames {
     $envFile = ".env"
     
     # Get current project name (directory name)
     $projectName = Split-Path -Leaf (Get-Location)
     
-    # Add infrastructure naming if not already present
+    # Ensure .env exists (create foundational if missing)
+    if (-not (Test-Path $envFile)) {
+        Write-Status "No .env file found, creating foundational environment..."
+        New-FoundationalEnv "."
+    }
+    
+    # Add infrastructure naming if not already present (backward compatibility)
     if (Test-Path $envFile) {
         try {
             $envContent = Get-Content $envFile -ErrorAction SilentlyContinue
@@ -673,40 +711,148 @@ function Invoke-Stop {
     
     Write-Header "Stopping Ollama Stack"
     
-    if ($platform -eq "auto") {
-        $platform = Get-Platform
-    }
-    
     Test-DockerRunning
     
-    # Get compose files
-    $composeFiles = Get-ComposeFiles -Platform $platform
-    
-    # Build command
-    $dockerCmd = @("docker", "compose") + $composeFiles
-    
-    if ($removeVolumes) {
-        Write-Warning "Removing volumes (all data will be deleted)..."
-        $dockerCmd += @("down", "-v")
-    } else {
-        $dockerCmd += @("down")
+    # Discovery-based approach: Find ALL running ollama-stack containers using labels
+    try {
+        $allRunningContainers = docker ps --filter "label=ollama-stack.installation" --format "{{.Names}}" 2>$null | Where-Object { $_ }
+    } catch {
+        $allRunningContainers = @()
     }
     
-    # Execute
-    try {
-        & $dockerCmd[0] $dockerCmd[1..($dockerCmd.Length-1)]
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Stack stopped successfully"
-            if ($removeVolumes) {
-                Write-Success "Volumes removed successfully"
+    if (-not $allRunningContainers) {
+        Write-Success "No ollama-stack containers are currently running"
+        return
+    }
+    
+    # Group containers by installation
+    $installations = @{}
+    foreach ($container in $allRunningContainers) {
+        try {
+            $installation = docker inspect $container --format '{{index .Config.Labels "ollama-stack.installation"}}' 2>$null
+            if (-not $installation) { $installation = "unknown" }
+            
+            if ($installations.ContainsKey($installation)) {
+                $installations[$installation] += @($container)
+            } else {
+                $installations[$installation] = @($container)
             }
+        } catch {
+            # Skip containers we can't inspect
+        }
+    }
+    
+    # If we're in a directory with .env, prioritize that installation
+    $projectName = ""
+    if (Test-Path ".env") {
+        $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
+        $projectLine = $envContent | Where-Object { $_ -match "^PROJECT_NAME=" }
+        if ($projectLine) {
+            $projectName = ($projectLine -split "=", 2)[1]
+        }
+    }
+    
+    # Determine which installation(s) to stop
+    $targetInstallation = ""
+    $targetContainers = @()
+    
+    if ($projectName -and $installations.ContainsKey($projectName)) {
+        # Stop the installation matching current directory
+        $targetInstallation = $projectName
+        $targetContainers = $installations[$projectName]
+        Write-Status "Found running stack for current directory: $projectName"
+    } elseif ($installations.Count -eq 1) {
+        # Only one installation running, stop it
+        $targetInstallation = $installations.Keys[0]
+        $targetContainers = $installations[$targetInstallation]
+        Write-Status "Found single running stack: $targetInstallation"
+    } else {
+        # Multiple installations running, ask user to choose
+        Write-Warning "Multiple ollama-stack installations are running:"
+        $installNames = @($installations.Keys)
+        for ($i = 0; $i -lt $installNames.Count; $i++) {
+            $install = $installNames[$i]
+            $containers = $installations[$install]
+            $containerCount = $containers.Count
+            Write-Status "  $($i + 1). $install ($containerCount containers)"
+        }
+        
+        Write-Host ""
+        $choice = Read-Host "Which installation would you like to stop? (1-$($installNames.Count), or 'all')"
+        
+        if ($choice -eq "all") {
+            $targetInstallation = "all"
+            $targetContainers = $allRunningContainers
+        } elseif ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $installNames.Count) {
+            $targetInstallation = $installNames[[int]$choice - 1]
+            $targetContainers = $installations[$targetInstallation]
         } else {
-            Write-Error "Failed to stop stack"
+            Write-Error "Invalid choice. Aborting."
             exit 1
         }
+    }
+    
+    Write-Status "Stopping containers: $($targetContainers -join ', ')"
+    
+    # Stop containers
+    foreach ($container in $targetContainers) {
+        Write-Status "  Stopping: $container"
+        try { docker stop $container 2>$null | Out-Null } catch { }
+    }
+    
+    # Remove containers
+    foreach ($container in $targetContainers) {
+        Write-Status "  Removing: $container"
+        try { docker rm $container 2>$null | Out-Null } catch { }
+    }
+    
+    # Handle volume removal if requested
+    if ($removeVolumes) {
+        Write-Warning "Removing volumes (all data will be deleted)..."
+        
+        # Get volume names for each installation
+        foreach ($container in $targetContainers) {
+            try {
+                $volumes = docker inspect $container --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' 2>$null
+                if ($volumes) {
+                    $volumeList = $volumes -split '\s+' | Where-Object { $_ -match "(ollama|webui)" }
+                    foreach ($volume in $volumeList) {
+                        Write-Status "  Removing volume: $volume"
+                        try { docker volume rm $volume 2>$null | Out-Null } catch { }
+                    }
+                }
+            } catch {
+                # Skip if we can't inspect
+            }
+        }
+    }
+    
+    # Remove networks if they're empty
+    try {
+        $networks = docker network ls --filter "name=ollama" --format "{{.Name}}" 2>$null | Where-Object { $_ }
+        foreach ($network in $networks) {
+            try {
+                $connectedContainers = docker network inspect $network --format '{{len .Containers}}' 2>$null
+                if ($connectedContainers -eq "0") {
+                    Write-Status "  Removing empty network: $network"
+                    docker network rm $network 2>$null | Out-Null
+                }
+            } catch {
+                # Skip if we can't inspect
+            }
+        }
     } catch {
-        Write-Error "Failed to stop stack: $($_.Exception.Message)"
-        exit 1
+        # Ignore network cleanup errors
+    }
+    
+    if ($targetInstallation -eq "all") {
+        Write-Success "All ollama-stack installations stopped successfully"
+    } else {
+        Write-Success "Ollama Stack ($targetInstallation) stopped successfully"
+    }
+    
+    if ($removeVolumes) {
+        Write-Success "Volumes removed successfully"
     }
 }
 
@@ -827,10 +973,26 @@ function Invoke-Status {
     
     # Check for orphaned volumes
     try {
-        $allOllamaVolumes = docker volume ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "(ollama|webui)" -and $_ -notmatch "ollama-stack-1" }
-        if ($allOllamaVolumes.Count -gt 0) {
+        $allOllamaVolumes = docker volume ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "(ollama|webui)" }
+        $orphanedVolumes = @()
+        
+        # Filter out volumes that belong to this installation
+        foreach ($volume in $allOllamaVolumes) {
+            $isOurs = $false
+            
+            # Check if this volume matches our expected volume names
+            if ($volume -eq $env:OLLAMA_VOLUME_NAME -or $volume -eq $env:WEBUI_VOLUME_NAME) {
+                $isOurs = $true
+            }
+            
+            if (-not $isOurs) {
+                $orphanedVolumes += $volume
+            }
+        }
+        
+        if ($orphanedVolumes.Count -gt 0) {
             Write-Warning "Found volumes from other installations:"
-            $allOllamaVolumes | ForEach-Object { Write-Host "  $_" }
+            $orphanedVolumes | ForEach-Object { Write-Host "  $_" }
             Write-Status "Use 'ollama-stack.ps1 cleanup --volumes' to remove them"
             Write-Host ""
         }
@@ -1331,13 +1493,12 @@ function Invoke-Uninstall {
     if (-not $force) {
         Write-Warning "This will completely remove the Ollama Stack:"
         Write-Status "  • Stop all running containers"
-        Write-Status "  • Remove all containers"
+        Write-Status "  • Remove all containers and orphaned resources"
         if ($removeImages) {
             Write-Status "  • Remove all Docker images"
         } else {
             Write-Success "  • Keep Docker images (faster future installs)"
         }
-        Write-Status "  • Remove Docker network"
         if ($removeVolumes) {
             Write-Error "  • Remove all volumes (DELETES ALL DATA!)"
         } else {
@@ -1358,18 +1519,40 @@ function Invoke-Uninstall {
         }
     }
     
-    # Stop all services first
-    Write-Status "Stopping all services..."
-    Invoke-Stop @("--platform", "auto")
+    # Check Docker
+    Test-DockerRunning
     
-    # Stop and remove extension containers
-    Write-Status "Stopping and removing extension containers..."
+    # Step 1: Check if any stack is currently running and stop it using robust stop logic
+    Write-Status "Checking for running services..."
+    try {
+        $runningContainers = @()
+        $composeOutput = docker compose ps -q 2>$null
+        if ($composeOutput) {
+            $runningContainers = $composeOutput | Where-Object { $_ -and $_.Trim() }
+        }
+        
+        if ($runningContainers.Count -gt 0) {
+            Write-Status "Found running stack - stopping it properly..."
+            if ($removeVolumes) {
+                Invoke-Stop @("--platform", "auto", "--remove-volumes")
+            } else {
+                Invoke-Stop @("--platform", "auto")
+            }
+        } else {
+            Write-Status "No running stack detected"
+        }
+    } catch {
+        Write-Status "No running stack detected"
+    }
+    
+    # Step 2: Stop and disable all extensions
+    Write-Status "Stopping and disabling extensions..."
     $extensionDirs = Get-ChildItem $ExtensionsDir -Directory -ErrorAction SilentlyContinue
     foreach ($extensionDir in $extensionDirs) {
         $extension = $extensionDir.Name
         $dockerCompose = Join-Path $extensionDir.FullName "docker-compose.yml"
         if (Test-Path $dockerCompose) {
-            Write-Status "  Removing extension: $extension"
+            Write-Status "  Stopping extension: $extension"
             $originalLocation = Get-Location
             try {
                 Set-Location $extensionDir.FullName
@@ -1385,15 +1568,15 @@ function Invoke-Uninstall {
         }
     }
     
-    # Remove main stack containers
-    Write-Status "Removing main stack containers..."
-    try {
-        docker compose down --remove-orphans 2>$null | Out-Null
-    } catch {
-        # Ignore errors
+    # Step 3: Use robust cleanup logic to remove orphaned resources
+    Write-Status "Cleaning up orphaned resources..."
+    if ($removeVolumes) {
+        Invoke-Cleanup @("--volumes", "--force")
+    } else {
+        Invoke-Cleanup @("--force")
     }
     
-    # Remove images if requested
+    # Step 4: Remove Docker images if requested
     if ($removeImages) {
         Write-Status "Removing Docker images..."
         $imagesToRemove = @(
@@ -1404,7 +1587,7 @@ function Invoke-Uninstall {
         
         foreach ($image in $imagesToRemove) {
             try {
-                $existingImages = docker images --format "table {{.Repository}}:{{.Tag}}" 2>$null
+                $existingImages = docker images --format "{{.Repository}}:{{.Tag}}" 2>$null
                 if ($existingImages -match "^$([regex]::Escape($image))") {
                     Write-Status "  Removing image: $image"
                     $imageIds = docker images "$image" -q 2>$null
@@ -1421,7 +1604,7 @@ function Invoke-Uninstall {
         foreach ($extensionDir in $extensionDirs) {
             $extension = $extensionDir.Name
             try {
-                $existingImages = docker images --format "table {{.Repository}}:{{.Tag}}" 2>$null
+                $existingImages = docker images --format "{{.Repository}}:{{.Tag}}" 2>$null
                 if ($existingImages -match "^$([regex]::Escape($extension))") {
                     Write-Status "  Removing extension image: $extension"
                     $imageIds = docker images "$extension" -q 2>$null
@@ -1437,100 +1620,7 @@ function Invoke-Uninstall {
         Write-Status "Keeping Docker images for faster future installs..."
     }
     
-    # Remove volumes
-    if ($removeVolumes) {
-        Write-Status "Removing volumes..."
-        
-        try {
-            # Find volumes using exact names from .env if available, fallback to patterns
-            $allVolumes = docker volume ls --format "{{.Name}}" 2>$null
-            $projectVolumes = @()
-            
-            # Try to get exact volume names from .env
-            if (Test-Path ".env") {
-                $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
-                $ollamaVolumeLine = $envContent | Where-Object { $_ -match "^OLLAMA_VOLUME_NAME=" }
-                $webuiVolumeLine = $envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }
-                
-                $ollamaVolume = if ($ollamaVolumeLine) { ($ollamaVolumeLine -split "=", 2)[1] } else { "" }
-                $webuiVolume = if ($webuiVolumeLine) { ($webuiVolumeLine -split "=", 2)[1] } else { "" }
-                
-                if ($ollamaVolume -and ($allVolumes -contains $ollamaVolume)) {
-                    $projectVolumes += $ollamaVolume
-                }
-                if ($webuiVolume -and ($allVolumes -contains $webuiVolume)) {
-                    $projectVolumes += $webuiVolume
-                }
-            }
-            
-            # Fallback to pattern matching for backward compatibility
-            if ($projectVolumes.Count -eq 0) {
-                $projectVolumes = $allVolumes | Where-Object { $_ -match "(ollama-stack.*ollama_data|ollama-stack.*webui_data|.*_ollama_data|.*_webui_data)" }
-            }
-            
-            if ($projectVolumes.Count -gt 0) {
-                foreach ($volume in $projectVolumes) {
-                    if ($volume -and $volume.Trim()) {
-                        Write-Status "  Removing volume: $volume"
-                        docker volume rm $volume.Trim() 2>$null | Out-Null
-                    }
-                }
-            } else {
-                Write-Status "  No ollama-stack volumes found"
-            }
-        } catch {
-            # Ignore errors
-        }
-        
-        # Remove extension volumes
-        foreach ($extensionDir in $extensionDirs) {
-            $extension = $extensionDir.Name
-            try {
-                $existingVolumes = docker volume ls --format "table {{.Name}}" 2>$null
-                $extensionVolumes = $existingVolumes | Where-Object { $_ -match "^$([regex]::Escape($extension))" }
-                foreach ($volume in $extensionVolumes) {
-                    if ($volume -and $volume.Trim()) {
-                        Write-Status "  Removing extension volume: $volume"
-                        docker volume rm $volume.Trim() 2>$null | Out-Null
-                    }
-                }
-            } catch {
-                # Ignore errors
-            }
-        }
-    }
-    
-    # Remove network
-    Write-Status "Removing Docker network..."
-    try {
-        $existingNetworks = docker network ls --format "table {{.Name}}" 2>$null
-        $networkName = "ollama-stack-network"  # default fallback
-        
-        # Try to get exact network name from .env
-        if (Test-Path ".env") {
-            $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
-            $networkLine = $envContent | Where-Object { $_ -match "^NETWORK_NAME=" }
-            if ($networkLine) {
-                $networkName = ($networkLine -split "=", 2)[1]
-            }
-        }
-        
-        if ($existingNetworks -match "^$([regex]::Escape($networkName))$") {
-            docker network rm $networkName 2>$null | Out-Null
-        }
-    } catch {
-        # Ignore errors
-    }
-    
-    # Clean up any remaining containers
-    Write-Status "Cleaning up remaining containers..."
-    try {
-        docker container prune -f 2>$null | Out-Null
-    } catch {
-        # Ignore errors
-    }
-    
-    # Clean up installation files if installed
+    # Step 5: Clean up installation files if installed
     if ($isInstalled) {
         Write-Status "Removing installation files..."
         
@@ -1641,74 +1731,99 @@ function Invoke-Cleanup {
         return
     }
     
-    # Get our installation name from .env
-    $projectName = "ollama-stack"  # default
-    if (Test-Path ".env") {
-        $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
-        $projectLine = $envContent | Where-Object { $_ -match "^PROJECT_NAME=" }
-        if ($projectLine) {
-            $projectName = ($projectLine -split "=", 2)[1]
-        }
-    }
-    
-    # Find all ollama-stack related containers using Docker labels (robust approach)
+    # Discovery-based approach: Find ALL ollama-stack installations
     try {
         $allContainers = docker ps -a --filter "label=ollama-stack.installation" --format "{{.Names}}" 2>$null | Where-Object { $_ }
-        $currentContainers = docker ps -a --filter "label=ollama-stack.installation=$projectName" --format "{{.Names}}" 2>$null | Where-Object { $_ }
     } catch {
         $allContainers = @()
-        $currentContainers = @()
     }
     
-    # Find zombie containers (not managed by current installation)
+    # Also check for orphaned volumes even if no containers exist
+    try {
+        $allOllamaVolumes = docker volume ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "(ollama|webui)" }
+    } catch {
+        $allOllamaVolumes = @()
+    }
+    
+    if (-not $allContainers -and -not $allOllamaVolumes) {
+        Write-Success "No ollama-stack containers or volumes found!"
+        return
+    }
+    
+    if (-not $allContainers -and $allOllamaVolumes) {
+        Write-Success "No ollama-stack containers found!"
+        # Continue to handle orphaned volumes only
+    }
+    
+    # Group containers by installation to show what we found
+    $installations = @{}
     $zombieContainers = @()
+    
     foreach ($container in $allContainers) {
-        if ($container -and $container -notin $currentContainers) {
+        try {
+            $installation = docker inspect $container --format '{{index .Config.Labels "ollama-stack.installation"}}' 2>$null
+            if (-not $installation) { $installation = "unknown" }
+            
+            if ($installations.ContainsKey($installation)) {
+                $installations[$installation] += @($container)
+            } else {
+                $installations[$installation] = @($container)
+            }
             $zombieContainers += $container
+        } catch {
+            # Skip containers we can't inspect
         }
     }
     
-    # Find orphaned volumes using exact names if available, fallback to patterns
-    $allVolumes = docker volume ls --format "{{.Name}}" 2>$null
+    # Find orphaned volumes from container mounts AND standalone volumes
     $orphanedVolumes = @()
     
-    # Try to get exact volume names from .env first
-    if (Test-Path ".env") {
-        $envContent = Get-Content ".env" -ErrorAction SilentlyContinue
-        $ollamaVolumeLine = $envContent | Where-Object { $_ -match "^OLLAMA_VOLUME_NAME=" }
-        $webuiVolumeLine = $envContent | Where-Object { $_ -match "^WEBUI_VOLUME_NAME=" }
-        
-        $ollamaVolume = if ($ollamaVolumeLine) { ($ollamaVolumeLine -split "=", 2)[1] } else { "" }
-        $webuiVolume = if ($webuiVolumeLine) { ($webuiVolumeLine -split "=", 2)[1] } else { "" }
-        
-        if ($ollamaVolume -and ($allVolumes -contains $ollamaVolume)) {
-            $orphanedVolumes += $ollamaVolume
-        }
-        if ($webuiVolume -and ($allVolumes -contains $webuiVolume)) {
-            $orphanedVolumes += $webuiVolume
+    # Get volumes from all ollama-stack containers
+    if ($allContainers) {
+        foreach ($container in $allContainers) {
+            try {
+                $volumes = docker inspect $container --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' 2>$null
+                if ($volumes) {
+                    $volumeList = $volumes -split '\s+' | Where-Object { $_ -match "(ollama|webui)" }
+                    foreach ($volume in $volumeList) {
+                        if ($volume -notin $orphanedVolumes) {
+                            $orphanedVolumes += $volume
+                        }
+                    }
+                }
+            } catch {
+                # Skip containers we can't inspect
+            }
         }
     }
     
-    # Fallback to pattern matching if no exact names found
-    if ($orphanedVolumes.Count -eq 0) {
-        $orphanedVolumes = $allVolumes | Where-Object { $_ -match "(ollama-stack.*ollama_data|ollama-stack.*webui_data|.*_ollama_data|.*_webui_data)" }
+    # Also add any standalone volumes that match ollama/webui pattern
+    foreach ($volume in $allOllamaVolumes) {
+        if ($volume -notin $orphanedVolumes) {
+            $orphanedVolumes += $volume
+        }
     }
     
     # Find orphaned networks
     $orphanedNetworks = docker network ls --format "{{.Name}}" 2>$null | Where-Object { $_ -match "ollama" -and $_ -ne "ollama-stack-network" }
     
     if ($zombieContainers.Count -eq 0 -and $orphanedVolumes.Count -eq 0 -and $orphanedNetworks.Count -eq 0) {
-        Write-Success "No orphaned ollama-stack resources found!"
+        Write-Success "No ollama-stack resources found!"
         return
     }
     
-    Write-Warning "Found orphaned ollama-stack resources:"
+    Write-Warning "Found ollama-stack resources to clean up:"
     
     if ($zombieContainers.Count -gt 0) {
-        Write-Status "Containers from other installations:"
-        foreach ($container in $zombieContainers) {
-            $status = docker ps -a --format "{{.Status}}" --filter "name=$container" 2>$null
-            Write-Status "  • $container ($status)"
+        Write-Status "Containers by installation:"
+        foreach ($installation in $installations.Keys) {
+            $containers = $installations[$installation]
+            $containerCount = $containers.Count
+            Write-Status "  Installation: $installation ($containerCount containers)"
+            foreach ($container in $containers) {
+                $status = docker ps -a --format "{{.Status}}" --filter "name=$container" 2>$null
+                Write-Status "    • $container ($status)"
+            }
         }
     }
     
