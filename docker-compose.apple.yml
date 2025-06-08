@@ -14,9 +14,12 @@ services:
     environment:
       # Override: Point to host machine's Ollama instance  
       - OLLAMA_API_BASE_URL=http://host.docker.internal:11434
-      # Disable internal Ollama proxy path (use direct API instead)
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      # WEBUI_SECRET_KEY will be set dynamically by start command when needed
+      # Inherit from base: Secret key for user session persistence
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      # Disable all embedding functionality to prevent internet downloads
+      - EMBEDDING_MODEL=none
+      - USE_EMBEDDING_MODEL_DOCKER=none
+      - RAG_EMBEDDING_MODEL=none
 
   # MCP Proxy uses its base configuration from docker-compose.yml
   # No override needed for Apple Silicon 
