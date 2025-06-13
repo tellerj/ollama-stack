@@ -19,6 +19,7 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 -   **Step 1.3: Implement Docker Client Basics (`docker_client.py`):**
     -   Implement platform detection (CPU, Apple, Nvidia).
     -   Implement functions to run `docker compose up` and `docker compose down`.
+    -   Add functionality to poll service endpoints after startup, providing real-time feedback for the `start` command's health check.
 
 -   **Step 1.4: Implement `start`, `stop`, and `restart` Commands:**
     -   Wire the command functions to call the `config` and `docker_client` modules.
@@ -36,9 +37,11 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 
 -   **Step 2.1: Enhance Docker Client for Queries:**
     -   Add functions to `docker_client.py` to get the status of stack containers.
+    -   This must include interpreting the container's health status provided by the Docker daemon (e.g., `healthy`, `unhealthy`, `starting`).
 
 -   **Step 2.2: Implement `status`, `logs`, and `check` Commands:**
-    -   Implement logic to display service status, stream logs, and run environment checks.
+    -   Implement the `status` command. Its output table should display the container health in the status column (e.g., "Running (healthy)", "Starting", "Unhealthy").
+    -   Implement the `logs` and `check` commands.
 
 -   **Step 2.3: Implement the `update` Command:**
     -   Implement logic to pull the latest Docker images for the core services.
