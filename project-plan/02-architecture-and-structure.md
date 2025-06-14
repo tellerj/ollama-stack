@@ -71,3 +71,22 @@ ollama_stack_cli/
 - **`commands/`**: A Python sub-package containing the implementation for each CLI command.
     - Each file (e.g., `start.py`, `status.py`) contains a `typer` command function.
     - These functions are responsible for orchestrating calls to other modules (`config.py`, `docker_client.py`) to execute the command's logic. They contain minimal business logic themselves.
+
+### 2.2. Internal Safety Mechanisms
+
+The CLI tool implements several internal mechanisms to ensure safe operation and prevent conflicts:
+
+1. **Operation State Management**
+   - The `docker_client.py` module tracks operation state internally
+   - Operations are atomic and can be rolled back if interrupted
+   - State changes are verified before and after operations
+
+2. **Concurrency Control**
+   - The `docker_client.py` module implements internal locking
+   - Prevents concurrent operations on the same resources
+   - Automatically handles lock timeouts and cleanup
+
+3. **Recovery Procedures**
+   - Built-in recovery for common failure scenarios
+   - Automatic rollback of partial operations
+   - State verification and repair if needed

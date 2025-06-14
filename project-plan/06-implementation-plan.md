@@ -4,52 +4,326 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 
 ---
 
-## Phase 1: Foundation & Core Service Lifecycle
+## Phase 1: Core Lifecycle Commands
 
-**Goal:** Establish the basic CLI structure and implement the core commands required to start and stop the main stack.
+**Goal:** Implement the fundamental commands for managing the core stack lifecycle: `start`, `stop`, and `restart`.
 
--   **Step 1.1: Initialise `main.py` with Typer:**
-    -   Create the main `Typer` app object and placeholder functions for all commands.
-    -   Verify the `ollama-stack` entry point works (`pip install -e .`).
+**Success Criteria:**
+- CLI tool can be installed and run
+- Core services can be started, stopped, and restarted reliably
+- Platform-specific configurations are handled correctly
+- Health checks verify service availability
+- All operations are safe and recoverable
+- Clear error messages guide users through issues
 
--   **Step 1.2: Implement Configuration Loading (`config.py`):**
-    -   Implement functions to load `.env` and to read/write `.ollama-stack.json`.
-    -   Handle missing files with sensible defaults.
+**Step 1.1: Project Setup**
+- Create project structure:
+  ```
+  ollama-stack/
+  ├── ollama_stack_cli/
+  │   ├── __init__.py
+  │   ├── main.py
+  │   ├── config.py
+  │   ├── docker_client.py
+  │   └── schemas.py
+  ├── tests/
+  │   └── test_*.py
+  ├── pyproject.toml
+  └── README.md
+  ```
+- Define dependencies in `pyproject.toml`:
+  - Runtime: typer, rich, docker, python-dotenv, pydantic
+  - Development: pytest, pytest-mock
+- Create development environment setup guide
 
--   **Step 1.3: Implement Docker Client Basics (`docker_client.py`):**
-    -   Implement platform detection (CPU, Apple, Nvidia).
-    -   Implement functions to run `docker compose up` and `docker compose down`.
-    -   Add functionality to poll service endpoints after startup, providing real-time feedback for the `start` command's health check.
+**Step 1.2: Core Module Implementation**
+- **`main.py`**:
+  - Implement Typer app with global options
+  - Add command structure for start/stop/restart
+  - Implement logging setup
+  - Add error handling middleware
+  - Add platform detection and validation
 
--   **Step 1.4: Implement `start`, `stop`, and `restart` Commands:**
-    -   Wire the command functions to call the `config` and `docker_client` modules.
+- **`config.py`**:
+  - Define configuration schema using Pydantic
+  - Implement `.env` loading with defaults:
+    - `PROJECT_NAME`: Generated from directory name
+    - `WEBUI_SECRET_KEY`: Generated if not present
+  - Implement `.ollama-stack.json` state management
+  - Add configuration validation
+  - Add platform-specific configuration handling
 
--   **Step 1.5: Write Unit Tests:**
-    -   Write `pytest` unit tests for `config.py` loading and default-handling.
-    -   Write unit tests for `docker_client.py` platform detection, mocking the Docker SDK.
-    -   **Testable Outcome:** `ollama-stack start` launches core services; `ollama-stack stop` terminates them.
+- **`docker_client.py`**:
+  - Implement platform detection (cpu/nvidia/apple)
+  - Add Docker Compose operations with error handling
+  - Implement health check system:
+    - HTTP endpoint polling for each service
+    - Timeout handling
+    - Retry logic
+  - Add operation safety:
+    - Atomic operations
+    - State verification
+    - Recovery procedures
+  - Add platform-specific compose file selection
+
+- **`schemas.py`**:
+  - Define data models for:
+    - Configuration
+    - Service state
+    - Health check results
+    - Operation status
+    - Platform configuration
+
+**Step 1.3: Command Implementation**
+- **`start` command**:
+  - Platform detection and validation
+  - Service startup sequence:
+    1. Verify Docker daemon is running
+    2. Check for existing stack
+    3. Load platform-specific configuration
+    4. Start services in correct order
+    5. Perform health checks
+  - Progress reporting with rich
+  - Error handling and recovery
+  - Apple platform warning for native Ollama
+
+- **`stop` command**:
+  - Graceful service shutdown sequence:
+    1. Verify services are running
+    2. Stop services in correct order
+    3. Remove containers and networks
+    4. Preserve volumes
+  - State verification
+  - Error handling
+
+- **`restart` command**:
+  - Stop with verification
+  - Start with health checks
+  - State consistency checks
+  - Option passing between stop/start
+
+**Step 1.4: Testing**
+- **Unit Tests**:
+  - Configuration loading and validation
+  - Platform detection
+  - Docker client operations
+  - Health check system
+  - Error handling
+  - Service state management
+
+- **Integration Tests**:
+  - Full start/stop/restart cycle
+  - Health check verification
+  - Error recovery
+  - State management
+  - Platform-specific behavior
+
+**Testable Outcomes:**
+1. `ollama-stack start`:
+   - Launches core services in correct order
+   - Verifies health of all services
+   - Reports success/failure clearly
+   - Handles platform-specific requirements
+2. `ollama-stack stop`:
+   - Stops services gracefully
+   - Cleans up resources properly
+   - Preserves volumes
+   - Verifies shutdown
+3. `ollama-stack restart`:
+   - Completes full cycle
+   - Maintains state consistency
+   - Verifies service health
+   - Preserves configuration
+
+**Extension Points:**
+- Configuration schema for future options
+- Health check system for additional services
+- State management for extensions
+- Error handling for new operations
+- Platform-specific configurations
 
 ---
 
-## Phase 2: State, Information & Updates
+## Phase 2: State and Information Commands
 
-**Goal:** Provide the user with visibility into the stack's status and the ability to manage it.
+**Goal:** Implement a consistent, user-friendly interface for monitoring and managing the Ollama stack, leveraging Docker's capabilities while adding stack-specific enhancements.
 
--   **Step 2.1: Enhance Docker Client for Queries:**
-    -   Add functions to `docker_client.py` to get the status of stack containers.
-    -   This must include interpreting the container's health status provided by the Docker daemon (e.g., `healthy`, `unhealthy`, `starting`).
+**Success Criteria:**
+- Users can view comprehensive stack status with consistent formatting
+- Users can access service logs with unified styling
+- Users can verify Ollama-specific environment requirements
+- All operations provide clear, consistently formatted feedback
+- Error states are clearly reported in a unified style
 
--   **Step 2.2: Implement `status`, `logs`, and `check` Commands:**
-    -   Implement the `status` command. Its output table should display the container health in the status column (e.g., "Running (healthy)", "Starting", "Unhealthy").
-    -   Implement the `logs` and `check` commands.
+**Step 2.1: Enhance Core Modules**
+- **Update `docker_client.py`**:
+  - Add Ollama-specific health checks:
+    - Model loading status
+    - API endpoint availability
+    - WebUI connectivity
+    - Extension compatibility
+  - Add extension status tracking:
+    - Enabled/disabled state
+    - Running status
+    - Compatibility checks
+  - Add Docker data aggregation:
+    - Container stats (using Docker's stats API)
+    - Port mappings (using Docker's inspect)
+    - Log streaming (using Docker's log API)
+    - Resource usage (using Docker's stats)
 
--   **Step 2.3: Implement the `update` Command:**
-    -   Implement logic to pull the latest Docker images for the core services.
+- **Update `schemas.py`**:
+  - Add `ServiceStatus` model:
+    ```python
+    class ServiceStatus:
+        name: str
+        status: str  # running, stopped, starting, etc.
+        health: str  # healthy, unhealthy, starting, etc.
+        ollama_health: Optional[Dict[str, str]]  # model status, API status, etc.
+        ports: List[str]
+        resources: ResourceUsage
+        last_updated: datetime
+    ```
+  - Add `ResourceUsage` model:
+    ```python
+    class ResourceUsage:
+        cpu_percent: float  # from Docker stats
+        memory_usage: int   # from Docker stats
+        memory_limit: int   # from Docker stats
+        network_io: Dict[str, int]  # from Docker stats
+    ```
+  - Add `ExtensionStatus` model:
+    ```python
+    class ExtensionStatus:
+        name: str
+        enabled: bool
+        running: bool
+        compatible: bool
+        last_checked: datetime
+    ```
+  - Add `EnvironmentCheck` model:
+    ```python
+    class EnvironmentCheck:
+        name: str
+        status: bool
+        message: str
+        required: bool
+        fix_hint: Optional[str]
+    ```
 
--   **Step 2.4: Write Unit Tests:**
-    -   Write unit tests for the Docker client query functions, mocking SDK responses.
-    -   Write unit tests for the logic within the `check` command.
-    -   **Testable Outcome:** `status`, `logs`, `check`, and `update` are all functional.
+**Step 2.2: Implement Status Command**
+- **Features**:
+  - Ollama-specific health status
+  - Extension status
+  - Container status (using Docker's data)
+  - Resource usage (using Docker's stats)
+- **Options**:
+  - `--json`: Output in JSON format
+  - `--extensions`: Show only extension status
+  - `--watch`: Continuously monitor status
+- **Output Format**:
+  ```
+  Core Services:
+  ┌────────────┬────────────┬────────────┬────────────┬────────────┐
+  │ Service    │ Status     │ Health     │ Ollama     │ Resources  │
+  ├────────────┼────────────┼────────────┼────────────┼────────────┤
+  │ ollama     │ Running    │ Healthy    │ API: OK    │ 45% CPU    │
+  │ webui      │ Running    │ Healthy    │ UI: OK     │ 30% CPU    │
+  └────────────┴────────────┴────────────┴────────────┴────────────┘
+
+  Extensions:
+  ┌────────────┬────────────┬────────────┐
+  │ Extension  │ Status     │ Compatible │
+  ├────────────┼────────────┼────────────┤
+  │ example    │ Running    │ Yes        │
+  └────────────┴────────────┴────────────┘
+  ```
+
+**Step 2.3: Implement Logs Command**
+- **Features**:
+  - Stack-specific log aggregation
+  - Extension log handling
+  - Log viewing (using Docker's logs)
+  - Consistent formatting
+- **Options**:
+  - `--service`: Filter by service
+  - `--level`: Filter by log level
+  - `--follow`: Stream logs in real-time
+  - `--tail`: Show last N lines
+  - `--since`: Show logs since timestamp
+  - `--until`: Show logs until timestamp
+- **Output Format**:
+  ```
+  [2024-03-14 10:15:23] [ollama] Starting service...
+  [2024-03-14 10:15:24] [webui] Initializing UI...
+  [2024-03-14 10:15:25] [mcp_proxy] Connection failed
+  ```
+
+**Step 2.4: Implement Check Command**
+- **Checks**:
+  - Ollama-specific requirements:
+    - Model directory permissions
+    - API port availability
+    - WebUI port availability
+    - Extension compatibility
+  - Basic Docker requirements:
+    - Docker daemon status
+    - Docker Compose version
+    - NVIDIA toolkit (if applicable)
+    - Resource availability
+- **Options**:
+  - `--fix`: Attempt to fix issues
+  - `--verbose`: Show detailed information
+- **Output Format**:
+  ```
+  Ollama Stack Checks:
+  ✓ Docker daemon running
+  ✓ Docker Compose v2.0.0
+  ✓ NVIDIA toolkit installed
+  ✓ Model directory accessible
+  ✓ Ports available
+  ✓ Resources sufficient
+  ✗ Extension compatibility (fix available)
+  ```
+
+**Step 2.5: Testing**
+- **Unit Tests**:
+  - Ollama health check logic
+  - Extension status tracking
+  - Environment validation
+  - Error handling
+  - Output formatting
+
+- **Integration Tests**:
+  - Full status reporting
+  - Log access across services
+  - Environment validation
+  - Error recovery
+  - Format consistency
+
+**Testable Outcomes:**
+1. `ollama-stack status`:
+   - Shows Ollama-specific health
+   - Reports extension status
+   - Displays container info and resources
+   - Maintains consistent formatting
+2. `ollama-stack logs`:
+   - Shows stack-specific logs
+   - Handles extension logs
+   - Uses Docker's log data
+   - Maintains consistent formatting
+3. `ollama-stack check`:
+   - Validates Ollama requirements
+   - Reports issues clearly
+   - Suggests solutions
+   - Attempts fixes when requested
+   - Maintains consistent formatting
+
+**Extension Points:**
+- Additional Ollama health checks
+- Extension compatibility checks
+- Custom environment validations
+- Additional output formatting options
 
 ---
 
@@ -68,40 +342,68 @@ This document outlines the sequential, phased plan for implementing the `ollama-
     -   Write unit tests for the resource discovery functions, mocking SDK responses for tagged resources.
     -   **Testable Outcome:** `uninstall --remove-volumes` leaves no stack-related Docker resources on the system.
 
+### Phase 4: Backup and Migration
+
+**Goal:** Implement robust backup, restore, and migration capabilities.
+
+- **Step 4.1: Implement Backup System**
+    - Create backup command structure
+    - Implement configuration backup
+    - Implement volume backup
+    - Add backup verification
+
+- **Step 4.2: Implement Restore System**
+    - Create restore command structure
+    - Implement configuration restore
+    - Implement volume restore
+    - Add restore verification
+
+- **Step 4.3: Implement Migration System**
+    - Create migration command structure
+    - Implement version detection
+    - Implement migration steps
+    - Add migration verification
+
+- **Step 4.4: Write Unit Tests**
+    - Test backup creation and verification
+    - Test restore procedures
+    - Test migration steps
+    - **Testable Outcome:** Users can backup, restore, and migrate their stack safely
+
 ---
 
-## Phase 4: Extension Management
+## Phase 5: Extension Management
 
 **Goal:** Implement the full lifecycle management for MCP extensions.
 
--   **Step 4.1: Define Schemas and Scan for Extensions:**
+-   **Step 5.1: Define Schemas and Scan for Extensions:**
     -   Create an `Extension` data schema in `schemas.py`.
     -   Implement logic to scan the `extensions/` directory and parse `mcp-config.json` files.
 
--   **Step 4.2: Implement `extensions list`, `info`, `enable`, `disable`:**
+-   **Step 5.2: Implement `extensions list`, `info`, `enable`, `disable`:**
     -   Implement the informational commands and the logic to modify `.ollama-stack.json`.
 
--   **Step 4.3: Implement `extensions start`, `stop`, and `restart`:**
+-   **Step 5.3: Implement `extensions start`, `stop`, and `restart`:**
     -   Add functions to `docker_client.py` to run Compose commands within an extension's directory.
     -   Wire up the subcommands.
 
--   **Step 4.4: Write Unit Tests:**
+-   **Step 5.4: Write Unit Tests:**
     -   Write unit tests for the extension discovery, parsing, and state-change logic.
     -   **Testable Outcome:** A user can `list`, `enable`, `start`, `stop`, and `disable` an extension.
 
 ---
 
-## Phase 5: Finalization & Quality Assurance
+## Phase 6: Finalization & Quality Assurance
 
 **Goal:** Ensure the CLI is robust, has a polished user experience, and is ready for release.
 
--   **Step 5.1: Implement Logging:**
+-   **Step 6.1: Implement Logging:**
     -   Integrate `rich` with Python's `logging` module and the global `--verbose` flag.
     -   Ensure all user-facing messages are clear and consistent.
 
--   **Step 5.2: Write Integration Tests:**
+-   **Step 6.2: Write Integration Tests:**
     -   Write end-to-end tests for the primary user workflows (`start` -> `status` -> `stop`).
     -   Write an integration test for the full extension lifecycle.
 
--   **Step 5.3: Update `README.md`:**
+-   **Step 6.3: Update `README.md`:**
     -   Replace the `README.md` content with instructions for the new Python CLI. 

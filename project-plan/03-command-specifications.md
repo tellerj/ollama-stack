@@ -19,17 +19,25 @@ Before executing any command, the CLI application will perform a set of pre-flig
 - `start`: Starts the core stack services.
 - `stop`: Stops and removes the core stack's containers and network.
 - `restart`: Restarts the core stack services.
-- `update`: Pulls the latest Docker images for the stack and enabled extensions.
 
 ### 2.2. State & Information Commands
-- `status`: Displays the current status of the core stack and extensions.
-- `logs`: Views logs from the core stack or a specific extension.
-- `check`: Verifies the user's environment meets runtime requirements.
+- `status`: Displays comprehensive stack status with consistent formatting, including Ollama-specific health and resource usage.
+- `logs`: Views logs from the core stack or a specific extension with unified styling and formatting.
+- `check`: Verifies Ollama-specific environment requirements and basic Docker setup with consistent output formatting.
 
 ### 2.3. Resource Management Commands
-- `extensions`: A subcommand group for managing extensions.
+- `update`: Pulls the latest Docker images for the stack and enabled extensions.
 - `cleanup`: Removes orphaned or all stack-related Docker resources.
 - `uninstall`: Decommissions the stack's Docker resources to prepare for tool removal.
+
+### 2.4. Backup and Migration Commands
+- `backup`: Create a backup of the current stack state and data.
+- `restore`: Restore the stack from a backup.
+- `migrate`: Migrate the stack to a new version or configuration.
+
+### 2.5. Extension Management Commands
+- `extensions`: A subcommand group for managing extensions.
+
 
 ---
 
@@ -63,6 +71,73 @@ Before executing any command, the CLI application will perform a set of pre-flig
     1.  Execute the logic of the `stop` command.
     2.  Execute the logic of the `start` command, passing through any provided options.
 
+---
+
+## 3. State & Information Commands
+
+### `status`
+- **Purpose**: Provide a comprehensive, consistently formatted overview of the Ollama stack's status and health.
+- **Options**:
+    - `--json`: Output in JSON format
+    - `--extensions`: Show only extension status
+    - `--watch`: Continuously monitor status
+- **Behavior**:
+    1.  Identify the current installation context by reading the `PROJECT_NAME` from `.env`.
+    2.  Find all Docker containers for the current installation. If none are running, display a helpful message for new users.
+    3.  Display the status of core services with:
+        - Ollama-specific health information
+        - Container status (from Docker)
+        - Resource usage (from Docker stats)
+        - Port mappings (from Docker inspect)
+    4.  Scan `extensions/` and `.ollama-stack.json` to determine the status of all extensions.
+    5.  Display the status of all extensions with compatibility information.
+    6.  Format all output consistently using rich tables and styling.
+
+### `logs`
+- **Purpose**: View logs from the core services or a specific extension with consistent formatting and styling.
+- **Arguments**:
+    - `service_or_extension_name`: (Optional) The name of a service or extension.
+- **Options**:
+    - `-f`, `--follow`: Follow the log output in real-time.
+    - `--tail`: Show last N lines.
+    - `--level`: Filter by log level.
+    - `--since`: Show logs since timestamp.
+    - `--until`: Show logs until timestamp.
+- **Behavior**:
+    1.  If `service_or_extension_name` is provided but does not match a known service or extension, exit with an error listing available targets.
+    2.  If it matches an enabled extension, view logs from that extension's compose context.
+    3.  Otherwise, view logs from the core stack's compose context.
+    4.  Format logs consistently with:
+        - Timestamps
+        - Service names
+        - Log levels
+        - Consistent styling
+    5.  Pass appropriate flags to the underlying Docker Compose command.
+
+### `check`
+- **Purpose**: Inspect the user's environment for Ollama-specific requirements and basic Docker setup with consistent output formatting.
+- **Options**:
+    - `--fix`: Attempt to fix issues where possible
+    - `--verbose`: Show detailed information
+- **Behavior**:
+    1.  Check for Ollama-specific requirements:
+        - Model directory permissions
+        - API port availability
+        - WebUI port availability
+        - Extension compatibility
+    2.  Check basic Docker requirements:
+        - Docker daemon status
+        - Docker Compose version
+        - NVIDIA toolkit (if applicable)
+        - Resource availability
+    3.  Report the status of each check to the user in a clear, consistently formatted list.
+    4.  If `--fix` is specified, attempt to fix any issues that can be automatically resolved.
+    5.  Format all output consistently using rich styling.
+
+---
+
+## 4. Resource Management Commands
+
 ### `update`
 - **Purpose**: Pull the latest Docker images for the core stack and all enabled extensions.
 - **Behavior**:
@@ -71,40 +146,6 @@ Before executing any command, the CLI application will perform a set of pre-flig
     3.  For each enabled extension, pull the images defined in its `docker-compose.yml`.
     4.  If the stack was running before the update, execute the `start` logic.
     5.  If the stack was not running, print a success message confirming which images were updated.
-
-### `status`
-- **Purpose**: Provide a comprehensive, read-only overview of the state of the local Ollama Stack installation.
-- **Behavior**:
-    1.  Identify the current installation context by reading the `PROJECT_NAME` from `.env`.
-    2.  Find all Docker containers for the current installation. If none are running, display a helpful message for new users (e.g., "Stack is not running. Use `ollama-stack start`.").
-    3.  Display the status of core services in a formatted table (`Service Name`, `Status`, `Ports`).
-    4.  Scan `extensions/` and `.ollama-stack.json` to determine the status of all extensions. If none exist, state this clearly.
-    5.  Display the status of all extensions in a formatted table (`Extension Name`, `Status`, `Description`).
-    6.  Identify and warn about any orphaned resources from other installations.
-
-### `logs`
-- **Purpose**: View logs from the core services or a specific extension.
-- **Arguments**:
-    - `service_or_extension_name`: (Optional) The name of a service or extension.
-- **Options**:
-    - `-f`, `--follow`: Follow the log output in real-time.
-- **Behavior**:
-    1.  If `service_or_extension_name` is provided but does not match a known service or extension, exit with an error listing available targets.
-    2.  If it matches an enabled extension, view logs from that extension's compose context.
-    3.  Otherwise, view logs from the core stack's compose context.
-    4.  Pass the `--follow` flag to the underlying Docker Compose command.
-
-### `check`
-- **Purpose**: Inspect the user's environment to diagnose common issues and verify requirements.
-- **Behavior**:
-    1.  Check for the presence and version of the `docker compose` CLI plugin.
-    2.  If on a Linux host, check for the presence of the NVIDIA Container Toolkit.
-    3.  Report the status of each check to the user in a clear, formatted list.
-
-### `extensions`
-- **Purpose**: A command group to manage the lifecycle of modular extensions.
-- **Subcommands**: `list`, `info <name>`, `enable <name>`, `disable <name>`, `start <name>`, `stop <name>`, `restart <name>`.
-- **Note**: Detailed subcommand behavior is specified in the next section.
 
 ### `cleanup`
 - **Purpose**: Remove Docker resources associated with any `ollama-stack` installation.
@@ -129,7 +170,54 @@ Before executing any command, the CLI application will perform a set of pre-flig
 
 ---
 
-## 4. Command Group: `extensions` (Subcommand Specifications)
+## 5. Backup and Migration Commands
+
+### `backup`
+- **Purpose**: Create a backup of the current stack state and data.
+- **Options**:
+    - `--include-volumes`: Also backup Docker volumes (default: false)
+    - `--output`: Specify backup location (default: `./backups/<timestamp>`)
+- **Behavior**:
+    1. Create a backup of `.env` and `.ollama-stack.json`
+    2. If `--include-volumes` is specified, backup relevant Docker volumes
+    3. Create a manifest file listing all backed-up components
+    4. Verify backup integrity
+    5. Display backup location and size
+
+### `restore`
+- **Purpose**: Restore the stack from a backup.
+- **Arguments**:
+    - `backup_path`: Path to the backup directory
+- **Options**:
+    - `--include-volumes`: Also restore Docker volumes (default: false)
+- **Behavior**:
+    1. Verify backup integrity
+    2. Stop running services if necessary
+    3. Restore `.env` and `.ollama-stack.json`
+    4. If `--include-volumes` is specified, restore Docker volumes
+    5. Verify restored state
+    6. Display success message with next steps
+
+### `migrate`
+- **Purpose**: Migrate the stack to a new version or configuration.
+- **Options**:
+    - `--version`: Target version to migrate to
+    - `--backup`: Create backup before migration (default: true)
+- **Behavior**:
+    1. If `--backup` is true, create a backup
+    2. Verify current state
+    3. Apply version-specific migration steps
+    4. Update configuration files
+    5. Verify migrated state
+    6. Display success message with next steps
+
+---
+
+## 6. Extension Management Commands
+
+### `extensions`
+- **Purpose**: A command group to manage the lifecycle of modular extensions.
+- **Subcommands**: `list`, `info <name>`, `enable <name>`, `disable <name>`, `start <name>`, `stop <name>`, `restart <name>`.
 
 ### `extensions list`
 - **Purpose**: Show the status of all available extensions.
@@ -175,4 +263,4 @@ Before executing any command, the CLI application will perform a set of pre-flig
 - **Purpose**: Restart a running extension.
 - **Behavior**:
     1.  Execute the `extensions stop <name>` logic.
-    2.  Execute the `extensions start <name>` logic. 
+    2.  Execute the `extensions start <name>` logic.
