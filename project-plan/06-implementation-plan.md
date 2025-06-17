@@ -6,7 +6,7 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 
 ## Phase 1: Core Lifecycle Commands
 
-**Goal:** Implement the fundamental commands for managing the core stack lifecycle: `start`, `stop`, and `restart`.
+**Goal:** Implement the fundamental commands for managing the core stack lifecycle, leveraging Docker's capabilities while adding Ollama-specific functionality and consistent styling.
 
 **Success Criteria:**
 - CLI tool can be installed and run
@@ -14,7 +14,7 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 - Platform-specific configurations are handled correctly
 - Health checks verify service availability
 - All operations are safe and recoverable
-- Clear error messages guide users through issues
+- Clear, consistently formatted error messages guide users through issues
 
 **Step 1.1: Project Setup**
 - Create project structure:
@@ -55,11 +55,14 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 
 - **`docker_client.py`**:
   - Implement platform detection (cpu/nvidia/apple)
-  - Add Docker Compose operations with error handling
-  - Implement health check system:
-    - HTTP endpoint polling for each service
-    - Timeout handling
-    - Retry logic
+  - Add Docker Compose operations:
+    - Use Docker SDK for container operations
+    - Use Docker Compose for service management
+    - Add error handling and recovery
+  - Implement Ollama-specific health checks:
+    - Model loading status
+    - API endpoint availability
+    - WebUI connectivity
   - Add operation safety:
     - Atomic operations
     - State verification
@@ -81,7 +84,7 @@ This document outlines the sequential, phased plan for implementing the `ollama-
     1. Verify Docker daemon is running
     2. Check for existing stack
     3. Load platform-specific configuration
-    4. Start services in correct order
+    4. Start services using Docker Compose
     5. Perform health checks
   - Progress reporting with rich
   - Error handling and recovery
@@ -90,7 +93,7 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 - **`stop` command**:
   - Graceful service shutdown sequence:
     1. Verify services are running
-    2. Stop services in correct order
+    2. Stop services using Docker Compose
     3. Remove containers and networks
     4. Preserve volumes
   - State verification
@@ -110,6 +113,7 @@ This document outlines the sequential, phased plan for implementing the `ollama-
   - Health check system
   - Error handling
   - Service state management
+  - Output formatting
 
 - **Integration Tests**:
   - Full start/stop/restart cycle
@@ -117,23 +121,27 @@ This document outlines the sequential, phased plan for implementing the `ollama-
   - Error recovery
   - State management
   - Platform-specific behavior
+  - Format consistency
 
 **Testable Outcomes:**
 1. `ollama-stack start`:
    - Launches core services in correct order
-   - Verifies health of all services
+   - Verifies Ollama-specific health
    - Reports success/failure clearly
    - Handles platform-specific requirements
+   - Maintains consistent formatting
 2. `ollama-stack stop`:
    - Stops services gracefully
    - Cleans up resources properly
    - Preserves volumes
    - Verifies shutdown
+   - Maintains consistent formatting
 3. `ollama-stack restart`:
    - Completes full cycle
    - Maintains state consistency
    - Verifies service health
    - Preserves configuration
+   - Maintains consistent formatting
 
 **Extension Points:**
 - Configuration schema for future options
@@ -141,6 +149,7 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 - State management for extensions
 - Error handling for new operations
 - Platform-specific configurations
+- Additional output formatting options
 
 ---
 
