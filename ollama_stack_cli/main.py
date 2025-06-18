@@ -1,53 +1,53 @@
 import typer
-from rich.console import Console
+from typing_extensions import Annotated
+from .context import AppContext
+from .commands.start import start
+from .commands.stop import stop
+from .commands.restart import restart
 
-app = typer.Typer()
-console = Console()
+app = typer.Typer(
+    help="A CLI for managing the Ollama Stack.",
+    add_completion=False,
+)
 
-@app.command()
-def start():
-    """Starts the core stack services."""
-    console.print("Placeholder for 'start' command.")
+app.command()(start)
+app.command()(stop)
+app.command()(restart)
 
-@app.command()
-def stop():
-    """Stops and removes the core stack's containers."""
-    console.print("Placeholder for 'stop' command.")
+@app.callback()
+def main(
+    ctx: typer.Context,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose output for debugging.",
+        ),
+    ] = False,
+):
+    """
+    Initialize the AppContext and attach it to the Typer context.
+    """
+    ctx.obj = AppContext(verbose=verbose)
 
-@app.command()
-def restart():
-    """Restarts the core stack services."""
-    console.print("Placeholder for 'restart' command.")
-
-@app.command()
-def update():
-    """Pulls the latest Docker images for the stack and enabled extensions."""
-    console.print("Placeholder for 'update' command.")
-
-@app.command()
-def status():
-    """Displays the current status of the core stack and extensions."""
-    console.print("Placeholder for 'status' command.")
-
-@app.command()
-def logs():
-    """Views logs from the core stack or a specific extension."""
-    console.print("Placeholder for 'logs' command.")
 
 @app.command()
-def check():
-    """Verifies the user's environment meets runtime requirements."""
-    console.print("Placeholder for 'check' command.")
+def status(ctx: typer.Context):
+    """Displays the status of the Ollama Stack services."""
+    app_context: AppContext = ctx.obj
+    statuses = app_context.docker_client.get_stack_status()
+    
+    if not statuses:
+        app_context.display.info("Ollama Stack is not running.")
+        return
 
-@app.command()
-def cleanup():
-    """Removes orphaned or all stack-related Docker resources."""
-    console.print("Placeholder for 'cleanup' command.")
-
-@app.command()
-def uninstall():
-    """Decommissions the stack's Docker resources to prepare for tool removal."""
-    console.print("Placeholder for 'uninstall' command.")
+    rows = [[s.name, s.status, s.ports, s.health] for s in statuses]
+    app_context.display.table(
+        title="Ollama Stack Status",
+        columns=["Service", "Status", "Ports", "Health"],
+        rows=rows,
+    )
 
 if __name__ == "__main__":
     app()

@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ollama-stack-cli"
+version = "0.1.0"
+authors = [
+  { name="Teller Junak", email="tellerj@gmail.com" },
+]
+description = "A CLI tool for managing the Ollama Stack"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "typer",
+    "rich",
+    "pydantic",
+    "python-dotenv",
+    "docker",
+    "urllib3<2.0",
+]
+
+[project.scripts]
+ollama-stack = "ollama_stack_cli.main:app"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/teller-junak/ollama-stack"
+"Bug Tracker" = "https://github.com/teller-junak/ollama-stack/issues"
+
+[tool.setuptools]
+packages = ["ollama_stack_cli"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.ruff]
+line-length = 88
+select = ["E", "W", "F", "I", "C", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests as integration tests (requires a running Docker daemon)",
+] 

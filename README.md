@@ -49,8 +49,9 @@ Access the web interface at `http://localhost:8080`
 ## CLI Commands
 
 ```bash
-ollama-stack start [-p platform]     # Start stack (auto-detects platform)
-ollama-stack stop                    # Stop stack  
+ollama-stack start [--update]        # Start stack (add --update to pull latest images)
+ollama-stack stop                    # Stop stack
+ollama-stack restart                 # Restart stack
 ollama-stack status                  # Show status
 ollama-stack logs [service]          # View logs
 ollama-stack extensions list         # List extensions

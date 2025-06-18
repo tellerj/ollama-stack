@@ -1,11 +1,25 @@
+# Environments
 .venv/
-.logs/
-
-# Python cache
-__pycache__/
-*.py[cod]
-
-# Environment variables (may contain secrets)
+venv/
 .env
 .env.backup
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+
+# Logs
+.logs/
+*.log
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
 
