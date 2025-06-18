@@ -1,0 +1,13 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rule: Development Workflow
+
+All contributions must adhere to the standards defined in `CONTRIBUTING.md`. Before completing a task, ensure the following:
+
+-   Code is formatted with `black`.
+-   Code passes all linter checks with `ruff`.
+-   New features have both unit and integration tests written with `pytest`.
+-   The "Definition of Done" checklist in the contributing guide has been met. 

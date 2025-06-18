@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rule: Data Modeling and State
+
+All data structures and application state are defined using Pydantic models in `schemas.py`.
+
+-   This applies to configuration data (`.env`, `.ollama-stack.json`) and any complex data passed between modules.
+-   The `config.py` module is the sole owner and manager of reading/writing the persistent state files (`.env`, `.ollama-stack.json`). Other modules should access configuration through the `AppContext`. 

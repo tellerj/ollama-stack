@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rule: Project Architecture Pattern
+
+The application uses a decoupled architecture centered on an `AppContext` object.
+
+-   **Instantiation:** `main.py` creates a single `AppContext` instance at startup.
+-   **Definition:** `context.py` defines the `AppContext` class, which holds the initialized `Config`, `DockerClient`, and `Display` objects.
+-   **Usage:** The `AppContext` (`ctx`) is passed as the first argument to every command function. Commands **must** interact with application services through this context (e.g., `ctx.docker_client.start()`, `ctx.display.success()`). Direct instantiation of services within commands is forbidden. 

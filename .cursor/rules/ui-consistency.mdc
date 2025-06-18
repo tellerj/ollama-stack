@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rule: UI Consistency
+
+All user-facing output, without exception, must be handled by the `display.py` module.
+
+-   This includes success messages, error messages, tables, progress spinners, and any other text printed to the console.
+-   The `Display` object is accessed via the `AppContext` (e.g., `ctx.display.table(...)`).
+-   Direct calls to `print()` or the `rich` library from within command logic or other modules are forbidden. This ensures a 100% consistent look and feel. 

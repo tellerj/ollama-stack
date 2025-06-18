@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rule: Project Philosophy
+
+The primary goal is to create a smooth and simple user experience for managing the Ollama stack. This tool is a specialized CLI for starting, stopping, updating, and monitoring the Ollama-Stack. It utilizes docker functionality, but it's not a replacement for the Docker CLI.
+
+- If a Docker command or API call provides the needed functionality, **wrap it** to provide consistent styling and stack-specific context.
+- If Docker's primitives are insufficient or would lead to a clunky user experience, **build a tailored solution** using the Docker SDK to orchestrate the desired behavior.
+- Do not reinvent core Docker functionality from scratch. 
