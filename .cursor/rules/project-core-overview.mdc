@@ -22,7 +22,7 @@ The **Ollama Stack** is a complete local AI development environment that provide
 
 ## Directory Structure
 ```
-ollama-stack-1/
+ollama-stack/
 ├── docker-compose.yml              # Core stack definition
 ├── docker-compose.nvidia.yml       # NVIDIA GPU optimizations
 ├── docker-compose.apple.yml        # Apple Silicon optimizations

@@ -39,7 +39,9 @@ ollama_stack_cli/
 │
 ├── __init__.py
 ├── main.py
+├── context.py
 ├── config.py
+├── display.py
 ├── docker_client.py
 ├── schemas.py
 │
@@ -53,7 +55,17 @@ ollama_stack_cli/
 
 ### 2.1. Module Responsibilities
 
-- **`main.py`**: The main entry point of the application. It uses `typer` to construct the CLI, register commands, and handle global options like `--verbose`. It is also responsible for executing pre-flight checks (e.g., loading configuration, verifying the Docker environment) before dispatching to a specific command.
+- **`main.py`**: The main entry point of the application. It is responsible for:
+    - Initializing a single `AppContext` instance.
+    - Using `typer` to construct the CLI and register commands.
+    - Handling global options and passing the `AppContext` to all command functions.
+
+- **`context.py`**: Defines the `AppContext` class. This class acts as a central container for the application's runtime state. It is responsible for:
+    - Loading and holding the configuration object from `config.py`.
+    - Initializing and holding the `DockerClient` instance.
+    - Initializing and holding the `Display` handler instance.
+
+- **`display.py`**: The single source of truth for all user-facing output. This module abstracts the `rich` library to ensure a consistent look and feel across the entire application. It provides methods like `display.success()`, `display.error()`, `display.table()`, etc. It is the only module that should directly import `rich`.
 
 - **`config.py`**: The interface for all persistent configuration and state.
     - **Reads/Writes `.ollama-stack.json`**: Manages the application's internal state.
@@ -70,7 +82,8 @@ ollama_stack_cli/
 
 - **`commands/`**: A Python sub-package containing the implementation for each CLI command.
     - Each file (e.g., `start.py`, `status.py`) contains a `typer` command function.
-    - These functions are responsible for orchestrating calls to other modules (`config.py`, `docker_client.py`) to execute the command's logic. They contain minimal business logic themselves.
+    - Command functions receive the `AppContext` object.
+    - They are responsible for orchestrating calls to the services held in the context (`ctx.docker_client`, `ctx.config`) and using the display handler (`ctx.display`) to report results. They contain minimal business logic themselves.
 
 ### 2.2. Internal Safety Mechanisms
 
@@ -90,3 +103,10 @@ The CLI tool implements several internal mechanisms to ensure safe operation and
    - Built-in recovery for common failure scenarios
    - Automatic rollback of partial operations
    - State verification and repair if needed
+
+## 3. Versioning and Distribution
+- **Principle**: The project must have a clear versioning scheme and a standard distribution channel to provide a stable and predictable experience for users.
+- **Implementation**:
+    - **Versioning**: The project will follow **Semantic Versioning (SemVer)** (e.g., `v1.2.3`).
+    - **Changelog**: A `CHANGELOG.md` file will be maintained to document all user-facing changes in each release.
+    - **Distribution**: The `ollama-stack` CLI tool will be packaged and distributed via the Python Package Index (PyPI).

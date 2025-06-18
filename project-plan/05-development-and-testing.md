@@ -34,4 +34,21 @@ This document outlines non-functional requirements and development practices to 
     - **Logging Levels**: Standard levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`) will be used.
     - **Global `--verbose` Flag**: A global `--verbose` flag will control the output verbosity.
     - **Default Output**: Displays `INFO` level and higher.
-    - **Verbose Output**: Displays `DEBUG` level and higher, providing detailed diagnostics for troubleshooting and bug reports. 
+    - **Verbose Output**: Displays `DEBUG` level and higher, providing detailed diagnostics for troubleshooting and bug reports.
+
+### 4. Coding Standards and Quality
+- **Principle**: The codebase must be consistent, readable, and of high quality to facilitate long-term maintenance and contributions.
+- **Implementation**:
+    - **Formatter**: We will use `black` for deterministic, non-negotiable code formatting.
+    - **Linter**: We will use `ruff` to catch a wide range of potential bugs and style inconsistencies.
+    - **Configuration**: The settings for these tools will be managed in `pyproject.toml`.
+    - **Automation**: We will encourage the use of `pre-commit` hooks to automate these checks.
+
+### 5. Definition of Done
+- **Principle**: Every new feature or fix must meet a consistent set of criteria to be considered complete, ensuring quality is built into the development process.
+- **Implementation**: A feature is "done" only when it:
+    - Is implemented according to the project's architecture.
+    - Has passing unit and integration tests.
+    - Includes clear user-facing documentation (e.g., help text).
+    - Adheres to all coding standards.
+    - Is documented in the `CHANGELOG.md` if it has a user-facing impact. 

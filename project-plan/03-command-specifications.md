@@ -263,4 +263,4 @@ Before executing any command, the CLI application will perform a set of pre-flig
 - **Purpose**: Restart a running extension.
 - **Behavior**:
     1.  Execute the `extensions stop <name>` logic.
-    2.  Execute the `extensions start <name>` logic.
+    2.  Execute the `extensions start <name>` logic. 
