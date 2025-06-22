@@ -48,4 +48,21 @@ def save_config(config: AppConfig, config_path: Path = DEFAULT_CONFIG_FILE):
         print(f"Error: Could not save configuration to {config_path}. Error: {e}")
 
 
+class Config:
+    """A configuration manager that handles loading and accessing app configuration."""
+    
+    def __init__(self, config_path: Path = DEFAULT_CONFIG_FILE):
+        """Initialize the Config with a loaded AppConfig."""
+        self._app_config = load_config(config_path)
+    
+    @property
+    def app_config(self) -> AppConfig:
+        """Returns the loaded AppConfig object."""
+        return self._app_config
+    
+    def save(self, config_path: Path = DEFAULT_CONFIG_FILE):
+        """Save the current configuration to file."""
+        save_config(self._app_config, config_path)
+
+
 
