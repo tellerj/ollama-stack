@@ -3,10 +3,10 @@ import pytest
 
 from ollama_stack_cli.context import AppContext
 
-@patch('ollama_stack_cli.context.DockerClient')
+@patch('ollama_stack_cli.context.StackManager')
 @patch('ollama_stack_cli.context.load_config')
 @patch('ollama_stack_cli.context.Display')
-def test_app_context_initialization(MockDisplay, mock_load_config, MockDockerClient):
+def test_app_context_initialization(MockDisplay, mock_load_config, MockStackManager):
     """
     Tests that AppContext correctly initializes its components.
     """
@@ -16,7 +16,7 @@ def test_app_context_initialization(MockDisplay, mock_load_config, MockDockerCli
     # Assert that our mocks were called correctly
     MockDisplay.assert_called_once_with(verbose=True)
     mock_load_config.assert_called_once()
-    MockDockerClient.assert_called_once_with(
+    MockStackManager.assert_called_once_with(
         config=mock_load_config.return_value,
         display=MockDisplay.return_value
     )
@@ -24,18 +24,18 @@ def test_app_context_initialization(MockDisplay, mock_load_config, MockDockerCli
     # Assert that the context has the correct instances
     assert ctx.display == MockDisplay.return_value
     assert ctx.config == mock_load_config.return_value
-    assert ctx.docker_client == MockDockerClient.return_value
+    assert ctx.stack_manager == MockStackManager.return_value
     
     # Configure the mock's verbose property and test it
     MockDisplay.return_value.verbose = True
     assert ctx.verbose is True
 
-@patch('ollama_stack_cli.context.DockerClient', side_effect=Exception("Docker Error"))
+@patch('ollama_stack_cli.context.StackManager', side_effect=Exception("StackManager Error"))
 @patch('ollama_stack_cli.context.load_config')
 @patch('ollama_stack_cli.context.Display')
-def test_app_context_init_docker_failure(MockDisplay, mock_load_config, MockDockerClient):
+def test_app_context_init_stack_manager_failure(MockDisplay, mock_load_config, MockStackManager):
     """
-    Tests that AppContext handles exceptions from DockerClient init and exits.
+    Tests that AppContext handles exceptions from StackManager init and exits.
     """
     with pytest.raises(SystemExit) as e:
         AppContext()
