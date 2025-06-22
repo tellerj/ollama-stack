@@ -122,4 +122,50 @@ def test_start_with_update_pulls_images():
     
     assert result.exit_code == 0
     assert "Pulling latest images" in result.stdout
-    assert get_running_stack_components() == EXPECTED_COMPONENTS 
+    assert get_running_stack_components() == EXPECTED_COMPONENTS
+
+
+@pytest.mark.integration
+def test_status_command_integration():
+    """
+    Verifies the 'status' command runs and displays the expected services.
+    """
+    # 1. Test status when stack is down
+    result_down = runner.invoke(app, ["status"])
+    assert result_down.exit_code == 0
+    assert "Ollama Stack is not running" in result_down.stdout
+
+    # 2. Start the stack and test status
+    runner.invoke(app, ["start"])
+    result_up = runner.invoke(app, ["status"])
+    assert result_up.exit_code == 0
+    # Check that all expected components are listed in the output table
+    for component in EXPECTED_COMPONENTS:
+        assert component in result_up.stdout
+    assert "Running" in result_up.stdout # Part of the status table
+
+
+@pytest.mark.integration
+def test_check_command_integration():
+    """
+    Verifies the 'check' command runs and displays the expected checks.
+    """
+    result = runner.invoke(app, ["check"])
+    assert result.exit_code == 0
+    assert "Docker Daemon Running" in result.stdout
+    assert "Port 8080 Available" in result.stdout
+
+
+@pytest.mark.integration
+def test_logs_command_integration():
+    """
+    Verifies the 'logs' command can fetch logs from a running service.
+    """
+    # Start the stack so services are running
+    runner.invoke(app, ["start"])
+
+    # Fetch one line of logs from the webui service
+    result = runner.invoke(app, ["logs", "webui", "--tail", "1"])
+    assert result.exit_code == 0
+    # A successful log command should produce some output
+    assert len(result.stdout.strip()) > 0 

@@ -23,20 +23,31 @@ class StackManager:
         Gathers and returns the status of the entire stack,
         handling different platforms.
         """
+        service_names = list(self.config.services.keys())
         if self.platform == 'apple':
-            # On Apple, get container status and native ollama status separately
-            container_services = self.docker_client.get_container_status(['webui', 'mcp_proxy'])
+            container_service_names = [s for s in service_names if s != 'ollama']
+            container_services = self.docker_client.get_container_status(container_service_names)
             ollama_service = self.ollama_api_client.get_status()
-            core_services = [ollama_service] + container_services
+            services = [ollama_service] + container_services
         else:
-            # On other platforms, all services are in docker
-            core_services = self.docker_client.get_container_status(['ollama', 'webui', 'mcp_proxy'])
+            services = self.docker_client.get_container_status(service_names)
         
-        return StackStatus(core_services=core_services, extensions=[])
+        return StackStatus(services=services)
 
     def start_services(self, update: bool = False):
         """Starts the services."""
-        self.docker_client.start_services(update=update, platform=self.platform)
+        if self.docker_client.is_stack_running():
+            self.display.info("Ollama Stack is already running.")
+            return
+
+        if update:
+            self.docker_client.pull_images()
+
+        if self.platform == "apple":
+            self.display.info("On Apple Silicon, ensure the native Ollama application is running.")
+
+        self.docker_client.start_services()
+        # Health checks and access points display would be added here
 
     def stop_services(self):
         """Stops the services."""
@@ -50,11 +61,12 @@ class StackManager:
     def stream_logs(self, service_or_extension: Optional[str] = None, follow: bool = False, tail: Optional[int] = None):
         """Streams logs from a specific service/extension or the whole stack."""
         if self.platform == "apple" and service_or_extension == "ollama":
-            yield "[WARNING] Ollama runs natively on Apple Silicon. No container logs are available."
-            yield "[INFO] To view logs for the native Ollama application, use the 'log' command provided by Ollama."
+            self.display.warning("Ollama runs natively on Apple Silicon. No container logs are available.")
+            self.display.info("To view logs for the native Ollama application, use the 'log' command provided by Ollama.")
             return
         
-        yield from self.docker_client.stream_logs(service_or_extension, follow, tail)
+        for line in self.docker_client.stream_logs(service_or_extension, follow, tail):
+            self.display.log_message(line)
 
     def run_environment_checks(self) -> CheckReport:
         """Runs checks for the environment and returns a report."""

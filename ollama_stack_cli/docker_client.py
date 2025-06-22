@@ -19,6 +19,7 @@ from .schemas import (
     EnvironmentCheck,
 )
 
+
 class DockerClient:
     """A wrapper for Docker operations."""
 
@@ -64,7 +65,7 @@ class DockerClient:
         self.display.info("Defaulting to CPU platform.")
         return "cpu"
 
-    def get_compose_file(self) -> str:
+    def get_compose_file(self) -> list[str]:
         """Determines the appropriate docker-compose file to use."""
         compose_files = [self.config.docker_compose_file]
         
@@ -83,176 +84,50 @@ class DockerClient:
         
         full_cmd = base_cmd + command
         
-        self.display.info(f"Running command: {' '.join(full_cmd)}")
-        
-        with self.display.progress() as progress:
-            task = progress.add_task(f"[cyan]Running {' '.join(command)}...", total=None)
-            
-            process = subprocess.Popen(
-                full_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                encoding='utf-8',
-            )
-            
-            output_lines = []
-            for line in iter(process.stdout.readline, ''):
-                output_lines.append(line)
-                if self.display.verbose:
-                    self.display.print(line.strip())
-            
-            process.wait()
-            
-            if process.returncode != 0:
-                error_output = "".join(output_lines)
-                # For the 'down' command, "not found" errors are acceptable and mean success.
-                if command[0] == "down" and "not found" in error_output.lower():
-                    progress.update(task, completed=True, description=f"[green]Services already stopped.")
-                    return True
-
-                progress.update(task, completed=True, description=f"[red]Failed: {' '.join(command)}.")
-                self.display.error(
-                    f"Docker Compose command failed with exit code {process.returncode}.",
-                    suggestion=f"Command: `{' '.join(full_cmd)}`\n\n[bold]Output:[/]\n{error_output}"
-                )
-                return False
-            else:
-                progress.update(task, completed=True, description=f"[green]Finished {' '.join(command)}.")
-                return True
-
-    def _perform_health_checks(self) -> bool:
-        """Polls service endpoints to confirm they are operational."""
-        self.display.info("Performing health checks...")
-        services_to_check = list(self.HEALTH_CHECK_URLS.keys())
-        
-        with self.display.progress() as progress:
-            tasks = {
-                service: progress.add_task(f"[cyan]Waiting for {service}...", total=100)
-                for service in services_to_check
-            }
-
-            start_time = time.time()
-            all_healthy = False
-            while time.time() - start_time < self.HEALTH_CHECK_TIMEOUT:
-                for service in list(services_to_check):
-                    url = self.HEALTH_CHECK_URLS[service]
-                    task_id = tasks[service]
-                    try:
-                        # Use a short timeout for the request itself
-                        with urllib.request.urlopen(url, timeout=3) as response:
-                            if 200 <= response.status < 300:
-                                progress.update(task_id, completed=True, description=f"[green]{service} is healthy.")
-                                services_to_check.remove(service)
-                    except (urllib.error.URLError, ConnectionRefusedError, ConnectionResetError):
-                        # Service is not ready yet, just continue
-                        pass
-                    
-                    # Update progress bar to show time elapsed
-                    elapsed = time.time() - start_time
-                    progress.update(task_id, completed=int((elapsed / self.HEALTH_CHECK_TIMEOUT) * 100))
-
-                if not services_to_check:
-                    all_healthy = True
-                    break
-                
-                time.sleep(self.HEALTH_CHECK_INTERVAL)
-
-        if all_healthy:
-            self.display.success("All services are healthy.")
-            return True
-        else:
-            for service in services_to_check:
-                progress.update(tasks[service], description=f"[red]{service} failed to start.")
-            self.display.error(
-                "One or more services failed the health check.",
-                suggestion="Check the service logs with `ollama-stack logs` for more details."
-            )
-            return False
-
-    def is_stack_running(self) -> bool:
-        """Checks if any of the core stack services are running."""
-        # On Apple Silicon, ollama doesn't run as a docker conatiner.
-        core_services = (
-            ["webui", "mcp_proxy"]
-            if self.platform == "apple"
-            else ["ollama", "webui", "mcp_proxy"]
+        process = subprocess.Popen(
+            full_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            encoding='utf-8',
         )
-
-        try:
-            # Use labels to reliably find running containers for our components
-            containers = self.client.containers.list(
-                filters={"label": "ollama-stack.component", "status": "running"}
-            )
-            # Get the component name from the label for each running container
-            running_components = {c.labels.get("ollama-stack.component") for c in containers}
-
-            # Check if any of the running components is a core service
-            running_core_services = [s for s in core_services if s in running_components]
-            
-            if running_core_services:
-                self.display.info(f"The following core services are already running: {', '.join(running_core_services)}")
+        
+        output_lines = []
+        for line in iter(process.stdout.readline, ''):
+            output_lines.append(line)
+        
+        process.wait()
+        
+        if process.returncode != 0:
+            error_output = "".join(output_lines)
+            if command[0] == "down" and "not found" in error_output.lower():
                 return True
-            return False
-        except docker.errors.APIError as e:
-            self.display.error("Could not connect to Docker to check container status.", suggestion=str(e))
-            # Treat Docker connection error as a critical failure.
-            raise
 
+            self.display.error(
+                f"Docker Compose command failed with exit code {process.returncode}.",
+                suggestion=f"Command: `{' '.join(full_cmd)}`\n\n[bold]Output:[/]\n{error_output}"
+            )
+            return False
+        else:
+            return True
+    
     def pull_images(self):
         """Pulls the latest images for the services using Docker Compose."""
         self.display.info("Pulling latest images for core services...")
         return self._run_compose_command(["pull"])
 
-    def start_services(self, platform: str, update: bool = False):
-        """Starts the services using Docker Compose and performs health checks."""
-        if self.is_stack_running():
-            # If it's running, we can just show the access points.
-            self.display.panel(
-                (
-                    "Ollama Stack is already running.\n\n"
-                    f"  - Ollama API: {self.HEALTH_CHECK_URLS['ollama']}\n"
-                    f"  - Open WebUI: {self.HEALTH_CHECK_URLS['webui']}\n"
-                    f"  - MCP Proxy: {self.HEALTH_CHECK_URLS['mcp_proxy']}"
-                ),
-                title="Access Points"
-            )
-            return
-        
-        if update:
-            if not self.pull_images():
-                # _run_compose_command already displays an error, so we just exit.
-                return
-
-        # On Apple Silicon, remind the user to start Ollama manually.
-        if platform == "apple":
-            self.display.info(
-                "On Apple Silicon, ensure the native Ollama application is running."
-            )
-
-        if self._run_compose_command(["up", "-d"]):
-            if self._perform_health_checks():
-                self.display.panel(
-                    (
-                        "Ollama Stack is running!\n\n"
-                        f"  - Ollama API: {self.HEALTH_CHECK_URLS['ollama']}\n"
-                        f"  - Open WebUI: {self.HEALTH_CHECK_URLS['webui']}\n"
-                        f"  - MCP Proxy: {self.HEALTH_CHECK_URLS['mcp_proxy']}"
-                    ),
-                    title="Access Points"
-                )
+    def start_services(self):
+        """Starts the services using Docker Compose."""
+        self._run_compose_command(["up", "-d"])
 
     def stop_services(self):
         """Stops the services using Docker Compose."""
-        return self._run_compose_command(["down"])
-
+        self._run_compose_command(["down"])
+        
     def get_container_status(self, service_names: list[str]) -> list[ServiceStatus]:
         """Gathers and returns the status of a list of containerized services."""
-        services_status = []
-        
         try:
-            # Use labels to reliably find running containers for our components
             containers = self.client.containers.list(
                 all=True, filters={"label": "ollama-stack.component"}
             )
@@ -260,25 +135,35 @@ class DockerClient:
             self.display.error("Could not connect to Docker to get container status.", suggestion=str(e))
             raise
 
-        running_containers = {c.labels.get("ollama-stack.component"): c for c in containers if c.status == 'running'}
+        container_map = {
+            c.labels.get("ollama-stack.component"): c for c in containers
+        }
 
+        statuses = []
         for service_name in service_names:
-            container = running_containers.get(service_name)
+            container = container_map.get(service_name)
             if container:
                 usage = self._get_resource_usage(container)
+                health = self._get_service_health(service_name)
+                ports = self._parse_ports(container.ports)
+                
                 status = ServiceStatus(
                     name=service_name,
-                    is_running=True,
+                    is_running=container.status == "running",
                     status=container.status,
-                    health=self._get_service_health(service_name),
-                    ports=self._parse_ports(container.ports),
+                    health=health,
+                    ports=ports,
                     usage=usage,
                 )
             else:
-                status = ServiceStatus(name=service_name, is_running=False)
-            services_status.append(status)
-        
-        return services_status
+                status = ServiceStatus(
+                    name=service_name,
+                    is_running=False,
+                    status="not found",
+                    health="unknown",
+                )
+            statuses.append(status)
+        return statuses
 
     def _parse_ports(self, port_data: dict) -> Dict[str, Optional[int]]:
         """Parses the complex port dictionary from the Docker SDK."""
@@ -288,7 +173,6 @@ class DockerClient:
         parsed = {}
         for container_port, host_configs in port_data.items():
             if host_configs:
-                # Take the first host configuration
                 parsed[container_port] = int(host_configs[0].get('HostPort', 0))
             else:
                 parsed[container_port] = None
@@ -296,6 +180,9 @@ class DockerClient:
 
     def _get_resource_usage(self, container) -> ResourceUsage:
         """Gets the resource usage for a given container."""
+        if container.status != "running":
+            return ResourceUsage()
+
         try:
             stats = container.stats(stream=False)
             
@@ -318,21 +205,12 @@ class DockerClient:
         
         try:
             with urllib.request.urlopen(url, timeout=2) as response:
-                if 200 <= response.status < 300:
-                    return "healthy"
-                else:
-                    return "unhealthy"
+                return "healthy" if 200 <= response.status < 300 else "unhealthy"
         except (urllib.error.URLError, ConnectionRefusedError, socket.timeout):
             return "unhealthy"
 
     def stream_logs(self, service_or_extension: Optional[str] = None, follow: bool = False, tail: Optional[int] = None):
         """Streams logs from a specific service/extension or the whole stack."""
-        # On Apple Silicon, ollama runs natively and has no container logs.
-        if self.platform == "apple" and service_or_extension == "ollama":
-            yield "[ERROR] Ollama runs natively on Apple Silicon. No container logs are available."
-            yield "[INFO] To view logs for the native Ollama application, use the 'log' command provided by Ollama."
-            return
-
         base_cmd = ["docker-compose"]
         for file in self.get_compose_file():
             base_cmd.extend(["-f", file])
@@ -346,8 +224,6 @@ class DockerClient:
             log_cmd.append(service_or_extension)
             
         full_cmd = base_cmd + log_cmd
-
-        self.display.info(f"Streaming logs with command: {' '.join(full_cmd)}")
 
         try:
             process = subprocess.Popen(
@@ -371,6 +247,7 @@ class DockerClient:
         except Exception as e:
             yield f"[ERROR] An unexpected error occurred: {e}"
 
+
     def _check_port(self, port: int) -> bool:
         """Checks if a TCP port is available."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -380,44 +257,37 @@ class DockerClient:
         """Runs checks for the environment and returns a report."""
         checks = []
 
-        # 1. Docker Daemon Status
         try:
             docker_running = self.client.ping()
-            checks.append(EnvironmentCheck(
-                name="Docker Daemon Running",
-                passed=docker_running,
-                details="Docker daemon is active and responsive." if docker_running else "Could not ping Docker daemon.",
-                suggestion="Ensure the Docker daemon is started." if not docker_running else None
-            ))
+            checks.append(EnvironmentCheck(name="Docker Daemon Running", success=docker_running))
         except docker.errors.DockerException:
-            checks.append(EnvironmentCheck(
-                name="Docker Daemon Running",
-                passed=False,
-                details="Failed to connect to Docker daemon.",
-                suggestion="Ensure Docker is installed and the daemon is running."
-            ))
+            checks.append(EnvironmentCheck(name="Docker Daemon Running", success=False, message="Docker is not running."))
+            return CheckReport(checks=checks)
 
-        # 2. API Port Availability
-        api_port = 11434
-        api_port_available = self._check_port(api_port)
-        checks.append(EnvironmentCheck(
-            name=f"Ollama API Port ({api_port}) Available",
-            passed=api_port_available,
-            details=f"Port {api_port} is available." if api_port_available else f"Port {api_port} is currently in use.",
-            suggestion=f"Stop the process using port {api_port} or change the port mapping." if not api_port_available else None
-        ))
+        ports_to_check = {
+            "Ollama API Port (11434)": 11434,
+            "WebUI Port (8080)": 8080,
+            "MCP Proxy Port (8200)": 8200,
+        }
+        for name, port in ports_to_check.items():
+            if self._check_port(port):
+                checks.append(EnvironmentCheck(name=f"Port {port} Available", success=True))
+            else:
+                checks.append(EnvironmentCheck(
+                    name=f"Port {port} Available",
+                    success=False,
+                    message=f"Port {port} is already in use."
+                ))
 
-        # 3. WebUI Port Availability
-        webui_port = 8080
-        webui_port_available = self._check_port(webui_port)
-        checks.append(EnvironmentCheck(
-            name=f"Open WebUI Port ({webui_port}) Available",
-            passed=webui_port_available,
-            details=f"Port {webui_port} is available." if webui_port_available else f"Port {webui_port} is currently in use.",
-            suggestion=f"Stop the process using port {webui_port} or change the port mapping." if not webui_port_available else None
-        ))
-
-        # Deferring other checks like nvidia, model perms, etc. for now.
+        if self.platform == 'nvidia':
+            try:
+                info = self.client.info()
+                if info.get("Runtimes", {}).get("nvidia"):
+                     checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", success=True))
+                else:
+                    checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", success=False, message="NVIDIA runtime not found in Docker."))
+            except Exception:
+                checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", success=False, message="Could not verify NVIDIA runtime in Docker."))
 
         return CheckReport(checks=checks)
 

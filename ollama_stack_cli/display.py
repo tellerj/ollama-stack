@@ -94,10 +94,10 @@ class Display:
         """Displays the results of an environment check."""
         self.info("Running environment checks...")
         for check in report.checks:
-            status = "[bold green]PASSED[/]" if check.passed else "[bold red]FAILED[/]"
-            self._console.print(f"{status}: {check.name} - {check.details}")
-            if not check.passed and check.suggestion:
-                self._console.print(f"  [cyan]Suggestion:[/] {check.suggestion}")
+            status = "[bold green]PASSED[/]" if check.success else "[bold red]FAILED[/]"
+            self._console.print(f"{status}: {check.name}")
+            if not check.success and check.message:
+                self._console.print(f"  [cyan]Details:[/] {check.message}")
 
     def log_message(self, message: str):
         """Prints a single log line."""

@@ -19,13 +19,27 @@ def logs(
         Optional[int],
         typer.Option("--tail", help="Number of lines to show from the end of the logs."),
     ] = None,
+    level: Annotated[
+        Optional[str],
+        typer.Option("--level", help="Filter by log level."),
+    ] = None,
+    since: Annotated[
+        Optional[str],
+        typer.Option("--since", help="Show logs since a given timestamp (e.g., '2023-11-19T10:00:00')."),
+    ] = None,
+    until: Annotated[
+        Optional[str],
+        typer.Option("--until", help="Show logs before a given timestamp (e.g., '2023-11-19T11:00:00')."),
+    ] = None,
 ):
     """Views logs from the core stack or a specific service/extension."""
     app_context: AppContext = ctx.obj
     
-    for line in app_context.stack_manager.stream_logs(
+    app_context.stack_manager.stream_logs(
         service_or_extension=service,
         follow=follow,
         tail=tail,
-    ):
-        app_context.display.log_message(line) 
+        level=level,
+        since=since,
+        until=until,
+    )
