@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
+import uuid
 
 class PlatformConfig(BaseModel):
     compose_file: str
@@ -9,9 +10,11 @@ class ExtensionsConfig(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
 
 class AppConfig(BaseModel):
+    project_name: str = Field(default_factory=lambda: f"ollama-stack-{uuid.uuid4().hex[:8]}")
     docker_compose_file: str = "docker-compose.yml"
     data_directory: str = "~/.ollama-stack/data"
     backup_directory: str = "~/.ollama-stack/backups"
+    webui_secret_key: str = Field(default_factory=lambda: uuid.uuid4().hex)
     platform: Dict[str, PlatformConfig] = Field(default_factory=dict)
     extensions: ExtensionsConfig = Field(default_factory=ExtensionsConfig)
 
@@ -42,7 +45,7 @@ class StackStatus(BaseModel):
 class EnvironmentCheck(BaseModel):
     name: str
     passed: bool
-    details: str
+    details: Optional[str] = None
     suggestion: Optional[str] = None
 
 

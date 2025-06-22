@@ -32,7 +32,7 @@ class StackManager:
         else:
             services = self.docker_client.get_container_status(service_names)
         
-        return StackStatus(services=services)
+        return StackStatus(core_services=services, extensions=[])
 
     def start_services(self, update: bool = False):
         """Starts the services."""
@@ -65,8 +65,7 @@ class StackManager:
             self.display.info("To view logs for the native Ollama application, use the 'log' command provided by Ollama.")
             return
         
-        for line in self.docker_client.stream_logs(service_or_extension, follow, tail):
-            self.display.log_message(line)
+        yield from self.docker_client.stream_logs(service_or_extension, follow, tail)
 
     def run_environment_checks(self) -> CheckReport:
         """Runs checks for the environment and returns a report."""

@@ -79,12 +79,12 @@ def test_display_status_renders_table(MockConsole):
     table_arg = mock_console_instance.print.call_args[0][0]
     assert isinstance(table_arg, Table)
     assert len(table_arg.rows) == 2
-    # Just check a few key cells for correctness
-    assert table_arg.rows[0].cells[0] == "[bold]ollama[/bold]"
-    assert table_arg.rows[0].cells[1] == "✅"
-    assert table_arg.rows[0].cells[3] == "healthy"
-    assert table_arg.rows[1].cells[1] == "❌"
-    assert table_arg.rows[1].cells[2] == "exited"
+    # Just check a few key cells for correctness by accessing the column data
+    assert table_arg.columns[0]._cells[0] == "[bold]ollama[/bold]"
+    assert table_arg.columns[1]._cells[0] == "✅"
+    assert table_arg.columns[3]._cells[0] == "healthy"
+    assert table_arg.columns[1]._cells[1] == "❌"
+    assert table_arg.columns[2]._cells[1] == "exited"
 
 
 @patch('ollama_stack_cli.display.Console')
@@ -113,20 +113,16 @@ def test_display_check_report(MockConsole):
     ])
     
     display.check_report(report)
+    
+    # Create a single string from all the print calls to make assertions less brittle
+    all_output = "".join(str(call[0][0]) for call in mock_console_instance.print.call_args_list)
 
-    # Check that print was called for the report title and for each check
-    assert mock_console_instance.print.call_count == 3
-    
-    # Check the "PASSED" line
-    call_1_args = mock_console_instance.print.call_args_list[1][0][0]
-    assert "[bold green]PASSED[/]" in call_1_args
-    assert "Docker Running" in call_1_args
-    
-    # Check the "FAILED" line
-    call_2_args = mock_console_instance.print.call_args_list[2][0][0]
-    assert "[bold red]FAILED[/]" in call_2_args
-    assert "Port 8080 Available" in call_2_args
-    assert "Suggestion" in call_2_args
+    assert "Running environment checks" in all_output
+    assert "[bold green]PASSED[/]: Docker Running" in all_output
+    assert "[bold red]FAILED[/]: Port 8080 Available" in all_output
+    # Check for the details and suggestion including their markup
+    assert "Details:[/] Port in use." in all_output
+    assert "Suggestion:[/] Stop the other process." in all_output
 
 
 @patch('ollama_stack_cli.display.Console')

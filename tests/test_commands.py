@@ -61,7 +61,7 @@ def test_restart_command_with_update(MockAppContext, mock_app_context):
 def test_status_command(MockAppContext, mock_app_context):
     """Tests that the 'status' command calls the correct services."""
     MockAppContext.return_value = mock_app_context
-    mock_stack_status = StackStatus(services=[])
+    mock_stack_status = StackStatus(core_services=[], extensions=[])
     mock_app_context.stack_manager.get_stack_status.return_value = mock_stack_status
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
@@ -88,7 +88,7 @@ def test_logs_command(MockAppContext, mock_app_context):
     result = runner.invoke(app, ["logs"])
     assert result.exit_code == 0
     mock_app_context.stack_manager.stream_logs.assert_called_once_with(
-        service=None, follow=False, tail=None
+        service_or_extension=None, follow=False, tail=None, level=None, since=None, until=None
     )
     assert mock_app_context.display.log_message.call_count == 2
     mock_app_context.display.log_message.assert_any_call("log line 1")
@@ -99,10 +99,10 @@ def test_logs_command_with_options(MockAppContext, mock_app_context):
     """Tests the 'logs' command with all options."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.stream_logs.return_value = iter([])
-    result = runner.invoke(app, ["logs", "ollama", "--follow", "--tail", "100"])
+    result = runner.invoke(app, ["logs", "ollama", "--follow", "--tail", "100", "--level", "info"])
     assert result.exit_code == 0
     mock_app_context.stack_manager.stream_logs.assert_called_once_with(
-        service="ollama", follow=True, tail=100
+        service_or_extension="ollama", follow=True, tail=100, level="info", since=None, until=None
     )
 
 @patch('ollama_stack_cli.main.AppContext')
@@ -113,6 +113,6 @@ def test_logs_command_empty_iterator(MockAppContext, mock_app_context):
     result = runner.invoke(app, ["logs"])
     assert result.exit_code == 0
     mock_app_context.stack_manager.stream_logs.assert_called_once_with(
-        service=None, follow=False, tail=None
+        service_or_extension=None, follow=False, tail=None, level=None, since=None, until=None
     )
     mock_app_context.display.log_message.assert_not_called() 

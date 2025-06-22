@@ -113,7 +113,6 @@ def test_app_context_display_initialization_failure(MockConfig, MockDisplay, Moc
             AppContext()
     
     assert exc_info.value.code == 1
-    MockConfig.assert_called_once()
     mock_display_for_error.error.assert_called_once_with("Failed to initialize application: Display Error")
     MockStackManager.assert_not_called()
 

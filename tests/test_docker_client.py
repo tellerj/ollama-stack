@@ -84,13 +84,14 @@ def test_get_compose_file_cpu(mock_docker_from_env, mock_config, mock_display):
 @patch('docker.from_env')
 def test_pull_images_calls_compose_pull(mock_docker_from_env, mock_popen, mock_config, mock_display):
     """Tests that the pull_images method correctly calls 'docker-compose pull'."""
-    client = DockerClient(config=mock_config, display=mock_display)
-    client._run_compose_command = MagicMock()
+    with patch.object(DockerClient, 'detect_platform', return_value='cpu'):
+        client = DockerClient(config=mock_config, display=mock_display)
+        client._run_compose_command = MagicMock()
     
-    client.pull_images()
+        client.pull_images()
 
-    client._run_compose_command.assert_called_once_with(["pull"])
-    mock_display.info.assert_called_once_with("Pulling latest images for core services...")
+        client._run_compose_command.assert_called_once_with(["pull"])
+        mock_display.info.assert_called_once_with("Pulling latest images for core services...")
 
 @patch('subprocess.Popen')
 @patch('docker.from_env')

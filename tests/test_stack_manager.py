@@ -68,9 +68,9 @@ def test_get_stack_status_on_apple(stack_manager, mock_docker_client, mock_ollam
     mock_docker_client.get_container_status.assert_called_once_with(['webui', 'mcp_proxy'])
     mock_ollama_api_client.get_status.assert_called_once()
     
-    assert len(status.services) == 3
-    webui = next(s for s in status.services if s.name == 'webui')
-    ollama = next(s for s in status.services if s.name == 'ollama')
+    assert len(status.core_services) == 3
+    webui = next(s for s in status.core_services if s.name == 'webui')
+    ollama = next(s for s in status.core_services if s.name == 'ollama')
     assert webui.is_running is True
     assert ollama.status == 'idle (native)'
 
@@ -88,7 +88,7 @@ def test_get_stack_status_on_linux(stack_manager, mock_docker_client, mock_ollam
     
     mock_docker_client.get_container_status.assert_called_once_with(['ollama', 'webui', 'mcp_proxy'])
     mock_ollama_api_client.get_status.assert_not_called()
-    assert len(status.services) == 3
+    assert len(status.core_services) == 3
 
 def test_stream_logs_for_native_ollama_on_apple(stack_manager, mock_docker_client, mock_display):
     """Tests that stream_logs provides a message for native Ollama on Apple Silicon."""
