@@ -4,6 +4,8 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 from typing import List, Optional
 
+from .schemas import StackStatus, CheckReport
+
 class Display:
     """A centralized display handler for all CLI output."""
 
@@ -57,6 +59,50 @@ class Display:
         for row in rows:
             table.add_row(*row)
         self._console.print(table)
+
+    def status(self, stack_status: StackStatus):
+        """Displays the formatted status of the stack."""
+        table = Table(title="Ollama Stack Status")
+        table.add_column("Service", style="cyan")
+        table.add_column("Running", style="magenta")
+        table.add_column("Status", style="yellow")
+        table.add_column("Health", style="green")
+        table.add_column("Ports", style="blue")
+        table.add_column("CPU %", style="red")
+        table.add_column("Memory (MB)", style="red")
+
+        if not stack_status.core_services and not stack_status.extensions:
+            self.info("Ollama Stack is not running.")
+            return
+
+        for service in stack_status.core_services:
+            table.add_row(
+                f"[bold]{service.name}[/bold]",
+                "✅" if service.is_running else "❌",
+                service.status or "N/A",
+                service.health or "N/A",
+                ", ".join(str(p) for p in service.ports.values() if p) or "N/A",
+                str(service.usage.cpu_percent) if service.usage.cpu_percent is not None else "N/A",
+                str(service.usage.memory_mb) if service.usage.memory_mb is not None else "N/A",
+            )
+        
+        # Add extension processing here later if needed
+
+        self._console.print(table)
+
+    def check_report(self, report: CheckReport):
+        """Displays the results of an environment check."""
+        self.info("Running environment checks...")
+        for check in report.checks:
+            status = "[bold green]PASSED[/]" if check.passed else "[bold red]FAILED[/]"
+            self._console.print(f"{status}: {check.name} - {check.details}")
+            if not check.passed and check.suggestion:
+                self._console.print(f"  [cyan]Suggestion:[/] {check.suggestion}")
+
+    def log_message(self, message: str):
+        """Prints a single log line."""
+        # Simple print for now, can add formatting later
+        self._console.print(message)
 
     def progress(self):
         """Returns a Rich Progress context manager."""

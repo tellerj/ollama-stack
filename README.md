@@ -50,7 +50,7 @@ Access the web interface at `http://localhost:8080`
 
 ```bash
 ollama-stack start [--update]        # Start stack (add --update to pull latest images)
-ollama-stack stop                    # Stop stack
+ollama-stack stop                    # Stop stack  
 ollama-stack restart                 # Restart stack
 ollama-stack status                  # Show status
 ollama-stack logs [service]          # View logs

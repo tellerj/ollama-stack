@@ -16,4 +16,38 @@ class AppConfig(BaseModel):
     extensions: ExtensionsConfig = Field(default_factory=ExtensionsConfig)
 
 
+class ResourceUsage(BaseModel):
+    cpu_percent: Optional[float] = None
+    memory_mb: Optional[float] = None
+
+
+class ServiceStatus(BaseModel):
+    name: str
+    is_running: bool
+    status: Optional[str] = None
+    health: Optional[str] = None
+    ports: Dict[str, Optional[int]] = Field(default_factory=dict)
+    usage: ResourceUsage = Field(default_factory=ResourceUsage)
+
+
+class ExtensionStatus(ServiceStatus):
+    is_enabled: bool
+
+
+class StackStatus(BaseModel):
+    core_services: List[ServiceStatus]
+    extensions: List[ExtensionStatus]
+
+
+class EnvironmentCheck(BaseModel):
+    name: str
+    passed: bool
+    details: str
+    suggestion: Optional[str] = None
+
+
+class CheckReport(BaseModel):
+    checks: List[EnvironmentCheck]
+
+
 

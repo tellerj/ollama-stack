@@ -1,18 +1,15 @@
-from .config import AppConfig, load_config
+from .config import Config
 from .display import Display
-from .docker_client import DockerClient
+from .stack_manager import StackManager
+
 
 class AppContext:
-    """A context object that holds shared application state."""
+    """A central container for the application's runtime state."""
 
     def __init__(self, verbose: bool = False):
+        self.config = Config()
         self.display = Display(verbose=verbose)
-        self.config = load_config()
-        try:
-            self.docker_client = DockerClient(config=self.config, display=self.display)
-        except Exception:
-            # DockerClient handles its own error display. We just need to exit gracefully.
-            exit(1)
+        self.stack_manager = StackManager(self.config.app_config, self.display)
 
     @property
     def verbose(self) -> bool:

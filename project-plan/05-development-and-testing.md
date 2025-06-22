@@ -34,7 +34,7 @@ This document outlines non-functional requirements and development practices to 
     - **Logging Levels**: Standard levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`) will be used.
     - **Global `--verbose` Flag**: A global `--verbose` flag will control the output verbosity.
     - **Default Output**: Displays `INFO` level and higher.
-    - **Verbose Output**: Displays `DEBUG` level and higher, providing detailed diagnostics for troubleshooting and bug reports.
+    - **Verbose Output**: Displays `DEBUG` level and higher, providing detailed diagnostics for troubleshooting and bug reports. 
 
 ### 4. Coding Standards and Quality
 - **Principle**: The codebase must be consistent, readable, and of high quality to facilitate long-term maintenance and contributions.

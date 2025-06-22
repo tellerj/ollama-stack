@@ -32,6 +32,40 @@ ollama-stack/
 
 ## 2. Python Package Architecture (`ollama_stack_cli/`)
 
+Below is a high-level diagram illustrating the flow of control and dependency management within the `ollama-stack` CLI. The central `AppContext` is passed to each command, providing a consistent and decoupled way to access core services like the `StackManager` and `Display` handler.
+
+```mermaid
+graph TD
+    subgraph "User Interaction"
+        User(CLI User) -- "Runs command" --> CLI(main.py);
+    end
+
+    subgraph "Application Core (ollama_stack_cli)"
+        CLI -- "Initializes" --> AppContext(AppContext);
+        CLI -- "Invokes" --> Commands("commands/*.py");
+
+        Commands -- "Receives & Uses" --> AppContext;
+        Commands -- "Calls" --> StackManager;
+        Commands -- "Calls" --> Display;
+
+        AppContext -- "holds" --> Config;
+        AppContext -- "holds" --> StackManager;
+        AppContext -- "holds" --> Display;
+
+        StackManager -- "orchestrates" --> DockerClient;
+        StackManager -- "orchestrates" --> OllamaApiClient;
+    end
+
+    subgraph "External Dependencies"
+        Config -- "manages" --> Filesystem(".env, .json");
+        Display -- "renders to" --> Console(Console Output);
+        DockerClient -- "communicates with" --> DockerDaemon("Docker Daemon");
+        OllamaApiClient -- "communicates with" --> OllamaAPI("Ollama REST API");
+    end
+
+    style AppContext fill:#f9f,stroke:#333,stroke-width:2px
+```
+
 The source code is organized into modules with clear, single responsibilities.
 
 ```
@@ -42,7 +76,9 @@ ollama_stack_cli/
 ├── context.py
 ├── config.py
 ├── display.py
+├── stack_manager.py
 ├── docker_client.py
+├── ollama_api_client.py
 ├── schemas.py
 │
 └── commands/
@@ -62,7 +98,7 @@ ollama_stack_cli/
 
 - **`context.py`**: Defines the `AppContext` class. This class acts as a central container for the application's runtime state. It is responsible for:
     - Loading and holding the configuration object from `config.py`.
-    - Initializing and holding the `DockerClient` instance.
+    - Initializing and holding the `StackManager` instance.
     - Initializing and holding the `Display` handler instance.
 
 - **`display.py`**: The single source of truth for all user-facing output. This module abstracts the `rich` library to ensure a consistent look and feel across the entire application. It provides methods like `display.success()`, `display.error()`, `display.table()`, etc. It is the only module that should directly import `rich`.
@@ -71,10 +107,19 @@ ollama_stack_cli/
     - **Reads/Writes `.ollama-stack.json`**: Manages the application's internal state.
     - **Reads/Writes `.env`**: Manages the environment variables required by Docker Compose. This is the only module that directly interacts with these files.
 
-- **`docker_client.py`**: An abstraction layer over the Docker Engine.
+- **`stack_manager.py`**: The primary backend interface for all CLI commands.
+    - Orchestrates operations across different backend services (Docker, native APIs).
+    - Contains platform-specific logic (e.g., "on Mac, check the native Ollama API; on Linux, check the Docker container").
+    - Uses the `DockerClient` and `OllamaApiClient` to execute low-level tasks.
+
+- **`docker_client.py`**: A low-level abstraction layer over the Docker Engine.
     - It is the only module that imports and uses the `docker` Python SDK.
-    - Provides high-level functions for managing the stack (e.g., `start_stack_services`, `get_stack_status`).
-    - Hides the complexity of interacting with the Docker API from the command logic.
+    - Provides functions for managing Docker resources (containers, volumes, networks) when instructed by the `StackManager`.
+    - It is "platform-unaware" and simply executes the Docker tasks it is given.
+
+- **`ollama_api_client.py`**: A low-level client for the native Ollama HTTP API.
+    - Responsible for making HTTP requests to the Ollama server (e.g., `GET /api/ps`).
+    - Handles parsing the JSON responses from the Ollama API.
 
 - **`schemas.py`**: Defines the data structures used throughout the application.
     - Contains dataclasses or Pydantic models for things like `StackService`, `Extension`, and the structure of `.ollama-stack.json`.
@@ -83,7 +128,7 @@ ollama_stack_cli/
 - **`commands/`**: A Python sub-package containing the implementation for each CLI command.
     - Each file (e.g., `start.py`, `status.py`) contains a `typer` command function.
     - Command functions receive the `AppContext` object.
-    - They are responsible for orchestrating calls to the services held in the context (`ctx.docker_client`, `ctx.config`) and using the display handler (`ctx.display`) to report results. They contain minimal business logic themselves.
+    - They are responsible for orchestrating calls to the services held in the context (`ctx.stack_manager`, `ctx.config`) and using the display handler (`ctx.display`) to report results. They contain minimal business logic themselves.
 
 ### 2.2. Internal Safety Mechanisms
 

@@ -3,8 +3,10 @@ import pytest
 import docker
 import subprocess
 import urllib.error
+import socket
+
 from ollama_stack_cli.docker_client import DockerClient
-from ollama_stack_cli.schemas import AppConfig, PlatformConfig
+from ollama_stack_cli.schemas import AppConfig, PlatformConfig, StackStatus, ResourceUsage, CheckReport, EnvironmentCheck, ServiceStatus
 
 @pytest.fixture
 def mock_display():
@@ -237,4 +239,146 @@ def test_start_services_with_update(mock_docker_from_env, mock_config, mock_disp
     client.is_stack_running.assert_called_once()
     client.pull_images.assert_called_once()
     client._run_compose_command.assert_called_once_with(["up", "-d"])
-    client._perform_health_checks.assert_called_once() 
+    client._perform_health_checks.assert_called_once()
+
+# --- Tests for Phase 2 Functionality ---
+
+@patch('docker.from_env')
+def test_get_status_core_services_running(mock_docker_from_env, mock_config, mock_display):
+    """Tests get_stack_status when all core services are running."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_ollama_container = MagicMock()
+    mock_ollama_container.labels = {"ollama-stack.component": "ollama"}
+    mock_ollama_container.status = "running"
+    mock_ollama_container.ports = {'11434/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '11434'}]}
+
+    mock_webui_container = MagicMock()
+    mock_webui_container.labels = {"ollama-stack.component": "webui"}
+    mock_webui_container.status = "running"
+    mock_webui_container.ports = {'8080/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '8080'}]}
+
+    mock_mcp_container = MagicMock()
+    mock_mcp_container.labels = {"ollama-stack.component": "mcp_proxy"}
+    mock_mcp_container.status = "running"
+    mock_mcp_container.ports = {'8200/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '8200'}]}
+
+    mock_docker_client.containers.list.return_value = [
+        mock_ollama_container, mock_webui_container, mock_mcp_container
+    ]
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.platform = 'cpu'
+
+    client._get_resource_usage = MagicMock(return_value=ResourceUsage(cpu_percent=10.5, memory_mb=512.5))
+    client._get_service_health = MagicMock(return_value="healthy")
+
+    status = client.get_stack_status()
+
+    assert len(status.core_services) == 3
+    ollama_status = next(s for s in status.core_services if s.name == "ollama")
+    webui_status = next(s for s in status.core_services if s.name == "webui")
+    mcp_status = next(s for s in status.core_services if s.name == "mcp_proxy")
+    
+    assert ollama_status.is_running is True
+    assert ollama_status.status == "running"
+    assert ollama_status.health == "healthy"
+    assert ollama_status.ports == {'11434/tcp': 11434}
+    assert ollama_status.usage.cpu_percent == 10.5
+    assert webui_status.is_running is True
+    assert mcp_status.is_running is True
+
+@patch('docker.from_env')
+def test_get_status_docker_api_error(mock_docker_from_env, mock_config, mock_display):
+    """Tests that get_stack_status raises APIError on docker failure."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.containers.list.side_effect = docker.errors.APIError("API error")
+    mock_docker_from_env.return_value = mock_docker_client
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    with pytest.raises(docker.errors.APIError):
+        client.get_stack_status()
+    
+    mock_display.error.assert_called_once_with(
+        "Could not connect to Docker to get container status.",
+        suggestion="API error"
+    )
+
+@patch('socket.socket')
+@patch('docker.from_env')
+def test_checks_all_pass(mock_docker_from_env, mock_socket, mock_config, mock_display):
+    """Tests environment checks when everything is correct."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.ping.return_value = True
+    mock_docker_from_env.return_value = mock_docker_client
+    
+    mock_socket.return_value.__enter__.return_value.connect_ex.return_value = 1
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    report = client.run_environment_checks()
+
+    assert all(check.passed for check in report.checks)
+
+@patch('docker.from_env')
+def test_checks_docker_fails(mock_docker_from_env, mock_config, mock_display):
+    """Tests environment checks when docker is not responsive."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.ping.side_effect = docker.errors.DockerException("Docker not running")
+    mock_docker_from_env.return_value = mock_docker_client
+    
+    with pytest.raises(docker.errors.DockerException):
+        DockerClient(config=mock_config, display=mock_display)
+    mock_display.error.assert_called_once()
+
+@patch('socket.socket')
+@patch('docker.from_env')
+def test_checks_ports_in_use(mock_docker_from_env, mock_socket, mock_config, mock_display):
+    """Tests environment checks when ports are in use."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.ping.return_value = True
+    mock_docker_from_env.return_value = mock_docker_client
+    
+    mock_socket.return_value.__enter__.return_value.connect_ex.return_value = 0
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    report = client.run_environment_checks()
+    
+    assert any(not check.passed for check in report.checks)
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_stream_logs_constructs_correct_command(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests that stream_logs constructs the correct docker-compose command."""
+    mock_process = MagicMock()
+    mock_process.stdout.readline.side_effect = ["", ""]
+    mock_popen.return_value = mock_process
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    list(client.stream_logs(service_or_extension="ollama", follow=True, tail=50))
+    
+    expected_cmd = ["docker-compose", "-f", "base.yml", "logs", "--follow", "--tail", "50", "ollama"]
+    mock_popen.assert_called_once()
+    args, _ = mock_popen.call_args
+    assert args[0] == expected_cmd
+
+@patch('docker.from_env')
+def test_stream_logs_on_apple_for_native_ollama(mock_docker_from_env, mock_config, mock_display):
+    """Tests that stream_logs provides a helpful message for native ollama on Apple Silicon."""
+    mock_docker_from_env.return_value = MagicMock()
+    
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.platform = 'apple' # Manually set platform for this test case
+    client._run_compose_command = MagicMock()
+
+    logs = list(client.stream_logs(service_or_extension="ollama"))
+
+    # Assert that no docker-compose command was run
+    client._run_compose_command.assert_not_called()
+    
+    # Assert that the correct informational messages were yielded
+    assert len(logs) == 2
+    assert "[ERROR]" in logs[0]
+    assert "[INFO]" in logs[1] 

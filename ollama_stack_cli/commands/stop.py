@@ -4,7 +4,6 @@ from ..context import AppContext
 
 
 def stop(ctx: typer.Context):
-    """Stops the Ollama Stack."""
+    """Stops the core Ollama Stack services."""
     app_context: AppContext = ctx.obj
-    if not app_context.docker_client.stop_services():
-        raise typer.Exit(1) 
+    app_context.stack_manager.stop_services() 

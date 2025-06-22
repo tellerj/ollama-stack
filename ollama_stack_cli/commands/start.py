@@ -14,6 +14,6 @@ def start(
         ),
     ] = False,
 ):
-    """Starts the Ollama Stack."""
+    """Starts the core Ollama Stack services."""
     app_context: AppContext = ctx.obj
-    app_context.docker_client.start_services(update=update) 
+    app_context.stack_manager.start_services(update=update) 
