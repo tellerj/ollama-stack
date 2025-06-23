@@ -4,6 +4,7 @@ import subprocess
 import time
 import urllib.request
 import urllib.error
+import logging
 from .schemas import AppConfig
 from .display import Display
 import socket
@@ -19,6 +20,7 @@ from .schemas import (
     EnvironmentCheck,
 )
 
+log = logging.getLogger(__name__)
 
 class DockerClient:
     """A wrapper for Docker operations."""
@@ -38,9 +40,9 @@ class DockerClient:
             self.client = docker.from_env()
             self.client.ping()
         except docker.errors.DockerException:
-            self.display.error(
-                "Docker is not running or not configured correctly.",
-                suggestion="Please ensure the Docker daemon is running.",
+            log.error(
+                "Docker is not running or not configured correctly. Please ensure the Docker daemon is running.",
+                exc_info=True
             )
             raise
         self.platform = self.detect_platform()
@@ -51,18 +53,18 @@ class DockerClient:
         machine = platform.machine()
 
         if system == "Darwin" and machine == "arm64":
-            self.display.info("Apple Silicon platform detected.")
+            log.info("Apple Silicon platform detected.")
             return "apple"
         
         try:
             info = self.client.info()
             if info.get("Runtimes", {}).get("nvidia"):
-                self.display.info("NVIDIA GPU platform detected.")
+                log.info("NVIDIA GPU platform detected.")
                 return "nvidia"
         except Exception:
-            self.display.warning("Could not get Docker info to check for NVIDIA runtime.")
+            log.warning("Could not get Docker info to check for NVIDIA runtime.")
 
-        self.display.info("Defaulting to CPU platform.")
+        log.info("Defaulting to CPU platform.")
         return "cpu"
 
     def get_compose_file(self) -> list[str]:
@@ -72,7 +74,7 @@ class DockerClient:
         platform_config = self.config.platform.get(self.platform)
         if platform_config:
             compose_files.append(platform_config.compose_file)
-            self.display.info(f"Using platform-specific compose file: {platform_config.compose_file}")
+            log.info(f"Using platform-specific compose file: {platform_config.compose_file}")
         
         return compose_files
 
@@ -114,7 +116,7 @@ class DockerClient:
     
     def pull_images(self):
         """Pulls the latest images for the services using Docker Compose."""
-        self.display.info("Pulling latest images for core services...")
+        log.info("Pulling latest images for core services...")
         return self._run_compose_command(["pull"])
 
     def start_services(self):
@@ -125,6 +127,18 @@ class DockerClient:
         """Stops the services using Docker Compose."""
         self._run_compose_command(["down"])
         
+    def is_stack_running(self) -> bool:
+        """Checks if any stack component containers are running."""
+        try:
+            # Filter for running containers with the specific stack label
+            containers = self.client.containers.list(
+                filters={"label": "ollama-stack.component", "status": "running"}
+            )
+            return len(containers) > 0
+        except docker.errors.APIError as e:
+            log.error("Could not connect to Docker to check stack status.", exc_info=True)
+            raise
+            
     def get_container_status(self, service_names: list[str]) -> list[ServiceStatus]:
         """Gathers and returns the status of a list of containerized services."""
         try:
@@ -132,7 +146,7 @@ class DockerClient:
                 all=True, filters={"label": "ollama-stack.component"}
             )
         except docker.errors.APIError as e:
-            self.display.error("Could not connect to Docker to get container status.", suggestion=str(e))
+            log.error("Could not connect to Docker to get container status.", exc_info=True)
             raise
 
         container_map = {
@@ -209,7 +223,7 @@ class DockerClient:
         except (urllib.error.URLError, ConnectionRefusedError, socket.timeout):
             return "unhealthy"
 
-    def stream_logs(self, service_or_extension: Optional[str] = None, follow: bool = False, tail: Optional[int] = None):
+    def stream_logs(self, service_or_extension: Optional[str] = None, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None):
         """Streams logs from a specific service/extension or the whole stack."""
         base_cmd = ["docker-compose"]
         for file in self.get_compose_file():
@@ -220,6 +234,10 @@ class DockerClient:
             log_cmd.append("--follow")
         if tail:
             log_cmd.extend(["--tail", str(tail)])
+        if since:
+            log_cmd.extend(["--since", str(since)])
+        if until:
+            log_cmd.extend(["--until", str(until)])
         if service_or_extension:
             log_cmd.append(service_or_extension)
             
@@ -253,15 +271,15 @@ class DockerClient:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             return s.connect_ex(('localhost', port)) != 0
 
-    def run_environment_checks(self) -> CheckReport:
+    def run_environment_checks(self, fix: bool = False, verbose: bool = False) -> CheckReport:
         """Runs checks for the environment and returns a report."""
         checks = []
 
         try:
             docker_running = self.client.ping()
-            checks.append(EnvironmentCheck(name="Docker Daemon Running", success=docker_running))
+            checks.append(EnvironmentCheck(name="Docker Daemon Running", passed=docker_running))
         except docker.errors.DockerException:
-            checks.append(EnvironmentCheck(name="Docker Daemon Running", success=False, message="Docker is not running."))
+            checks.append(EnvironmentCheck(name="Docker Daemon Running", passed=False, details="Docker is not running."))
             return CheckReport(checks=checks)
 
         ports_to_check = {
@@ -271,23 +289,23 @@ class DockerClient:
         }
         for name, port in ports_to_check.items():
             if self._check_port(port):
-                checks.append(EnvironmentCheck(name=f"Port {port} Available", success=True))
+                checks.append(EnvironmentCheck(name=f"Port {port} Available", passed=True))
             else:
                 checks.append(EnvironmentCheck(
                     name=f"Port {port} Available",
-                    success=False,
-                    message=f"Port {port} is already in use."
+                    passed=False,
+                    details=f"Port {port} is already in use."
                 ))
 
         if self.platform == 'nvidia':
             try:
                 info = self.client.info()
                 if info.get("Runtimes", {}).get("nvidia"):
-                     checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", success=True))
+                     checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", passed=True))
                 else:
-                    checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", success=False, message="NVIDIA runtime not found in Docker."))
+                    checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", passed=False, details="NVIDIA runtime not found in Docker."))
             except Exception:
-                checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", success=False, message="Could not verify NVIDIA runtime in Docker."))
+                checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", passed=False, details="Could not verify NVIDIA runtime in Docker."))
 
         return CheckReport(checks=checks)
 

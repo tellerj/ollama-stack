@@ -101,16 +101,11 @@ ollama_stack_cli/
     - Initializing and holding the `StackManager` instance.
     - Initializing and holding the `Display` handler instance.
 
-- **`display.py`**: The single source of truth for all user-facing output. This module abstracts the `rich` library to ensure a consistent look and feel across the entire application. It provides methods like `display.success()`, `display.error()`, `display.table()`, etc. It is the only module that should directly import `rich`.
+- **`display.py`**: The single source of truth for all user-facing output and logging configuration. This module is responsible for initializing the root logger and configuring a `RichHandler` to ensure all output—both direct and logged—is consistently styled. It provides methods for user-facing results (e.g., `display.success()`, `display.table()`) and is the only module that should directly import and configure `rich`.
 
-- **`config.py`**: The interface for all persistent configuration and state.
-    - **Reads/Writes `.ollama-stack.json`**: Manages the application's internal state.
-    - **Reads/Writes `.env`**: Manages the environment variables required by Docker Compose. This is the only module that directly interacts with these files.
+- **`config.py`**: The interface for all persistent configuration and state. It reads the base configuration from files and is responsible for applying any platform-specific overrides to the service registry (e.g., re-configuring the `ollama` service to be of type `native-api` on Apple Silicon).
 
-- **`stack_manager.py`**: The primary backend interface for all CLI commands.
-    - Orchestrates operations across different backend services (Docker, native APIs).
-    - Contains platform-specific logic (e.g., "on Mac, check the native Ollama API; on Linux, check the Docker container").
-    - Uses the `DockerClient` and `OllamaApiClient` to execute low-level tasks.
+- **`stack_manager.py`**: A config-driven orchestrator that acts as the primary backend for all CLI commands. It iterates over the service registry from the `AppConfig` and delegates tasks to the appropriate client based on each service's configured `type` (e.g., 'docker', 'native-api'). It contains no platform-specific logic itself, making it highly extensible.
 
 - **`docker_client.py`**: A low-level abstraction layer over the Docker Engine.
     - It is the only module that imports and uses the `docker` Python SDK.
@@ -121,9 +116,7 @@ ollama_stack_cli/
     - Responsible for making HTTP requests to the Ollama server (e.g., `GET /api/ps`).
     - Handles parsing the JSON responses from the Ollama API.
 
-- **`schemas.py`**: Defines the data structures used throughout the application.
-    - Contains dataclasses or Pydantic models for things like `StackService`, `Extension`, and the structure of `.ollama-stack.json`.
-    - This centralizes data definitions and provides a single source of truth for the application's data model, avoiding the use of raw dictionaries.
+- **`schemas.py`**: Defines the data structures used throughout the application. It contains Pydantic models for all major data structures, including `ServiceConfig` which defines a service's `type`. The main `AppConfig` model uses these to create a **Service Registry**—a dictionary that maps service names to their configurations. This registry-based approach is the key to the application's extensibility.
 
 - **`commands/`**: A Python sub-package containing the implementation for each CLI command.
     - Each file (e.g., `start.py`, `status.py`) contains a `typer` command function.

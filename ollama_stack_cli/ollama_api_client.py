@@ -2,10 +2,12 @@ import urllib.request
 import urllib.error
 import json
 import socket
+import logging
 
 from .schemas import ServiceStatus, ResourceUsage
 from .display import Display
 
+log = logging.getLogger(__name__)
 
 class OllamaApiClient:
     """A client for interacting with the native Ollama API."""
@@ -43,7 +45,7 @@ class OllamaApiClient:
             health = "unhealthy"
             is_running = False
         except json.JSONDecodeError:
-            self.display.warning("Could not parse JSON response from native Ollama API.")
+            log.warning("Could not parse JSON response from native Ollama API.", exc_info=True)
             health = "unhealthy"
 
         return ServiceStatus(

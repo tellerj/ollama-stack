@@ -1,10 +1,14 @@
 import json
+import logging
+import platform
 from pathlib import Path
 from pydantic import ValidationError
 from dotenv import dotenv_values, set_key
 
 from .schemas import AppConfig, PlatformConfig
 from .display import Display
+
+log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_DIR = Path.home() / ".ollama-stack"
 DEFAULT_ENV_FILE = DEFAULT_CONFIG_DIR / ".env"
@@ -21,7 +25,7 @@ def load_config(
     If they don't exist, it creates default configurations.
     """
     if not config_path.exists() or not env_path.exists():
-        display.info(f"Creating default configuration files in {DEFAULT_CONFIG_DIR}")
+        log.info(f"Creating default configuration files in {DEFAULT_CONFIG_DIR}")
         app_config = AppConfig()
         app_config.platform = {
             "apple": PlatformConfig(compose_file="docker-compose.apple.yml"),
@@ -42,9 +46,16 @@ def load_config(
         app_config.project_name = env_vars.get("PROJECT_NAME")
         app_config.webui_secret_key = env_vars.get("WEBUI_SECRET_KEY")
 
+        # Apply platform-specific overrides
+        if platform.system() == "Darwin" and platform.machine() == "arm64":
+            log.info("Applying Apple Silicon specific configuration.")
+            if "ollama" in app_config.services:
+                app_config.services["ollama"].type = "native-api"
+                app_config.services["ollama"].health_check_url = "http://localhost:11434"
+
         return app_config
     except (json.JSONDecodeError, ValidationError) as e:
-        display.warning(f"Could not load or parse {config_path}. Using default configuration.", suggestion=str(e))
+        log.warning(f"Could not load or parse {config_path}. Using default configuration. Error: {e}")
         return AppConfig() # Return a default, in-memory config
 
 def save_config(
@@ -66,7 +77,7 @@ def save_config(
             set_key(env_path, "WEBUI_SECRET_KEY", config.webui_secret_key)
 
     except IOError as e:
-        display.error(f"Could not save configuration to {config_path}.", suggestion=str(e))
+        log.error(f"Could not save configuration to {config_path}.", exc_info=True)
 
 class Config:
     """A configuration manager that handles loading and accessing app configuration."""

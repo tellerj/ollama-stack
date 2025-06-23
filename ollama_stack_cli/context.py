@@ -1,8 +1,10 @@
 import sys
+import logging
 from .config import Config
 from .display import Display
 from .stack_manager import StackManager
 
+log = logging.getLogger(__name__)
 
 class AppContext:
     """A central container for the application's runtime state."""
@@ -13,10 +15,9 @@ class AppContext:
             self.config = Config(self.display)
             self.stack_manager = StackManager(self.config.app_config, self.display)
         except Exception as e:
-            # Initialize display for error reporting if possible
-            if not hasattr(self, 'display'):
-                self.display = Display(verbose=verbose)
-            self.display.error(f"Failed to initialize application: {e}")
+            # Manually create a display object for error reporting if the main one fails.
+            display = Display(verbose=True) # Use verbose to ensure traceback is shown
+            log.error(f"Failed to initialize application: {e}", exc_info=True)
             sys.exit(1)
 
     @property

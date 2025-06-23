@@ -1,3 +1,5 @@
+import logging
+from rich.logging import RichHandler
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -12,6 +14,20 @@ class Display:
     def __init__(self, verbose: bool = False):
         self._console = Console()
         self._verbose = verbose
+
+        # Clear any existing handlers to avoid duplicate logs
+        root_logger = logging.getLogger()
+        if root_logger.hasHandlers():
+            root_logger.handlers.clear()
+
+        # Configure logging to use RichHandler
+        logging.basicConfig(
+            level="DEBUG" if verbose else "INFO",
+            format="%(message)s",
+            datefmt="[%X]",
+            handlers=[RichHandler(console=self._console, rich_tracebacks=True, show_path=verbose, show_level=verbose)]
+        )
+        self.log = logging.getLogger(__name__)
 
     @property
     def verbose(self) -> bool:
@@ -34,11 +50,11 @@ class Display:
 
     def warning(self, message: str):
         """Prints a warning message."""
-        self._console.print(f"[bold yellow]Warning:[/] {message}")
+        self.log.warning(message)
 
     def info(self, message: str):
         """Prints an informational message."""
-        self._console.print(f"[bold blue]Info:[/] {message}")
+        self.log.info(message)
 
     def panel(self, content: str, title: str, border_style: str = "blue"):
         """Prints content within a styled panel."""
@@ -90,6 +106,10 @@ class Display:
 
         self._console.print(table)
 
+    def json(self, data: str):
+        """Prints pre-formatted JSON to the console."""
+        self._console.print(data)
+
     def check_report(self, report: CheckReport):
         """Displays the results of an environment check."""
         self.info("Running environment checks...")
@@ -104,7 +124,7 @@ class Display:
     def log_message(self, message: str):
         """Prints a single log line."""
         # Simple print for now, can add formatting later
-        self._console.print(message)
+        self.log.info(message)
 
     def progress(self):
         """Returns a Rich Progress context manager."""

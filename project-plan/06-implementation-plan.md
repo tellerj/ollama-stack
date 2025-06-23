@@ -137,28 +137,37 @@ This document outlines the sequential, phased plan for implementing the `ollama-
 
 ## Phase 3: Resource Management
 
-**Goal:** Implement commands for managing the stack's underlying resources.
+**Goal:** Implement robust commands for managing the stack's underlying resources, with a focus on safety and adherence to the established architecture.
 
-**Step 3.1: Enhance `docker_client.py`**
-- Add methods for resource discovery (finding all stack-related resources).
-- Add methods for pulling Docker images.
-- Add methods for removing resources, including volumes.
+**Step 3.1: Enhance Core Modules (`stack_manager.py` and `docker_client.py`)**
+-   **In `docker_client.py`**:
+    -   Implement a method `find_resources_by_label(label: str)` that returns a list of all containers, networks, and volumes matching the given Docker label.
+    -   Implement a method `remove_resources(resources: list, remove_volumes: bool)` that safely removes the provided resources.
+    -   Ensure the `pull_images()` method can show progress.
+-   **In `stack_manager.py`**:
+    -   Implement an `update_stack()` method that orchestrates checking if the stack is running, stopping it if necessary, pulling images, and restarting.
+    -   Implement `cleanup_resources(force: bool, remove_volumes: bool)` and `uninstall_stack(...)` methods that use the new `docker_client` methods to discover and remove resources, handling all user-facing prompts and warnings.
 
 **Step 3.2: Command Implementation**
-- **Commands receive an `AppContext` (`ctx`)**.
-- **`update` command**:
-  - Use `ctx.docker_client` to pull the latest images.
-  - Use `ctx.display` to show progress and results.
-- **`cleanup`, `uninstall` commands**:
-  - Use `ctx.docker_client` to discover and remove resources.
-  - Use `ctx.display` to show warnings and report results.
+-   **`update` command**:
+    -   Call `ctx.stack_manager.update_stack()`.
+    -   Use `ctx.display` to report progress and results.
+-   **`cleanup` and `uninstall` commands**:
+    -   Call `ctx.stack_manager.cleanup_resources(...)` or `uninstall_stack(...)`, passing the appropriate flags from the CLI.
+    -   Use `ctx.display` to present warnings and confirmation prompts.
 
 **Step 3.3: Testing**
-- **Unit Tests**: Mock Docker SDK responses for resource discovery and removal.
-- **Integration Tests**: Verify that `update`, `cleanup`, and `uninstall` correctly manage Docker resources.
+-   **Unit Tests**:
+    -   Mock `docker_client` to test the orchestration logic in `stack_manager` (e.g., test that `update_stack` calls `stop` before `pull`).
+    -   Mock the Docker SDK to test that `find_resources_by_label` correctly filters resources.
+-   **Integration Tests**:
+    -   Test that `update` pulls new images.
+    -   Test that `cleanup` with `--remove-volumes` correctly removes all resources, and without it, preserves volumes.
 
 **Testable Outcomes:**
-1. `ollama-stack update`, `cleanup`, `uninstall` commands are fully functional.
+1.  All resource management commands are fully functional and architecturally sound.
+2.  The `cleanup` and `uninstall` commands include user safety prompts and respect the `--force` and `--remove-volumes` flags.
+3.  The CLI can successfully find and manage only those Docker resources that are labeled as part of the stack.
 
 ---
 

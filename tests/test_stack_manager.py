@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 
 from ollama_stack_cli.stack_manager import StackManager
-from ollama_stack_cli.schemas import AppConfig, PlatformConfig, ServiceStatus, StackStatus, CheckReport, ResourceUsage
+from ollama_stack_cli.schemas import AppConfig, PlatformConfig, ServiceStatus, StackStatus, CheckReport, ResourceUsage, ServiceConfig
 
 # Fixtures
 
@@ -22,9 +22,9 @@ def mock_config():
     }
     # Provide a dictionary of service names as the StackManager will iterate over them
     config.services = {
-        "ollama": {"name": "ollama"},
-        "webui": {"name": "webui"},
-        "mcp_proxy": {"name": "mcp_proxy"},
+        "ollama": ServiceConfig(type="docker"),
+        "webui": ServiceConfig(type="docker"),
+        "mcp_proxy": ServiceConfig(type="docker"),
     }
     return config
 

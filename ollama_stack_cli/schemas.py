@@ -1,6 +1,11 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, HttpUrl
+from typing import Optional, List, Dict, Any, Literal
 import uuid
+
+class ServiceConfig(BaseModel):
+    """Defines the configuration for a single service in the stack."""
+    type: Literal["docker", "native-api", "remote-api"] = "docker"
+    health_check_url: Optional[HttpUrl] = None
 
 class PlatformConfig(BaseModel):
     compose_file: str
@@ -11,6 +16,11 @@ class ExtensionsConfig(BaseModel):
 
 class AppConfig(BaseModel):
     project_name: str = Field(default_factory=lambda: f"ollama-stack-{uuid.uuid4().hex[:8]}")
+    services: Dict[str, ServiceConfig] = Field(default_factory=lambda: {
+        "ollama": ServiceConfig(),
+        "webui": ServiceConfig(),
+        "mcp_proxy": ServiceConfig(),
+    })
     docker_compose_file: str = "docker-compose.yml"
     data_directory: str = "~/.ollama-stack/data"
     backup_directory: str = "~/.ollama-stack/backups"
