@@ -119,9 +119,14 @@ class DockerClient:
         log.info("Pulling latest images for core services...")
         return self._run_compose_command(["pull"])
 
-    def start_services(self):
+    def start_services(self, services: Optional[list[str]] = None):
         """Starts the services using Docker Compose."""
-        self._run_compose_command(["up", "-d"])
+        if services:
+            # Start only specific services
+            self._run_compose_command(["up", "-d"] + services)
+        else:
+            # Start all services (backward compatibility)
+            self._run_compose_command(["up", "-d"])
 
     def stop_services(self):
         """Stops the services using Docker Compose."""

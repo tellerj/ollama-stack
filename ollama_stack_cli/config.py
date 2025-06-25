@@ -56,7 +56,16 @@ def load_config(
         return app_config
     except (json.JSONDecodeError, ValidationError) as e:
         log.warning(f"Could not load or parse {config_path}. Using default configuration. Error: {e}")
-        return AppConfig() # Return a default, in-memory config
+        app_config = AppConfig() # Return a default, in-memory config
+        
+        # Apply platform-specific overrides to default config too
+        if platform.system() == "Darwin" and platform.machine() == "arm64":
+            log.info("Applying Apple Silicon specific configuration to default config.")
+            if "ollama" in app_config.services:
+                app_config.services["ollama"].type = "native-api"
+                app_config.services["ollama"].health_check_url = "http://localhost:11434"
+        
+        return app_config
 
 def save_config(
     display: Display,

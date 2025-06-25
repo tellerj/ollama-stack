@@ -51,14 +51,18 @@ class StackManager:
         if update:
             self.docker_client.pull_images()
 
-        # This command only affects docker-compose, so non-docker services are ignored.
-        log.info("Starting Docker-based services...")
-        self.docker_client.start_services()
+        # Filter services by type
+        docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
+        native_services = [name for name, conf in self.config.services.items() if conf.type == 'native-api']
+
+        # Start only Docker services
+        if docker_services:
+            log.info("Starting Docker-based services...")
+            self.docker_client.start_services(docker_services)
 
         # Display info for non-docker services
-        for name, config in self.config.services.items():
-            if config.type == "native-api":
-                log.info(f"Please ensure the native '{name}' service is running.")
+        for service_name in native_services:
+            log.info(f"Please ensure the native '{service_name}' service is running.")
 
     def stop_services(self):
         """Stops the services."""
