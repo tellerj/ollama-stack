@@ -115,4 +115,32 @@ class StackManager:
         """Get status for Ollama API service."""
         return self.ollama_api_client.get_status()
 
+    def start_native_services(self, services: List[str]) -> bool:
+        """Start native services."""
+        success = True
+        for service_name in services:
+            if service_name == "ollama":
+                if not self.ollama_api_client.start_service():
+                    success = False
+            else:
+                log.info(f"Please ensure the native '{service_name}' service is running.")
+        return success
+
+    def stop_native_services(self, services: List[str]) -> bool:
+        """Stop native services."""
+        success = True
+        for service_name in services:
+            if service_name == "ollama":
+                if not self.ollama_api_client.stop_service():
+                    success = False
+            else:
+                log.info(f"Please stop the native '{service_name}' service manually.")
+        return success
+
+    def is_native_service_running(self, service_name: str) -> bool:
+        """Check if a native service is running."""
+        if service_name == "ollama":
+            return self.ollama_api_client.is_service_running()
+        return False
+
  

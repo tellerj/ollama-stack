@@ -28,6 +28,7 @@ def test_start_command(MockAppContext, mock_app_context):
     assert result.exit_code == 0
     mock_app_context.stack_manager.is_stack_running.assert_called_once()
     mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_start_command_with_update(MockAppContext, mock_app_context):
@@ -41,18 +42,22 @@ def test_start_command_with_update(MockAppContext, mock_app_context):
     mock_app_context.stack_manager.is_stack_running.assert_called_once()
     mock_app_context.stack_manager.pull_images.assert_called_once()
     mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_stop_command(MockAppContext, mock_app_context):
-    """Tests that the 'stop' command calls stack_manager.stop_docker_services."""
+    """Tests that the 'stop' command calls stack_manager methods for both Docker and native services."""
     MockAppContext.return_value = mock_app_context
+    mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
+    
     result = runner.invoke(app, ["stop"])
     assert result.exit_code == 0
     mock_app_context.stack_manager.stop_docker_services.assert_called_once()
+    mock_app_context.stack_manager.stop_native_services.assert_called_once_with(['ollama'])
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_restart_command(MockAppContext, mock_app_context):
-    """Tests that 'restart' calls stop and then start logic."""
+    """Tests that 'restart' calls stop and then start logic for both Docker and native services."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
@@ -60,12 +65,14 @@ def test_restart_command(MockAppContext, mock_app_context):
     result = runner.invoke(app, ["restart"])
     assert result.exit_code == 0
     mock_app_context.stack_manager.stop_docker_services.assert_called_once()
+    mock_app_context.stack_manager.stop_native_services.assert_called_once_with(['ollama'])
     mock_app_context.stack_manager.is_stack_running.assert_called_once()
     mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_restart_command_with_update(MockAppContext, mock_app_context):
-    """Tests that 'restart --update' calls stop, pull_images, and then start logic."""
+    """Tests that 'restart --update' calls stop, pull_images, and then start logic for both Docker and native services."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
@@ -73,9 +80,11 @@ def test_restart_command_with_update(MockAppContext, mock_app_context):
     result = runner.invoke(app, ["restart", "--update"])
     assert result.exit_code == 0
     mock_app_context.stack_manager.stop_docker_services.assert_called_once()
+    mock_app_context.stack_manager.stop_native_services.assert_called_once_with(['ollama'])
     mock_app_context.stack_manager.is_stack_running.assert_called_once()
     mock_app_context.stack_manager.pull_images.assert_called_once()
     mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_status_command(MockAppContext, mock_app_context):
@@ -148,4 +157,207 @@ def test_logs_command_empty_iterator(MockAppContext, mock_app_context):
     mock_app_context.stack_manager.stream_docker_logs.assert_called_once_with(
         None, False, None, None, None, None
     )
-    mock_app_context.display.log_message.assert_not_called() 
+    mock_app_context.display.log_message.assert_not_called()
+
+# --- Additional Command Tests for Edge Cases ---
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_already_running(MockAppContext, mock_app_context):
+    """Tests that the 'start' command exits early when stack is already running."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = True
+    mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.is_stack_running.assert_called_once()
+    # Should not call start methods when already running
+    mock_app_context.stack_manager.start_docker_services.assert_not_called()
+    mock_app_context.stack_manager.start_native_services.assert_not_called()
+    mock_app_context.stack_manager.pull_images.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_with_update_already_running(MockAppContext, mock_app_context):
+    """Tests that the 'start --update' command exits early when stack is already running (no image pull)."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = True
+    mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
+    
+    result = runner.invoke(app, ["start", "--update"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.is_stack_running.assert_called_once()
+    # Should not pull images or start services when already running
+    mock_app_context.stack_manager.pull_images.assert_not_called()
+    mock_app_context.stack_manager.start_docker_services.assert_not_called()
+    mock_app_context.stack_manager.start_native_services.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_only_docker_services(MockAppContext, mock_app_context):
+    """Tests start command when only Docker services exist."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'mcp_proxy': MagicMock(type='docker')}
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui', 'mcp_proxy'])
+    mock_app_context.stack_manager.start_native_services.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_only_native_services(MockAppContext, mock_app_context):
+    """Tests start command when only native services exist."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.services = {'ollama': MagicMock(type='native-api'), 'custom_api': MagicMock(type='native-api')}
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.start_docker_services.assert_not_called()
+    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama', 'custom_api'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_no_services(MockAppContext, mock_app_context):
+    """Tests start command when no services are configured."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.services = {}
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.start_docker_services.assert_not_called()
+    mock_app_context.stack_manager.start_native_services.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_stop_command_only_docker_services(MockAppContext, mock_app_context):
+    """Tests stop command when only Docker services exist."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'mcp_proxy': MagicMock(type='docker')}
+    
+    result = runner.invoke(app, ["stop"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.stop_docker_services.assert_called_once()
+    mock_app_context.stack_manager.stop_native_services.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_stop_command_only_native_services(MockAppContext, mock_app_context):
+    """Tests stop command when only native services exist."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.config.services = {'ollama': MagicMock(type='native-api')}
+    
+    result = runner.invoke(app, ["stop"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.stop_docker_services.assert_not_called()
+    mock_app_context.stack_manager.stop_native_services.assert_called_once_with(['ollama'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_stop_command_no_services(MockAppContext, mock_app_context):
+    """Tests stop command when no services are configured."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.config.services = {}
+    
+    result = runner.invoke(app, ["stop"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.stop_docker_services.assert_not_called()
+    mock_app_context.stack_manager.stop_native_services.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_restart_command_only_docker_services(MockAppContext, mock_app_context):
+    """Tests restart command when only Docker services exist."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'mcp_proxy': MagicMock(type='docker')}
+    
+    result = runner.invoke(app, ["restart"])
+    assert result.exit_code == 0
+    # Stop phase
+    mock_app_context.stack_manager.stop_docker_services.assert_called_once()
+    mock_app_context.stack_manager.stop_native_services.assert_not_called()
+    # Start phase
+    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui', 'mcp_proxy'])
+    mock_app_context.stack_manager.start_native_services.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_restart_command_only_native_services(MockAppContext, mock_app_context):
+    """Tests restart command when only native services exist."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.services = {'ollama': MagicMock(type='native-api')}
+    
+    result = runner.invoke(app, ["restart"])
+    assert result.exit_code == 0
+    # Stop phase
+    mock_app_context.stack_manager.stop_docker_services.assert_not_called()
+    mock_app_context.stack_manager.stop_native_services.assert_called_once_with(['ollama'])
+    # Start phase  
+    mock_app_context.stack_manager.start_docker_services.assert_not_called()
+    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_restart_command_no_services(MockAppContext, mock_app_context):
+    """Tests restart command when no services are configured."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.services = {}
+    
+    result = runner.invoke(app, ["restart"])
+    assert result.exit_code == 0
+    # Neither stop nor start methods should be called
+    mock_app_context.stack_manager.stop_docker_services.assert_not_called()
+    mock_app_context.stack_manager.stop_native_services.assert_not_called()
+    mock_app_context.stack_manager.start_docker_services.assert_not_called()
+    mock_app_context.stack_manager.start_native_services.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_restart_command_call_order(MockAppContext, mock_app_context):
+    """Tests that restart command calls stop before start methods."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
+    
+    # Create a call order tracker
+    call_order = []
+    mock_app_context.stack_manager.stop_docker_services.side_effect = lambda: call_order.append('stop_docker')
+    mock_app_context.stack_manager.stop_native_services.side_effect = lambda x: call_order.append('stop_native')
+    mock_app_context.stack_manager.start_docker_services.side_effect = lambda x: call_order.append('start_docker')
+    mock_app_context.stack_manager.start_native_services.side_effect = lambda x: call_order.append('start_native')
+    
+    result = runner.invoke(app, ["restart"])
+    assert result.exit_code == 0
+    
+    # Verify stop methods are called before start methods
+    assert call_order.index('stop_docker') < call_order.index('start_docker')
+    assert call_order.index('stop_native') < call_order.index('start_native')
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_service_filtering_with_unknown_types(MockAppContext, mock_app_context):
+    """Tests that start command properly filters services, ignoring unknown types."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.services = {
+        'webui': MagicMock(type='docker'),
+        'ollama': MagicMock(type='native-api'),
+        'unknown_service': MagicMock(type='unknown-type'),
+        'external_api': MagicMock(type='external')
+    }
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    # Should only start known service types
+    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_stop_command_service_filtering_with_unknown_types(MockAppContext, mock_app_context):
+    """Tests that stop command properly filters services, ignoring unknown types."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.config.services = {
+        'webui': MagicMock(type='docker'),
+        'ollama': MagicMock(type='native-api'),
+        'unknown_service': MagicMock(type='unknown-type')
+    }
+    
+    result = runner.invoke(app, ["stop"])
+    assert result.exit_code == 0
+    # Should only stop known service types
+    mock_app_context.stack_manager.stop_docker_services.assert_called_once()
+    mock_app_context.stack_manager.stop_native_services.assert_called_once_with(['ollama']) 
