@@ -79,8 +79,38 @@ class StackManager:
 
     # Delegation methods for Docker operations
     def is_stack_running(self) -> bool:
-        """Check if any stack component containers are running."""
-        return self.docker_client.is_stack_running()
+        """Check if any stack component (Docker containers or native services) are running."""
+        # Check Docker containers
+        docker_running = self.docker_client.is_stack_running()
+        
+        # Check native services
+        native_running = False
+        for service_name, service_config in self.config.services.items():
+            if service_config.type == "native-api":
+                if self.is_native_service_running(service_name):
+                    native_running = True
+                    break
+        
+        return docker_running or native_running
+    
+    def get_running_services_summary(self) -> tuple[list[str], list[str]]:
+        """Get lists of running Docker and native services for more specific messaging."""
+        running_docker = []
+        running_native = []
+        
+        # Check Docker services
+        docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
+        if docker_services:
+            statuses = self.get_docker_services_status(docker_services)
+            running_docker = [status.name for status in statuses if status.is_running]
+        
+        # Check native services  
+        for service_name, service_config in self.config.services.items():
+            if service_config.type == "native-api":
+                if self.is_native_service_running(service_name):
+                    running_native.append(service_name)
+        
+        return running_docker, running_native
 
     def pull_images(self):
         """Pull the latest images for the services."""

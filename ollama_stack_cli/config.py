@@ -18,10 +18,13 @@ def load_config(
     display: Display,
     config_path: Path = DEFAULT_CONFIG_FILE,
     env_path: Path = DEFAULT_ENV_FILE,
-) -> AppConfig:
+) -> tuple[AppConfig, bool]:
     """
     Loads the application configuration from JSON and .env files.
     If they don't exist, it creates default configurations.
+    
+    Returns:
+        tuple: (AppConfig, fell_back_to_defaults)
     """
     if not config_path.exists() or not env_path.exists():
         log.info(f"Creating default configuration files in {DEFAULT_CONFIG_DIR}")
@@ -34,6 +37,7 @@ def load_config(
         # Create a default .env file
         set_key(env_path, "PROJECT_NAME", "ollama-stack")
         set_key(env_path, "WEBUI_SECRET_KEY", "your-secret-key-here")
+        return app_config, False  # Created new config, not a fallback
 
     try:
         with open(config_path, "r") as f:
@@ -45,12 +49,13 @@ def load_config(
         app_config.project_name = env_vars.get("PROJECT_NAME")
         app_config.webui_secret_key = env_vars.get("WEBUI_SECRET_KEY")
 
-        return app_config
+        return app_config, False  # Successfully loaded config
     except (json.JSONDecodeError, ValidationError) as e:
-        log.warning(f"Could not load or parse {config_path}. Using default configuration. Error: {e}")
-        app_config = AppConfig() # Return a default, in-memory config
+        # Keep quiet for now, but track that we fell back to defaults
+        log.debug(f"Config fallback: {type(e).__name__}")
         
-        return app_config
+        app_config = AppConfig() # Return a default, in-memory config
+        return app_config, True  # Fell back to defaults
 
 def save_config(
     display: Display,
@@ -81,12 +86,17 @@ class Config:
         self._display = display
         self._config_path = config_path
         self._env_path = env_path
-        self._app_config = load_config(display, config_path, env_path)
+        self._app_config, self._fell_back_to_defaults = load_config(display, config_path, env_path)
     
     @property
     def app_config(self) -> AppConfig:
         """Returns the loaded AppConfig object."""
         return self._app_config
+    
+    @property
+    def fell_back_to_defaults(self) -> bool:
+        """Returns True if the config fell back to defaults due to loading errors."""
+        return self._fell_back_to_defaults
     
     def save(self):
         """Save the current configuration to file."""
