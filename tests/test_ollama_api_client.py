@@ -84,4 +84,4 @@ def test_get_status_json_decode_error(mock_urlopen, api_client, mock_display):
     status = api_client.get_status()
     
     assert status.health == "unhealthy"
-    mock_display.warning.assert_called_once() 
+    # Note: JSON decode error is now logged instead of displayed 

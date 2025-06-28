@@ -42,7 +42,10 @@ def mock_ollama_api_client():
 def stack_manager(mock_config, mock_display, mock_docker_client, mock_ollama_api_client):
     """Fixture to create a StackManager with mocked clients."""
     with patch('ollama_stack_cli.stack_manager.DockerClient', return_value=mock_docker_client), \
-         patch('ollama_stack_cli.stack_manager.OllamaApiClient', return_value=mock_ollama_api_client):
+         patch('ollama_stack_cli.stack_manager.OllamaApiClient', return_value=mock_ollama_api_client), \
+         patch('ollama_stack_cli.stack_manager.docker.from_env'), \
+         patch('ollama_stack_cli.stack_manager.platform.system', return_value='Linux'), \
+         patch('ollama_stack_cli.stack_manager.platform.machine', return_value='x86_64'):
         manager = StackManager(config=mock_config, display=mock_display)
         # We need to inject the mocked clients into the manager instance for assertion purposes
         manager.docker_client = mock_docker_client
@@ -51,32 +54,38 @@ def stack_manager(mock_config, mock_display, mock_docker_client, mock_ollama_api
 
 # Platform-Specific Tests
 
-def test_get_stack_status_on_apple(stack_manager, mock_docker_client, mock_ollama_api_client):
-    """Tests get_stack_status orchestration on Apple Silicon."""
+def test_get_docker_services_status_on_apple(stack_manager, mock_docker_client, mock_ollama_api_client):
+    """Tests get_docker_services_status orchestration on Apple Silicon."""
     stack_manager.platform = 'apple'
+    
+    # Configure services for Apple platform
+    stack_manager.configure_services_for_platform()
+    
+    # On Apple, ollama should be native-api, so only webui and mcp_proxy are Docker services
+    docker_services = [name for name, conf in stack_manager.config.services.items() if conf.type == 'docker']
     
     mock_docker_client.get_container_status.return_value = [
         ServiceStatus(name='webui', is_running=True, status='running'),
         ServiceStatus(name='mcp_proxy', is_running=False)
     ]
-    mock_ollama_api_client.get_status.return_value = ServiceStatus(
-        name='ollama', is_running=True, status='idle (native)'
-    )
     
-    status = stack_manager.get_stack_status()
+    status = stack_manager.get_docker_services_status(docker_services)
     
-    mock_docker_client.get_container_status.assert_called_once_with(['webui', 'mcp_proxy'])
-    mock_ollama_api_client.get_status.assert_called_once()
+    mock_docker_client.get_container_status.assert_called_once_with(docker_services)
     
-    assert len(status.core_services) == 3
-    webui = next(s for s in status.core_services if s.name == 'webui')
-    ollama = next(s for s in status.core_services if s.name == 'ollama')
+    assert len(status) == 2
+    webui = next(s for s in status if s.name == 'webui')
     assert webui.is_running is True
-    assert ollama.status == 'idle (native)'
 
-def test_get_stack_status_on_linux(stack_manager, mock_docker_client, mock_ollama_api_client):
-    """Tests get_stack_status orchestration on Linux/CPU."""
+def test_get_docker_services_status_on_linux(stack_manager, mock_docker_client, mock_ollama_api_client):
+    """Tests get_docker_services_status orchestration on Linux/CPU."""
     stack_manager.platform = 'cpu'
+    
+    # Configure services for CPU platform
+    stack_manager.configure_services_for_platform()
+    
+    # On CPU, all services should be Docker services
+    docker_services = [name for name, conf in stack_manager.config.services.items() if conf.type == 'docker']
     
     mock_docker_client.get_container_status.return_value = [
         ServiceStatus(name='webui', is_running=True),
@@ -84,71 +93,151 @@ def test_get_stack_status_on_linux(stack_manager, mock_docker_client, mock_ollam
         ServiceStatus(name='mcp_proxy', is_running=True),
     ]
     
-    status = stack_manager.get_stack_status()
+    status = stack_manager.get_docker_services_status(docker_services)
     
-    mock_docker_client.get_container_status.assert_called_once_with(['ollama', 'webui', 'mcp_proxy'])
-    mock_ollama_api_client.get_status.assert_not_called()
-    assert len(status.core_services) == 3
+    mock_docker_client.get_container_status.assert_called_once_with(docker_services)
+    assert len(status) == 3
 
-def test_stream_logs_for_native_ollama_on_apple(stack_manager, mock_docker_client, mock_display):
-    """Tests that stream_logs provides a message for native Ollama on Apple Silicon."""
-    stack_manager.platform = 'apple'
-    
-    # We must consume the generator for the code to execute
-    list(stack_manager.stream_logs(service_or_extension='ollama'))
-    
-    mock_docker_client.stream_logs.assert_not_called()
-    mock_display.warning.assert_called_once()
-    mock_display.info.assert_called_once()
+def test_stream_logs_delegation(stack_manager, mock_docker_client):
+    """Tests that stream_docker_logs delegates to docker client with compose files."""
+    # Mock the get_compose_files to return expected files
+    with patch.object(stack_manager, 'get_compose_files', return_value=['docker-compose.yml', 'docker-compose.cpu.yml']):
+        # Mock the docker client stream_logs to return a simple generator
+        mock_docker_client.stream_logs.return_value = iter(['log line 1', 'log line 2'])
+        
+        # Consume the generator
+        logs = list(stack_manager.stream_docker_logs('webui', follow=True, tail=10))
+        
+        mock_docker_client.stream_logs.assert_called_once_with('webui', True, 10, None, None, None, ['docker-compose.yml', 'docker-compose.cpu.yml'])
+        assert logs == ['log line 1', 'log line 2']
 
 # Orchestration Logic Tests
-def test_start_services_when_already_running(stack_manager, mock_docker_client, mock_display):
-    """Tests that start_services exits early if the stack is already running."""
-    mock_docker_client.is_stack_running.return_value = True
-
-    stack_manager.start_services()
-
-    mock_docker_client.is_stack_running.assert_called_once()
-    mock_display.info.assert_called_once_with("Ollama Stack is already running.")
-    # Ensure that pull and start are not called if the stack is running
-    mock_docker_client.pull_images.assert_not_called()
-    mock_docker_client.start_services.assert_not_called()
-
-def test_start_services_with_update(stack_manager, mock_docker_client):
-    """Tests that start_services calls pull_images when update=True."""
-    mock_docker_client.is_stack_running.return_value = False
+def test_start_docker_services_delegation(stack_manager, mock_docker_client):
+    """Tests that start_docker_services delegates to docker client with services and compose files."""
+    services = ['webui', 'mcp_proxy']
     
-    stack_manager.start_services(update=True)
-    
-    mock_docker_client.is_stack_running.assert_called_once()
-    mock_docker_client.pull_images.assert_called_once()
-    mock_docker_client.start_services.assert_called_once()
+    # Mock the get_compose_files to return expected files
+    with patch.object(stack_manager, 'get_compose_files', return_value=['docker-compose.yml', 'docker-compose.cpu.yml']):
+        stack_manager.start_docker_services(services)
 
-def test_stop_services(stack_manager, mock_docker_client):
-    """Tests that stop_services calls docker_client.stop_services."""
-    stack_manager.stop_services()
-    mock_docker_client.stop_services.assert_called_once()
+        mock_docker_client.start_services.assert_called_once_with(services, ['docker-compose.yml', 'docker-compose.cpu.yml'])
 
-def test_restart_services_call_order(stack_manager):
-    """Tests that restart calls stop_services then start_services."""
-    # Use a new mock with attached methods to check call order
-    manager_mock = MagicMock()
-    stack_manager.stop_services = MagicMock()
-    stack_manager.start_services = MagicMock()
-    manager_mock.attach_mock(stack_manager.stop_services, 'stop')
-    manager_mock.attach_mock(stack_manager.start_services, 'start')
+def test_pull_images_delegation(stack_manager, mock_docker_client):
+    """Tests that pull_images delegates to docker client with compose files."""
+    # Mock the get_compose_files to return expected files
+    with patch.object(stack_manager, 'get_compose_files', return_value=['docker-compose.yml', 'docker-compose.cpu.yml']):
+        stack_manager.pull_images()
+        
+        mock_docker_client.pull_images.assert_called_once_with(['docker-compose.yml', 'docker-compose.cpu.yml'])
 
-    stack_manager.restart_services(update=True)
-    
-    expected_calls = [call.stop(), call.start(update=True)]
-    manager_mock.assert_has_calls(expected_calls)
+def test_stop_docker_services_delegation(stack_manager, mock_docker_client):
+    """Tests that stop_docker_services delegates to docker client with compose files."""
+    # Mock the get_compose_files to return expected files
+    with patch.object(stack_manager, 'get_compose_files', return_value=['docker-compose.yml', 'docker-compose.cpu.yml']):
+        stack_manager.stop_docker_services()
+        
+        mock_docker_client.stop_services.assert_called_once_with(['docker-compose.yml', 'docker-compose.cpu.yml'])
     
 def test_run_environment_checks(stack_manager, mock_docker_client):
-    """Tests that environment checks are delegated to the docker client."""
+    """Tests that environment checks are delegated to the docker client with correct parameters."""
+    stack_manager.platform = 'cpu'
     mock_report = CheckReport(checks=[])
     mock_docker_client.run_environment_checks.return_value = mock_report
     
-    report = stack_manager.run_environment_checks()
+    report = stack_manager.run_docker_environment_checks(fix=True, verbose=True)
     
-    mock_docker_client.run_environment_checks.assert_called_once()
-    assert report == mock_report 
+    mock_docker_client.run_environment_checks.assert_called_once_with(fix=True, verbose=True, platform='cpu')
+    assert report == mock_report
+
+
+# Platform Orchestration Tests
+def test_detect_platform_apple_silicon(stack_manager):
+    """Tests platform detection for Apple Silicon (M1/M2)."""
+    with patch('ollama_stack_cli.stack_manager.platform.system', return_value='Darwin'), \
+         patch('ollama_stack_cli.stack_manager.platform.machine', return_value='arm64'):
+        platform = stack_manager.detect_platform()
+        assert platform == 'apple'
+
+def test_detect_platform_nvidia():
+    """Tests platform detection for NVIDIA GPU."""
+    with patch('ollama_stack_cli.stack_manager.platform.system', return_value='Linux'), \
+         patch('ollama_stack_cli.stack_manager.platform.machine', return_value='x86_64'), \
+         patch('ollama_stack_cli.stack_manager.docker.from_env') as mock_docker_from_env:
+        
+        mock_client = MagicMock()
+        mock_docker_from_env.return_value = mock_client
+        mock_client.containers.run.return_value.decode.return_value = '12.0\n'
+        
+        manager = StackManager(config=MagicMock(), display=MagicMock())
+        platform = manager.detect_platform()
+        assert platform == 'nvidia'
+
+def test_detect_platform_cpu():
+    """Tests platform detection fallback to CPU."""
+    with patch('ollama_stack_cli.stack_manager.platform.system', return_value='Linux'), \
+         patch('ollama_stack_cli.stack_manager.platform.machine', return_value='x86_64'), \
+         patch('ollama_stack_cli.stack_manager.docker.from_env') as mock_docker_from_env:
+        
+        mock_client = MagicMock()
+        mock_docker_from_env.return_value = mock_client
+        # Mock the info() method to return empty runtimes (no NVIDIA)
+        mock_client.info.return_value = {'Runtimes': {}}
+        
+        manager = StackManager(config=MagicMock(), display=MagicMock())
+        platform = manager.detect_platform()
+        assert platform == 'cpu'
+
+def test_configure_services_for_apple_platform(stack_manager):
+    """Tests service configuration for Apple Silicon platform."""
+    stack_manager.platform = 'apple'
+    
+    # Mock initial config with all Docker services
+    stack_manager.config.services = {
+        'ollama': ServiceConfig(name='ollama', type='docker'),
+        'webui': ServiceConfig(name='webui', type='docker'),
+        'mcp_proxy': ServiceConfig(name='mcp_proxy', type='docker'),
+    }
+    
+    stack_manager.configure_services_for_platform()
+    
+    # On Apple, ollama should become native-api
+    assert stack_manager.config.services['ollama'].type == 'native-api'
+    assert stack_manager.config.services['webui'].type == 'docker'
+    assert stack_manager.config.services['mcp_proxy'].type == 'docker'
+
+def test_configure_services_for_cpu_platform(stack_manager):
+    """Tests service configuration for CPU platform."""
+    stack_manager.platform = 'cpu'
+    
+    # Mock initial config
+    stack_manager.config.services = {
+        'ollama': ServiceConfig(name='ollama', type='docker'),
+        'webui': ServiceConfig(name='webui', type='docker'),
+    }
+    
+    stack_manager.configure_services_for_platform()
+    
+    # On CPU, all services should remain Docker
+    assert stack_manager.config.services['ollama'].type == 'docker'
+    assert stack_manager.config.services['webui'].type == 'docker'
+
+def test_get_compose_files_apple(stack_manager):
+    """Tests compose file selection for Apple Silicon."""
+    stack_manager.platform = 'apple'
+    stack_manager.config.docker_compose_file = 'docker-compose.yml'
+    stack_manager.config.platform = {
+        'apple': PlatformConfig(compose_file='docker-compose.apple.yml')
+    }
+    
+    files = stack_manager.get_compose_files()
+    
+    assert files == ['docker-compose.yml', 'docker-compose.apple.yml']
+
+def test_get_compose_files_cpu(stack_manager):
+    """Tests compose file selection for CPU platform."""
+    stack_manager.platform = 'cpu'
+    stack_manager.config.docker_compose_file = 'docker-compose.yml'
+    
+    files = stack_manager.get_compose_files()
+    
+    assert files == ['docker-compose.yml'] 

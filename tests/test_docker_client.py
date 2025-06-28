@@ -22,35 +22,7 @@ def mock_config():
     }
     return config
 
-@pytest.mark.parametrize("system,machine,docker_info,expected_platform", [
-    ("Darwin", "arm64", {}, "apple"),
-    ("Linux", "x86_64", {"Runtimes": {"nvidia": True}}, "nvidia"),
-    ("Linux", "x86_64", {}, "cpu"),
-    ("Windows", "AMD64", {}, "cpu"),
-    ("Linux", "x86_64", Exception("Docker error"), "cpu"),
-])
-@patch('docker.from_env')
-@patch('platform.system')
-@patch('platform.machine')
-def test_detect_platform(
-    mock_machine, mock_system, mock_docker_from_env,
-    system, machine, docker_info, expected_platform,
-    mock_config, mock_display
-):
-    """Tests that the platform detection logic correctly identifies the host system."""
-    mock_system.return_value = system
-    mock_machine.return_value = machine
-    mock_docker_client = MagicMock()
-    
-    if isinstance(docker_info, Exception):
-        mock_docker_client.info.side_effect = docker_info
-    else:
-        mock_docker_client.info.return_value = docker_info
-        
-    mock_docker_from_env.return_value = mock_docker_client
-
-    client = DockerClient(config=mock_config, display=mock_display)
-    assert client.detect_platform() == expected_platform 
+# Platform detection tests removed - this functionality moved to StackManager 
 
 @patch('docker.from_env')
 def test_docker_client_init_raises_on_docker_error(mock_docker_from_env, mock_config, mock_display):
@@ -59,39 +31,20 @@ def test_docker_client_init_raises_on_docker_error(mock_docker_from_env, mock_co
 
     with pytest.raises(docker.errors.DockerException):
         DockerClient(config=mock_config, display=mock_display)
-    
-    mock_display.error.assert_called_once()
 
-@patch('docker.from_env')
-def test_get_compose_file_apple(mock_docker_from_env, mock_config, mock_display):
-    """Tests compose file selection for Apple Silicon."""
-    with patch.object(DockerClient, 'detect_platform', return_value='apple'):
-        client = DockerClient(config=mock_config, display=mock_display)
-        assert set(client.get_compose_file()) == {"base.yml", "apple.yml"}
-
-@patch('docker.from_env')
-def test_get_compose_file_cpu(mock_docker_from_env, mock_config, mock_display):
-    """Tests compose file selection for a standard CPU."""
-    mock_docker_client = MagicMock()
-    mock_docker_client.info.return_value = {}
-    mock_docker_from_env.return_value = mock_docker_client
-    
-    with patch.object(DockerClient, 'detect_platform', return_value='cpu'):
-        client = DockerClient(config=mock_config, display=mock_display)
-        assert set(client.get_compose_file()) == {"base.yml"}
+# Compose file tests removed - this functionality moved to StackManager
 
 @patch('subprocess.Popen')
 @patch('docker.from_env')
 def test_pull_images_calls_compose_pull(mock_docker_from_env, mock_popen, mock_config, mock_display):
     """Tests that the pull_images method correctly calls 'docker-compose pull'."""
-    with patch.object(DockerClient, 'detect_platform', return_value='cpu'):
-        client = DockerClient(config=mock_config, display=mock_display)
-        client._run_compose_command = MagicMock()
+    client = DockerClient(config=mock_config, display=mock_display)
+    client._run_compose_command = MagicMock()
     
-        client.pull_images()
+    compose_files = ['docker-compose.yml', 'docker-compose.cpu.yml']
+    client.pull_images(compose_files)
 
-        client._run_compose_command.assert_called_once_with(["pull"])
-        mock_display.info.assert_called_once_with("Pulling latest images for core services...")
+    client._run_compose_command.assert_called_once_with(["pull"], compose_files)
 
 @patch('subprocess.Popen')
 @patch('docker.from_env')
@@ -103,9 +56,9 @@ def test_run_compose_command_failure(mock_docker_from_env, mock_popen, mock_conf
     mock_popen.return_value = mock_process
 
     client = DockerClient(config=mock_config, display=mock_display)
+    compose_files = ['docker-compose.yml']
     
-    assert client._run_compose_command(["up", "-d"]) is False
-    mock_display.error.assert_called_once()
+    assert client._run_compose_command(["up", "-d"], compose_files) is False
 
 @patch('docker.from_env')
 def test_get_container_status_api_error(mock_docker_from_env, mock_config, mock_display):
@@ -118,11 +71,6 @@ def test_get_container_status_api_error(mock_docker_from_env, mock_config, mock_
     
     with pytest.raises(docker.errors.APIError):
         client.get_container_status(service_names=['webui'])
-    
-    mock_display.error.assert_called_once_with(
-        "Could not connect to Docker to get container status.",
-        suggestion="API error"
-    )
 
 @patch('subprocess.Popen')
 @patch('docker.from_env')
@@ -133,10 +81,10 @@ def test_stream_logs_constructs_correct_command(mock_docker_from_env, mock_popen
     mock_popen.return_value = mock_process
 
     client = DockerClient(config=mock_config, display=mock_display)
+    compose_files = ['docker-compose.yml', 'docker-compose.cpu.yml']
     
-    list(client.stream_logs(service_or_extension="ollama", follow=True, tail=50))
+    list(client.stream_logs(service_or_extension="ollama", follow=True, tail=50, compose_files=compose_files))
     
-    expected_cmd = ["docker-compose", "-f", "base.yml", "-f", "base.yml", "logs", "--follow", "--tail", "50", "ollama"]
     mock_popen.assert_called_once()
     args, _ = mock_popen.call_args
     # This check is a bit fragile, but confirms the core components are there

@@ -1,6 +1,5 @@
 import json
 import logging
-import platform
 from pathlib import Path
 from pydantic import ValidationError
 from dotenv import dotenv_values, set_key
@@ -46,24 +45,10 @@ def load_config(
         app_config.project_name = env_vars.get("PROJECT_NAME")
         app_config.webui_secret_key = env_vars.get("WEBUI_SECRET_KEY")
 
-        # Apply platform-specific overrides
-        if platform.system() == "Darwin" and platform.machine() == "arm64":
-            log.info("Applying Apple Silicon specific configuration.")
-            if "ollama" in app_config.services:
-                app_config.services["ollama"].type = "native-api"
-                app_config.services["ollama"].health_check_url = "http://localhost:11434"
-
         return app_config
     except (json.JSONDecodeError, ValidationError) as e:
         log.warning(f"Could not load or parse {config_path}. Using default configuration. Error: {e}")
         app_config = AppConfig() # Return a default, in-memory config
-        
-        # Apply platform-specific overrides to default config too
-        if platform.system() == "Darwin" and platform.machine() == "arm64":
-            log.info("Applying Apple Silicon specific configuration to default config.")
-            if "ollama" in app_config.services:
-                app_config.services["ollama"].type = "native-api"
-                app_config.services["ollama"].health_check_url = "http://localhost:11434"
         
         return app_config
 

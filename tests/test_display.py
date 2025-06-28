@@ -33,14 +33,6 @@ def test_display_basic_methods_call_console(MockConsole):
     assert "Try again" in panel_arg.renderable
     assert panel_arg.border_style == "red"
 
-    # Test info
-    display.info("Just so you know")
-    mock_console_instance.print.assert_called_with("[bold blue]Info:[/] Just so you know")
-
-    # Test warning
-    display.warning("Look out")
-    mock_console_instance.print.assert_called_with("[bold yellow]Warning:[/] Look out")
-
     # Test panel
     display.panel("Content", title="Title")
     panel_arg = mock_console_instance.print.call_args[0][0]
@@ -88,23 +80,29 @@ def test_display_status_renders_table(MockConsole):
 
 
 @patch('ollama_stack_cli.display.Console')
-def test_display_status_empty_state(MockConsole):
-    """Tests that the status method displays an info message when no services are present."""
+@patch('ollama_stack_cli.display.logging')
+def test_display_status_empty_state(mock_logging, MockConsole):
+    """Tests that the status method logs an info message when no services are present."""
     mock_console_instance = MockConsole.return_value
-    display = Display()
-    display.info = MagicMock() # Mock the info method to check if it's called
+    mock_logger = MagicMock()
+    mock_logging.getLogger.return_value = mock_logger
     
+    display = Display()
     status = StackStatus(core_services=[], extensions=[])
     display.status(status)
 
-    display.info.assert_called_once_with("Ollama Stack is not running.")
+    mock_logger.info.assert_called_once_with("Ollama Stack is not running.")
     mock_console_instance.print.assert_not_called()
 
 
 @patch('ollama_stack_cli.display.Console')
-def test_display_check_report(MockConsole):
+@patch('ollama_stack_cli.display.logging')
+def test_display_check_report(mock_logging, MockConsole):
     """Tests that the check_report method prints a formatted list of checks."""
     mock_console_instance = MockConsole.return_value
+    mock_logger = MagicMock()
+    mock_logging.getLogger.return_value = mock_logger
+    
     display = Display()
     
     report = CheckReport(checks=[
@@ -114,10 +112,12 @@ def test_display_check_report(MockConsole):
     
     display.check_report(report)
     
+    # Check that the "Running environment checks" message was logged
+    mock_logger.info.assert_called_once_with("Running environment checks...")
+    
     # Create a single string from all the print calls to make assertions less brittle
     all_output = "".join(str(call[0][0]) for call in mock_console_instance.print.call_args_list)
 
-    assert "Running environment checks" in all_output
     assert "[bold green]PASSED[/]: Docker Running" in all_output
     assert "[bold red]FAILED[/]: Port 8080 Available" in all_output
     # Check for the details and suggestion including their markup

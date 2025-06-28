@@ -1,14 +1,13 @@
-import platform
 import docker
 import subprocess
 import time
 import urllib.request
 import urllib.error
 import logging
-from .schemas import AppConfig
-from .display import Display
 import socket
 from typing import Optional, Dict
+from .schemas import AppConfig
+from .display import Display
 
 from .schemas import (
     AppConfig,
@@ -45,43 +44,18 @@ class DockerClient:
                 exc_info=True
             )
             raise
-        self.platform = self.detect_platform()
 
-    def detect_platform(self) -> str:
-        """Detects the current platform (apple, nvidia, or cpu)."""
-        system = platform.system()
-        machine = platform.machine()
+    # =============================================================================
+    # Docker Compose Operations
+    # =============================================================================
 
-        if system == "Darwin" and machine == "arm64":
-            log.info("Apple Silicon platform detected.")
-            return "apple"
+    def _run_compose_command(self, command: list, compose_files: Optional[list[str]] = None):
+        """Helper to run a docker-compose command with specified compose files."""
+        if compose_files is None:
+            compose_files = [self.config.docker_compose_file]
         
-        try:
-            info = self.client.info()
-            if info.get("Runtimes", {}).get("nvidia"):
-                log.info("NVIDIA GPU platform detected.")
-                return "nvidia"
-        except Exception:
-            log.warning("Could not get Docker info to check for NVIDIA runtime.")
-
-        log.info("Defaulting to CPU platform.")
-        return "cpu"
-
-    def get_compose_file(self) -> list[str]:
-        """Determines the appropriate docker-compose file to use."""
-        compose_files = [self.config.docker_compose_file]
-        
-        platform_config = self.config.platform.get(self.platform)
-        if platform_config:
-            compose_files.append(platform_config.compose_file)
-            log.info(f"Using platform-specific compose file: {platform_config.compose_file}")
-        
-        return compose_files
-
-    def _run_compose_command(self, command: list):
-        """Helper to run a docker-compose command."""
         base_cmd = ["docker-compose"]
-        for file in self.get_compose_file():
+        for file in compose_files:
             base_cmd.extend(["-f", file])
         
         full_cmd = base_cmd + command
@@ -114,23 +88,27 @@ class DockerClient:
         else:
             return True
     
-    def pull_images(self):
+    def pull_images(self, compose_files: Optional[list[str]] = None):
         """Pulls the latest images for the services using Docker Compose."""
         log.info("Pulling latest images for core services...")
-        return self._run_compose_command(["pull"])
+        return self._run_compose_command(["pull"], compose_files)
 
-    def start_services(self, services: Optional[list[str]] = None):
+    def start_services(self, services: Optional[list[str]] = None, compose_files: Optional[list[str]] = None):
         """Starts the services using Docker Compose."""
         if services:
             # Start only specific services
-            self._run_compose_command(["up", "-d"] + services)
+            self._run_compose_command(["up", "-d"] + services, compose_files)
         else:
             # Start all services (backward compatibility)
-            self._run_compose_command(["up", "-d"])
+            self._run_compose_command(["up", "-d"], compose_files)
 
-    def stop_services(self):
+    def stop_services(self, compose_files: Optional[list[str]] = None):
         """Stops the services using Docker Compose."""
-        self._run_compose_command(["down"])
+        self._run_compose_command(["down"], compose_files)
+
+    # =============================================================================
+    # Container Status and Monitoring
+    # =============================================================================
         
     def is_stack_running(self) -> bool:
         """Checks if any stack component containers are running."""
@@ -228,10 +206,17 @@ class DockerClient:
         except (urllib.error.URLError, ConnectionRefusedError, socket.timeout):
             return "unhealthy"
 
-    def stream_logs(self, service_or_extension: Optional[str] = None, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None):
+    # =============================================================================
+    # Log Streaming
+    # =============================================================================
+
+    def stream_logs(self, service_or_extension: Optional[str] = None, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None, compose_files: Optional[list[str]] = None):
         """Streams logs from a specific service/extension or the whole stack."""
+        if compose_files is None:
+            compose_files = [self.config.docker_compose_file]
+        
         base_cmd = ["docker-compose"]
-        for file in self.get_compose_file():
+        for file in compose_files:
             base_cmd.extend(["-f", file])
         
         log_cmd = ["logs"]
@@ -270,13 +255,16 @@ class DockerClient:
         except Exception as e:
             yield f"[ERROR] An unexpected error occurred: {e}"
 
+    # =============================================================================
+    # Environment Validation
+    # =============================================================================
 
     def _check_port(self, port: int) -> bool:
         """Checks if a TCP port is available."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             return s.connect_ex(('localhost', port)) != 0
 
-    def run_environment_checks(self, fix: bool = False, verbose: bool = False) -> CheckReport:
+    def run_environment_checks(self, fix: bool = False, verbose: bool = False, platform: Optional[str] = None) -> CheckReport:
         """Runs checks for the environment and returns a report."""
         checks = []
 
@@ -302,7 +290,7 @@ class DockerClient:
                     details=f"Port {port} is already in use."
                 ))
 
-        if self.platform == 'nvidia':
+        if platform == 'nvidia':
             try:
                 info = self.client.info()
                 if info.get("Runtimes", {}).get("nvidia"):
