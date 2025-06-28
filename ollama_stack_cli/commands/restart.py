@@ -1,6 +1,24 @@
 import typer
+import logging
 
 from ..context import AppContext
+from .start import start_services_logic
+from .stop import stop_services_logic
+
+log = logging.getLogger(__name__)
+
+
+def restart_services_logic(app_context: AppContext, update: bool = False):
+    """Business logic for restarting services."""
+    log.info("Restarting Ollama Stack...")
+    
+    # Stop services first
+    stop_services_logic(app_context)
+    
+    # Then start them again
+    start_services_logic(app_context, update=update)
+    
+    log.info("Ollama Stack restarted successfully.")
 
 
 def restart(ctx: typer.Context,
@@ -8,6 +26,4 @@ def restart(ctx: typer.Context,
 ):
     """Restarts the core Ollama Stack services."""
     app_context: AppContext = ctx.obj
-    app_context.display.info("Restarting Ollama Stack...")
-    app_context.stack_manager.restart_services(update=update)
-    app_context.display.success("Ollama Stack restarted successfully.") 
+    restart_services_logic(app_context, update=update) 

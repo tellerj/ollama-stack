@@ -1,7 +1,16 @@
 import typer
+import logging
 from typing_extensions import Annotated
 
 from ..context import AppContext
+from ..schemas import CheckReport
+
+log = logging.getLogger(__name__)
+
+
+def run_environment_checks_logic(app_context: AppContext, fix: bool = False, verbose: bool = False) -> CheckReport:
+    """Business logic for running environment checks."""
+    return app_context.stack_manager.run_docker_environment_checks(fix=fix, verbose=verbose)
 
 
 def check(
@@ -17,5 +26,5 @@ def check(
 ):
     """Verifies environment requirements and Docker setup."""
     app_context: AppContext = ctx.obj
-    report = app_context.stack_manager.run_environment_checks(fix=fix, verbose=verbose)
+    report = run_environment_checks_logic(app_context, fix=fix, verbose=verbose)
     app_context.display.check_report(report)

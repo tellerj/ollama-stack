@@ -9,7 +9,36 @@ from typing import List, Optional
 from .schemas import StackStatus, CheckReport
 
 class Display:
-    """A centralized display handler for all CLI output."""
+    """
+    A centralized display handler for all CLI output.
+    
+    LOGGING STANDARDS:
+    
+    This module handles structured UI elements (tables, panels, progress bars) and 
+    configures the logging system. All other modules should use Python's logging 
+    system for user communication:
+    
+    - DEBUG: Internal state changes, detailed flow info (verbose mode only)
+    - INFO: User-facing status updates, successful operations, platform detection
+    - WARNING: Recoverable issues, fallback behaviors, missing optional configs
+    - ERROR: Failed operations, connection failures, configuration errors
+    
+    RESPONSIBILITIES:
+    
+    Display Module:
+    - Structured UI elements (tables, panels, progress bars)
+    - Logging system configuration
+    - Error panels with suggestions
+    - JSON output formatting
+    
+    Other Modules:
+    - Use logging.getLogger(__name__) for all user communication
+    - Never call display methods directly for simple messages
+    - Let the logging system handle message formatting and routing
+    
+    EXCEPTION: log_message() is for streaming Docker container logs and uses 
+    direct console output since these are raw log streams, not application messages.
+    """
 
     def __init__(self, verbose: bool = False):
         self._console = Console()
@@ -27,7 +56,6 @@ class Display:
             datefmt="[%X]",
             handlers=[RichHandler(console=self._console, rich_tracebacks=True, show_path=verbose, show_level=verbose)]
         )
-        self.log = logging.getLogger(__name__)
 
     @property
     def verbose(self) -> bool:
@@ -47,14 +75,6 @@ class Display:
             expand=False,
         )
         self._console.print(error_panel)
-
-    def warning(self, message: str):
-        """Prints a warning message."""
-        self.log.warning(message)
-
-    def info(self, message: str):
-        """Prints an informational message."""
-        self.log.info(message)
 
     def panel(self, content: str, title: str, border_style: str = "blue"):
         """Prints content within a styled panel."""
@@ -88,7 +108,9 @@ class Display:
         table.add_column("Memory (MB)", style="red")
 
         if not stack_status.core_services and not stack_status.extensions:
-            self.info("Ollama Stack is not running.")
+            # Use logging for simple informational messages
+            log = logging.getLogger(__name__)
+            log.info("Ollama Stack is not running.")
             return
 
         for service in stack_status.core_services:
@@ -112,7 +134,8 @@ class Display:
 
     def check_report(self, report: CheckReport):
         """Displays the results of an environment check."""
-        self.info("Running environment checks...")
+        log = logging.getLogger(__name__)
+        log.info("Running environment checks...")
         for check in report.checks:
             status = "[bold green]PASSED[/]" if check.passed else "[bold red]FAILED[/]"
             self._console.print(f"{status}: {check.name}")
@@ -123,8 +146,8 @@ class Display:
 
     def log_message(self, message: str):
         """Prints a single log line."""
-        # Simple print for now, can add formatting later
-        self.log.info(message)
+        # This is for streaming logs from Docker containers, so direct console output is appropriate
+        self._console.print(message)
 
     def progress(self):
         """Returns a Rich Progress context manager."""

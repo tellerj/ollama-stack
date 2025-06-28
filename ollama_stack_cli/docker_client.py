@@ -106,9 +106,9 @@ class DockerClient:
             if command[0] == "down" and "not found" in error_output.lower():
                 return True
 
-            self.display.error(
-                f"Docker Compose command failed with exit code {process.returncode}.",
-                suggestion=f"Command: `{' '.join(full_cmd)}`\n\n[bold]Output:[/]\n{error_output}"
+            log.error(
+                f"Docker Compose command failed with exit code {process.returncode}. "
+                f"Command: `{' '.join(full_cmd)}` Output: {error_output}"
             )
             return False
         else:
