@@ -12,9 +12,10 @@ def get_stack_status_logic(app_context: AppContext, extensions_only: bool = Fals
     """Business logic for gathering stack status."""
     core_services = []
     if not extensions_only:
-        # Group services by type for efficient processing
-        docker_services = [name for name, conf in app_context.config.services.items() if conf.type == 'docker']
-        api_services = {name: conf for name, conf in app_context.config.services.items() if conf.type == 'native-api'}
+        # Group services by type for efficient processing - access through stack_manager's config
+        services_config = app_context.stack_manager.config.services
+        docker_services = [name for name, conf in services_config.items() if conf.type == 'docker']
+        api_services = {name: conf for name, conf in services_config.items() if conf.type == 'native-api'}
 
         # Get status for all Docker services in one call
         if docker_services:
@@ -49,6 +50,11 @@ def status(
     """Displays comprehensive stack status."""
     app_context: AppContext = ctx.obj
     
+    # Filter services by type - access through stack_manager's config
+    services_config = app_context.stack_manager.config.services
+    docker_services = [name for name, conf in services_config.items() if conf.type == 'docker']
+    api_services = {name: conf for name, conf in services_config.items() if conf.type == 'native-api'}
+
     stack_status = get_stack_status_logic(app_context, extensions_only=extensions_only)
     
     if json_output:

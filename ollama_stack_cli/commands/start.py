@@ -93,9 +93,10 @@ def start_services_logic(app_context: AppContext, update: bool = False):
     if update:
         app_context.stack_manager.pull_images()
 
-    # Filter services by type
-    docker_services = [name for name, conf in app_context.config.services.items() if conf.type == 'docker']
-    native_services = [name for name, conf in app_context.config.services.items() if conf.type == 'native-api']
+    # Filter services by type - access through stack_manager's config
+    services_config = app_context.stack_manager.config.services
+    docker_services = [name for name, conf in services_config.items() if conf.type == 'docker']
+    native_services = [name for name, conf in services_config.items() if conf.type == 'native-api']
 
     # Start Docker services
     if docker_services:

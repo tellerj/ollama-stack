@@ -9,18 +9,20 @@ from ..context import AppContext
 log = logging.getLogger(__name__)
 
 
-def stream_logs_logic(app_context: AppContext, service_or_extension: Optional[str] = None, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None):
+def logs_services_logic(app_context: AppContext, service_or_extension: Optional[str], follow: bool, tail: Optional[int], level: Optional[str], since: Optional[str], until: Optional[str]):
     """Business logic for streaming logs."""
-    # Check if service is a native service that doesn't have container logs
-    service_config = app_context.config.services.get(service_or_extension) if service_or_extension else None
-
-    if service_config and service_config.type == "native-api":
-        log.warning(f"'{service_or_extension}' runs as a native service. No container logs are available.")
-        log.info(f"To view its logs, please consult the service's own logging mechanisms.")
-        return
+    # Check if service_or_extension is a valid service name - access through stack_manager's config
+    service_config = app_context.stack_manager.config.services.get(service_or_extension) if service_or_extension else None
     
-    # Stream logs from Docker containers via stack manager
-    yield from app_context.stack_manager.stream_docker_logs(service_or_extension, follow, tail, level, since, until)
+    if service_or_extension and service_config and service_config.type == 'docker':
+        # Stream logs for a specific Docker service
+        yield from app_context.stack_manager.stream_docker_logs(service_or_extension, follow, tail, level, since, until)
+    elif service_or_extension:
+        # Could be an extension or invalid service name
+        yield from app_context.stack_manager.stream_docker_logs(service_or_extension, follow, tail, level, since, until)
+    else:
+        # Stream logs for all services
+        yield from app_context.stack_manager.stream_docker_logs(None, follow, tail, level, since, until)
 
 
 def logs(
@@ -35,7 +37,7 @@ def logs(
     """Streams logs from a specific service or all services."""
     app_context: AppContext = ctx.obj
     try:
-        log_stream = stream_logs_logic(
+        log_stream = logs_services_logic(
             app_context,
             service_or_extension=service,
             follow=follow,
