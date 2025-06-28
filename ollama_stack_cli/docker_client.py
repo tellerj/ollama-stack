@@ -5,7 +5,8 @@ import urllib.request
 import urllib.error
 import logging
 import socket
-from typing import Optional, Dict
+import sys
+from typing import Optional, Dict, List
 from .schemas import AppConfig
 from .display import Display
 
@@ -38,12 +39,23 @@ class DockerClient:
         try:
             self.client = docker.from_env()
             self.client.ping()
-        except docker.errors.DockerException:
-            log.error(
-                "Docker is not running or not configured correctly. Please ensure the Docker daemon is running.",
-                exc_info=True
+        except docker.errors.DockerException as e:
+            # Provide clearer error message distinguishing CLI vs daemon issues
+            error_msg = (
+                "Docker daemon is not running or not accessible. "
+                "Please start Docker Desktop (or your Docker service) and try again."
             )
-            raise
+            
+            # Add more specific guidance based on the error
+            if "Connection refused" in str(e):
+                error_msg += "\n\nNote: Docker CLI is installed but the daemon is not running. " \
+                           "Make sure Docker Desktop is started and running."
+            elif "docker" not in str(e).lower():
+                error_msg += "\n\nNote: Please ensure Docker is properly installed and configured."
+            
+            # Display error message cleanly and exit gracefully
+            display.error(error_msg)
+            sys.exit(1)
 
     # =============================================================================
     # Docker Compose Operations
@@ -272,7 +284,7 @@ class DockerClient:
             docker_running = self.client.ping()
             checks.append(EnvironmentCheck(name="Docker Daemon Running", passed=docker_running))
         except docker.errors.DockerException:
-            checks.append(EnvironmentCheck(name="Docker Daemon Running", passed=False, details="Docker is not running."))
+            checks.append(EnvironmentCheck(name="Docker Daemon Running", passed=False, details="Docker daemon is not running. Please start Docker Desktop."))
             return CheckReport(checks=checks)
 
         ports_to_check = {
