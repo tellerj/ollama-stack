@@ -1,9 +1,13 @@
 import logging
 import platform
+import socket
+import urllib.request
+import urllib.error
+import urllib.parse
 import docker
 from .docker_client import DockerClient
 from .ollama_api_client import OllamaApiClient
-from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus
+from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus, EnvironmentCheck
 from .display import Display
 from typing import Optional, List
 
@@ -14,6 +18,13 @@ class StackManager:
     Platform-aware orchestrator for the Ollama Stack.
     Handles platform detection, service configuration, and cross-service coordination.
     """
+
+    # Unified health check URLs for all services
+    HEALTH_CHECK_URLS = {
+        "ollama": "http://localhost:11434",
+        "webui": "http://localhost:8080", 
+        "mcp_proxy": "http://localhost:8200",
+    }
 
     def __init__(self, config: AppConfig, display: Display):
         self.config = config
@@ -207,8 +218,22 @@ class StackManager:
         return self.docker_client.stop_services(compose_files)
 
     def get_docker_services_status(self, service_names: List[str]) -> List[ServiceStatus]:
-        """Get status for Docker services."""
-        return self.docker_client.get_container_status(service_names)
+        """Get status for Docker services with unified health checks."""
+        # Get container status from Docker client (without health checks)
+        statuses = self.docker_client.get_container_status(service_names)
+        
+        # Apply unified health checks for running services
+        for status in statuses:
+            if status.is_running:
+                # Use our unified health check system
+                health = self.check_service_health(status.name)
+                # Update the status with the health check result
+                status.health = health
+            else:
+                # If not running, health is definitely unhealthy
+                status.health = "unhealthy"
+        
+        return statuses
 
     def stream_docker_logs(self, service_or_extension: Optional[str] = None, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None):
         """Stream logs from Docker containers."""
@@ -259,5 +284,78 @@ class StackManager:
         if service_name == "ollama":
             return self.ollama_api_client.is_service_running()
         return False
+
+    # =============================================================================
+    # Unified Health Check System
+    # =============================================================================
+
+    def check_service_health(self, service_name: str) -> str:
+        """
+        Universal health check for any service using HTTP -> TCP fallback approach.
+        
+        This unified method works for:
+        - Docker services (webui, mcp_proxy)
+        - Native services (ollama)  
+        - Remote services (any HTTP/TCP endpoint)
+        
+        Uses a two-tier approach:
+        1. Try HTTP health check first (more comprehensive)
+        2. Fall back to TCP connectivity check (matches Docker's health check)
+        
+        Args:
+            service_name: Name of service to check
+            
+        Returns:
+            "healthy", "unhealthy", or "unknown"
+        """
+        url = self.HEALTH_CHECK_URLS.get(service_name)
+        if not url:
+            log.debug(f"No health check URL configured for service: {service_name}")
+            return "unknown"
+        
+        # Extract port from URL for TCP fallback
+        parsed_url = urllib.parse.urlparse(url)
+        port = parsed_url.port or (80 if parsed_url.scheme == 'http' else 443)
+        
+        # First, try HTTP health check (more comprehensive)
+        try:
+            with urllib.request.urlopen(url, timeout=3) as response:
+                if 200 <= response.status < 300:
+                    log.debug(f"HTTP health check passed for {service_name}")
+                    return "healthy"
+                else:
+                    log.debug(f"HTTP health check failed for {service_name}: status {response.status}")
+                    # HTTP responded but with error status, fall back to TCP check
+        except (urllib.error.URLError, ConnectionRefusedError, socket.timeout) as e:
+            log.debug(f"HTTP health check failed for {service_name}: {e}")
+            # HTTP failed, fall back to TCP check
+
+        # Fall back to TCP connectivity check (matches Docker's approach)
+        if self._check_tcp_connectivity("localhost", port):
+            log.debug(f"TCP connectivity check passed for {service_name} on port {port}")
+            return "healthy"
+        else:
+            log.debug(f"TCP connectivity check failed for {service_name} on port {port}")
+            return "unhealthy"
+
+    def _check_tcp_connectivity(self, host: str, port: int, timeout: float = 2.0) -> bool:
+        """
+        Test TCP connectivity to a host and port.
+        
+        This matches Docker's health check approach which uses TCP socket tests.
+        
+        Args:
+            host: Hostname to connect to
+            port: Port number to connect to  
+            timeout: Connection timeout in seconds
+            
+        Returns:
+            True if connection successful, False otherwise
+        """
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except (socket.error, socket.timeout, ConnectionRefusedError):
+            return False
 
  

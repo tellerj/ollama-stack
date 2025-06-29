@@ -191,13 +191,31 @@ def test_stop_service_not_running(mock_is_running, mock_which, api_client):
 @patch('shutil.which', return_value='/usr/local/bin/ollama')
 @patch.object(OllamaApiClient, 'is_service_running', side_effect=[True, False])  # Running, then stopped
 @patch('subprocess.run')
-def test_stop_service_success(mock_subprocess, mock_is_running, mock_which, api_client):
+@patch('os.uname')
+def test_stop_service_success(mock_uname, mock_subprocess, mock_is_running, mock_which, api_client):
     """Tests successful stop_service operation."""
-    mock_subprocess.return_value.returncode = 0
+    # Mock macOS system
+    mock_uname.return_value.sysname = 'Darwin'
+    
+    # Mock responses for launchctl list (first call) and pkill (second call)
+    mock_subprocess.side_effect = [
+        MagicMock(returncode=0, stdout="com.electron.ollama.ShipIt\n"),  # launchctl list success
+        MagicMock(returncode=0)  # pkill success
+    ]
     
     result = api_client.stop_service()
     assert result is True
-    mock_subprocess.assert_called_once_with(["pkill", "-f", "ollama serve"], capture_output=True, text=True, timeout=10)
+    
+    # Verify both calls were made
+    assert mock_subprocess.call_count == 2
+    
+    # Check the launchctl call
+    first_call = mock_subprocess.call_args_list[0]
+    assert first_call[0][0] == ["launchctl", "list"]
+    
+    # Check the pkill call
+    second_call = mock_subprocess.call_args_list[1]
+    assert second_call[0][0] == ["pkill", "-f", "ollama serve"]
 
 @patch('shutil.which', return_value='/usr/local/bin/ollama')
 @patch.object(OllamaApiClient, 'is_service_running', return_value=True)
@@ -367,9 +385,16 @@ def test_stop_service_pkill_fails_service_still_running(mock_subprocess, mock_is
 
 @patch('shutil.which', return_value='/usr/local/bin/ollama')
 @patch.object(OllamaApiClient, 'is_service_running', return_value=True)
-@patch('subprocess.run', side_effect=Exception("Unexpected error"))
-def test_stop_service_unexpected_exception(mock_subprocess, mock_is_running, mock_which, api_client):
+@patch('subprocess.run')  
+@patch('os.uname')
+def test_stop_service_unexpected_exception(mock_uname, mock_subprocess, mock_is_running, mock_which, api_client):
     """Tests stop_service when subprocess.run raises unexpected exception."""
+    # Mock macOS system
+    mock_uname.return_value.sysname = 'Darwin'
+    
+    # First call to launchctl list raises subprocess error (which is caught)
+    mock_subprocess.side_effect = subprocess.SubprocessError("Subprocess error")
+    
     result = api_client.stop_service()
     assert result is False
 

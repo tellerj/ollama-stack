@@ -24,37 +24,17 @@ log = logging.getLogger(__name__)
 class DockerClient:
     """A wrapper for Docker operations."""
 
-    HEALTH_CHECK_URLS = {
-        "ollama": "http://localhost:11434",
-        "webui": "http://localhost:8080",
-        "mcp_proxy": "http://localhost:8200",
-    }
-    HEALTH_CHECK_TIMEOUT = 30  # seconds
-    HEALTH_CHECK_INTERVAL = 5  # seconds
-
     def __init__(self, config: AppConfig, display: Display):
         self.config = config
         self.display = display
         try:
             self.client = docker.from_env()
-            self.client.ping()
+            self.client.ping()  # Test connection
+            log.debug("Docker client initialized successfully")
         except docker.errors.DockerException as e:
-            # Provide clearer error message distinguishing CLI vs daemon issues
-            error_msg = (
-                "Docker daemon is not running or not accessible. "
-                "Please start Docker Desktop (or your Docker service) and try again."
-            )
-            
-            # Add more specific guidance based on the error
-            if "Connection refused" in str(e):
-                error_msg += "\n\nNote: Docker CLI is installed but the daemon is not running. " \
-                           "Make sure Docker Desktop is started and running."
-            elif "docker" not in str(e).lower():
-                error_msg += "\n\nNote: Please ensure Docker is properly installed and configured."
-            
-            # Display error message cleanly and exit gracefully
-            display.error(error_msg)
-            sys.exit(1)
+            log.error(f"Failed to initialize Docker client: {e}")
+            # Don't raise here - let individual operations handle Docker unavailability
+            self.client = None
 
     # =============================================================================
     # Docker Compose Operations
@@ -152,14 +132,14 @@ class DockerClient:
             container = container_map.get(service_name)
             if container:
                 usage = self._get_resource_usage(container)
-                health = self._get_service_health(service_name)
+                # Health checking is now handled by StackManager's unified system
                 ports = self._parse_ports(container.ports)
                 
                 status = ServiceStatus(
                     name=service_name,
                     is_running=container.status == "running",
                     status=container.status,
-                    health=health,
+                    health="unknown",  # Health will be set by StackManager
                     ports=ports,
                     usage=usage,
                 )
@@ -201,21 +181,12 @@ class DockerClient:
             
             memory_mb = stats["memory_stats"]["usage"] / (1024 * 1024) if "usage" in stats["memory_stats"] else 0
             
-            return ResourceUsage(cpu_percent=round(cpu_percent, 2), memory_mb=round(memory_mb, 2))
+            return ResourceUsage(
+                cpu_percent=round(cpu_percent, 2),
+                memory_mb=round(memory_mb, 2)
+            )
         except (KeyError, docker.errors.APIError):
             return ResourceUsage()
-
-    def _get_service_health(self, service_name: str) -> str:
-        """Performs a quick health check for a single service."""
-        url = self.HEALTH_CHECK_URLS.get(service_name)
-        if not url:
-            return "unknown"
-        
-        try:
-            with urllib.request.urlopen(url, timeout=2) as response:
-                return "healthy" if 200 <= response.status < 300 else "unhealthy"
-        except (urllib.error.URLError, ConnectionRefusedError, socket.timeout):
-            return "unhealthy"
 
     # =============================================================================
     # Log Streaming

@@ -154,6 +154,62 @@ class OllamaApiClient:
             log.info("Ollama service is not running.")
             return True
         
+        # On macOS, try to stop launchd services first
+        import os
+        system = os.uname().sysname.lower()
+        if system == "darwin":
+            try:
+                # First, get the list of Ollama-related launchd services
+                list_result = subprocess.run(
+                    ["launchctl", "list"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                if list_result.returncode == 0:
+                    ollama_services = []
+                    for line in list_result.stdout.split('\n'):
+                        if 'ollama' in line.lower():
+                            parts = line.split()
+                            if len(parts) >= 3:
+                                service_name = parts[2]
+                                ollama_services.append(service_name)
+                    
+                    log.debug(f"Found Ollama launchd services: {ollama_services}")
+                    
+                    # Try to stop each service
+                    stopped_any = False
+                    for service in ollama_services:
+                        try:
+                            result = subprocess.run(
+                                ["launchctl", "stop", service],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            if result.returncode == 0:
+                                log.debug(f"Stopped launchd service: {service}")
+                                stopped_any = True
+                        except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+                            log.debug(f"Failed to stop launchd service: {service}")
+                    
+                    if stopped_any:
+                        # Give services time to stop
+                        import time
+                        time.sleep(2)
+                        if not self.is_service_running():
+                            log.info("Ollama service stopped successfully.")
+                            return True
+                        else:
+                            log.debug("Launchd services stopped but process still running, trying pkill")
+                    else:
+                        log.debug("Failed to stop via launchctl, trying pkill")
+                else:
+                    log.debug("Failed to list launchctl services, trying pkill")
+            except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+                log.debug("launchctl not available or failed, trying pkill")
+        
         # Try to stop gracefully by killing the serve process
         # Note: 'ollama stop' stops models, not the server itself
         try:
@@ -164,8 +220,18 @@ class OllamaApiClient:
                 timeout=10
             )
             if result.returncode == 0:
-                log.info("Ollama service stopped successfully.")
-                return True
+                log.debug("Killed Ollama serve process")
+                # Give it a moment and check if it stayed stopped
+                import time
+                time.sleep(2)
+                if not self.is_service_running():
+                    log.info("Ollama service stopped successfully.")
+                    return True
+                else:
+                    log.warning("Ollama process was killed but restarted automatically.")
+                    log.info("Ollama appears to be managed by a system service (launchd).")
+                    log.info("To fully stop it, you may need to quit the Ollama app or disable the service.")
+                    return False
             else:
                 # Process might not exist, check if service is actually stopped
                 if not self.is_service_running():
@@ -179,7 +245,7 @@ class OllamaApiClient:
             return False
         except Exception as e:
             log.error(f"Failed to stop Ollama service: {e}")
-            log.info("Please stop Ollama manually (kill the 'ollama serve' process).")
+            log.info("Please stop Ollama manually (quit the Ollama app or kill the 'ollama serve' process).")
             return False
 
     def get_logs(self, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None):

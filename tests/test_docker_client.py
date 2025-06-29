@@ -44,40 +44,35 @@ def test_docker_client_init_success(mock_docker_from_env, mock_config, mock_disp
 
 @patch('docker.from_env')
 def test_docker_client_init_docker_exception_exits(mock_docker_from_env, mock_config, mock_display):
-    """Tests that DockerClient exits gracefully on Docker daemon failure."""
+    """Tests that DockerClient handles Docker daemon failure gracefully."""
     mock_docker_from_env.side_effect = docker.errors.DockerException("Docker not found")
 
-    with pytest.raises(SystemExit) as exc_info:
-        DockerClient(config=mock_config, display=mock_display)
+    # Should not raise SystemExit anymore, just create client with client=None
+    client = DockerClient(config=mock_config, display=mock_display)
     
-    assert exc_info.value.code == 1
-    mock_display.error.assert_called_once()
-    assert "Docker daemon is not running" in mock_display.error.call_args[0][0]
+    assert client.client is None
 
 @patch('docker.from_env')
 def test_docker_client_init_connection_refused_message(mock_docker_from_env, mock_config, mock_display):
-    """Tests specific error message for connection refused."""
+    """Tests handling of connection refused errors."""
     mock_docker_from_env.side_effect = docker.errors.DockerException("Connection refused")
 
-    with pytest.raises(SystemExit):
-        DockerClient(config=mock_config, display=mock_display)
+    # Should not raise SystemExit anymore, just create client with client=None
+    client = DockerClient(config=mock_config, display=mock_display)
     
-    error_message = mock_display.error.call_args[0][0]
-    assert "Docker daemon is not running" in error_message
-    assert "Docker CLI is installed but the daemon is not running" in error_message
+    assert client.client is None
 
 @patch('docker.from_env')
 def test_docker_client_init_ping_failure_exits(mock_docker_from_env, mock_config, mock_display):
-    """Tests that DockerClient exits when ping fails."""
+    """Tests that DockerClient handles ping failures gracefully."""
     mock_docker_client = MagicMock()
     mock_docker_client.ping.side_effect = docker.errors.APIError("Ping failed")
     mock_docker_from_env.return_value = mock_docker_client
 
-    with pytest.raises(SystemExit) as exc_info:
-        DockerClient(config=mock_config, display=mock_display)
+    # Should not raise SystemExit anymore, just create client with client=None
+    client = DockerClient(config=mock_config, display=mock_display)
     
-    assert exc_info.value.code == 1
-    mock_display.error.assert_called_once()
+    assert client.client is None
 
 
 # =============================================================================
@@ -274,7 +269,7 @@ def test_is_stack_running_api_error(mock_docker_from_env, mock_config, mock_disp
 
 @patch('docker.from_env')
 def test_get_container_status_success(mock_docker_from_env, mock_config, mock_display):
-    """Tests successful get_container_status execution."""
+    """Tests get_container_status for running containers."""
     mock_docker_client = MagicMock()
     
     # Mock container with ollama-stack.component label
@@ -293,16 +288,15 @@ def test_get_container_status_success(mock_docker_from_env, mock_config, mock_di
 
     client = DockerClient(config=mock_config, display=mock_display)
     
-    # Mock the health check
-    with patch.object(client, '_get_service_health', return_value='healthy'):
-        statuses = client.get_container_status(['webui'])
+    # Health checking is now handled by StackManager, so DockerClient returns 'unknown'
+    statuses = client.get_container_status(['webui'])
 
     assert len(statuses) == 1
     status = statuses[0]
     assert status.name == 'webui'
     assert status.is_running is True
     assert status.status == 'running'
-    assert status.health == 'healthy'
+    assert status.health == 'unknown'  # DockerClient no longer does health checking
     assert '80/tcp' in status.ports
     assert status.ports['80/tcp'] == 8080
 
@@ -417,57 +411,6 @@ def test_get_resource_usage_stats_error(mock_docker_from_env, mock_config, mock_
     
     assert result.cpu_percent is None
     assert result.memory_mb is None
-
-@patch('urllib.request.urlopen')
-@patch('docker.from_env')
-def test_get_service_health_healthy(mock_docker_from_env, mock_urlopen, mock_config, mock_display):
-    """Tests _get_service_health returns healthy for successful HTTP response."""
-    client = DockerClient(config=mock_config, display=mock_display)
-    
-    mock_response = MagicMock()
-    mock_response.status = 200
-    mock_urlopen.return_value.__enter__.return_value = mock_response
-    
-    result = client._get_service_health("ollama")
-    
-    assert result == "healthy"
-    mock_urlopen.assert_called_once_with("http://localhost:11434", timeout=2)
-
-@patch('urllib.request.urlopen')
-@patch('docker.from_env')
-def test_get_service_health_unhealthy_status(mock_docker_from_env, mock_urlopen, mock_config, mock_display):
-    """Tests _get_service_health returns unhealthy for non-2xx response."""
-    client = DockerClient(config=mock_config, display=mock_display)
-    
-    mock_response = MagicMock()
-    mock_response.status = 500
-    mock_urlopen.return_value.__enter__.return_value = mock_response
-    
-    result = client._get_service_health("ollama")
-    
-    assert result == "unhealthy"
-
-@patch('urllib.request.urlopen')
-@patch('docker.from_env')
-def test_get_service_health_connection_error(mock_docker_from_env, mock_urlopen, mock_config, mock_display):
-    """Tests _get_service_health returns unhealthy for connection errors."""
-    client = DockerClient(config=mock_config, display=mock_display)
-    
-    mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
-    
-    result = client._get_service_health("ollama")
-    
-    assert result == "unhealthy"
-
-@patch('docker.from_env')
-def test_get_service_health_unknown_service(mock_docker_from_env, mock_config, mock_display):
-    """Tests _get_service_health returns unknown for services without health check URL."""
-    client = DockerClient(config=mock_config, display=mock_display)
-    
-    result = client._get_service_health("unknown_service")
-    
-    assert result == "unknown"
-
 
 # =============================================================================
 # Log Streaming Tests
