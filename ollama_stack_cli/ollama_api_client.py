@@ -183,7 +183,7 @@ class OllamaApiClient:
             return False
 
     def get_logs(self, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None):
-        """
+        r"""
         Stream logs from the native Ollama service using its dedicated log files.
         
         Ollama stores logs in platform-specific locations:

@@ -44,10 +44,12 @@ def load_config(
             data = json.load(f)
         app_config = AppConfig(**data)
         
-        # Load .env values into the config
+        # Load .env values into the config (only if they exist)
         env_vars = dotenv_values(env_path)
-        app_config.project_name = env_vars.get("PROJECT_NAME")
-        app_config.webui_secret_key = env_vars.get("WEBUI_SECRET_KEY")
+        if env_vars.get("PROJECT_NAME"):
+            app_config.project_name = env_vars.get("PROJECT_NAME")
+        if env_vars.get("WEBUI_SECRET_KEY"):
+            app_config.webui_secret_key = env_vars.get("WEBUI_SECRET_KEY")
 
         return app_config, False  # Successfully loaded config
     except (json.JSONDecodeError, ValidationError) as e:
