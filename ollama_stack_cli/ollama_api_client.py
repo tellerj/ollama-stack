@@ -5,8 +5,9 @@ import socket
 import subprocess
 import shutil
 import logging
+from typing import List, Optional
 
-from .schemas import ServiceStatus, ResourceUsage
+from .schemas import ServiceStatus, ResourceUsage, EnvironmentCheck
 from .display import Display
 
 log = logging.getLogger(__name__)
@@ -179,4 +180,171 @@ class OllamaApiClient:
         except Exception as e:
             log.error(f"Failed to stop Ollama service: {e}")
             log.info("Please stop Ollama manually (kill the 'ollama serve' process).")
-            return False 
+            return False
+
+    def get_logs(self, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None):
+        """
+        Stream logs from the native Ollama service using its dedicated log files.
+        
+        Ollama stores logs in platform-specific locations:
+        - macOS/Linux: ~/.ollama/logs/server.log  
+        - Linux (systemd): journalctl -u ollama
+        - Windows: %LOCALAPPDATA%\Ollama\logs\server.log
+        """
+        import os
+        from pathlib import Path
+        
+        log.debug("Accessing native Ollama service logs")
+        
+        # Check if ollama command is available
+        if not shutil.which("ollama"):
+            log.error("Ollama is not installed or not in PATH")
+            return
+        
+        # Check if service is running
+        if not self.is_service_running():
+            log.warning("Ollama service is not currently running")
+            log.info("Start Ollama with: ollama serve")
+            return
+        
+        system = os.uname().sysname.lower()
+        
+        # Try to access Ollama's dedicated log files
+        if system in ["darwin", "linux"]:
+            log_file_path = Path.home() / ".ollama" / "logs" / "server.log"
+            
+            if system == "linux":
+                # First try systemd logs if available
+                try:
+                    cmd = ["journalctl", "-u", "ollama", "--no-pager"]
+                    if tail:
+                        cmd.extend(["--lines", str(tail)])
+                    if since:
+                        cmd.extend(["--since", since])
+                    if until:
+                        cmd.extend(["--until", until])
+                    if follow:
+                        cmd.append("-f")
+                    
+                    log.info("Accessing Ollama logs via systemd journal")
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=not follow,
+                        text=True,
+                        timeout=None if follow else 10
+                    )
+                    
+                    if result.returncode == 0:
+                        if follow:
+                            # For follow mode, we need to handle this differently
+                            # Since we can't capture output, inform user to use journalctl directly
+                            log.info("For real-time log following, use: journalctl -u ollama -f")
+                            # Fall back to file-based approach
+                        else:
+                            if result.stdout.strip():
+                                log.debug("Retrieved Ollama logs from systemd journal")
+                                for line in result.stdout.strip().split('\n'):
+                                    if line.strip():
+                                        yield line.strip()
+                                return
+                            else:
+                                log.info("No recent systemd logs found, trying log file")
+                except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+                    log.debug("systemd journal not available, trying log file")
+            
+            # Try the dedicated log file
+            if log_file_path.exists():
+                log.info(f"Reading Ollama logs from: {log_file_path}")
+                try:
+                    if follow:
+                        # Use tail -f for following logs
+                        process = subprocess.Popen(
+                            ["tail", "-f", str(log_file_path)],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True
+                        )
+                        try:
+                            for line in process.stdout:
+                                yield line.strip()
+                        except KeyboardInterrupt:
+                            process.terminate()
+                    else:
+                        # Read the log file directly
+                        with open(log_file_path, 'r') as f:
+                            lines = f.readlines()
+                            
+                        # Apply tail limit if specified
+                        if tail and tail > 0:
+                            lines = lines[-tail:]
+                        
+                        for line in lines:
+                            line = line.strip()
+                            if line:
+                                yield line
+                        
+                        if not lines:
+                            log.info("Log file is empty")
+                            yield from self._get_ollama_status_output()
+                            
+                except (IOError, OSError) as e:
+                    log.error(f"Failed to read log file {log_file_path}: {e}")
+                    yield from self._get_ollama_status_output()
+            else:
+                log.warning(f"Ollama log file not found at: {log_file_path}")
+                log.info("This may indicate Ollama hasn't been started yet or is using a different log location")
+                yield from self._get_ollama_status_output()
+                
+        elif system == "nt":  # Windows
+            log.info("Windows log access not implemented yet")
+            log.info("On Windows, logs are typically in: %LOCALAPPDATA%\\Ollama\\logs\\server.log")
+            yield from self._get_ollama_status_output()
+        else:
+            log.info(f"Log access not implemented for {system}")
+            yield from self._get_ollama_status_output()
+    
+    def _get_ollama_status_output(self):
+        """Get current ollama status as log output when actual logs aren't available."""
+        try:
+            result = subprocess.run(
+                ["ollama", "ps"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                log.debug("Retrieved current Ollama status")
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        yield line.strip()
+            else:
+                log.warning("Failed to get ollama status")
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+            log.error("Unable to get current ollama status")
+
+    # =============================================================================
+    # Environment Validation
+    # =============================================================================
+
+    def run_environment_checks(self, fix: bool = False) -> List[EnvironmentCheck]:
+        """Run Ollama-specific environment checks for native installation."""
+        checks = []
+        
+        # Check Ollama installation
+        if shutil.which("ollama"):
+            log.debug("Ollama is installed and available in PATH")
+            checks.append(EnvironmentCheck(
+                name="Ollama Installation (Native)",
+                passed=True,
+                details="Ollama is installed and available in PATH"
+            ))
+        else:
+            log.warning("Ollama not found in PATH")
+            checks.append(EnvironmentCheck(
+                name="Ollama Installation (Native)",
+                passed=False,
+                details="Ollama command not found in PATH",
+                suggestion="Install Ollama from https://ollama.ai/ for native Apple Silicon support"
+            ))
+        
+        return checks 

@@ -77,7 +77,28 @@ class StackManager:
         
         return compose_files
 
-    # Delegation methods for Docker operations
+    # =============================================================================
+    # Environment Validation
+    # =============================================================================
+
+    def run_environment_checks(self, fix: bool = False) -> CheckReport:
+        """Run comprehensive environment checks by delegating to appropriate clients."""
+        log.debug("Running comprehensive environment checks...")
+        
+        # Delegate environment checks to Docker client
+        report = self.docker_client.run_environment_checks(fix=fix, platform=self.platform)
+        
+        # Add platform-specific checks for native services
+        if self.platform == "apple":
+            native_checks = self.ollama_api_client.run_environment_checks(fix=fix)
+            report.checks.extend(native_checks)
+        
+        return report
+
+    # =============================================================================
+    # Service Management Delegation
+    # =============================================================================
+
     def is_stack_running(self) -> bool:
         """Check if any stack component (Docker containers or native services) are running."""
         # Check Docker containers
@@ -92,6 +113,64 @@ class StackManager:
                     break
         
         return docker_running or native_running
+    
+    def get_stack_status(self, extensions_only: bool = False) -> StackStatus:
+        """Get comprehensive status for all stack components."""
+        core_services = []
+        extensions = []  # TODO: Implement actual extensions support
+        
+        if not extensions_only:
+            # Get status for Docker services
+            docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
+            if docker_services:
+                log.debug(f"Getting status for Docker services: {docker_services}")
+                try:
+                    core_services.extend(self.get_docker_services_status(docker_services))
+                except Exception as e:
+                    log.error(f"Failed to get Docker services status: {e}")
+                    # Add failed service entries
+                    for service_name in docker_services:
+                        core_services.append(ServiceStatus(
+                            name=service_name,
+                            is_running=False,
+                            status="error",
+                            health="error"
+                        ))
+            
+            # Get status for native services
+            native_services = [name for name, conf in self.config.services.items() if conf.type == 'native-api']
+            for service_name in native_services:
+                log.debug(f"Getting status for native service: {service_name}")
+                try:
+                    service_status = self.get_native_service_status(service_name)
+                    core_services.append(service_status)
+                except Exception as e:
+                    log.error(f"Failed to get status for native service {service_name}: {e}")
+                    core_services.append(ServiceStatus(
+                        name=f"{service_name} (Native)",
+                        is_running=False,
+                        status="error",
+                        health="error"
+                    ))
+        
+        # TODO: Add actual extensions support here
+        # For now, extensions remain empty
+        
+        return StackStatus(core_services=core_services, extensions=extensions)
+    
+    def get_native_service_status(self, service_name: str) -> ServiceStatus:
+        """Get status for a native service - generic handler."""
+        if service_name == "ollama":
+            return self.ollama_api_client.get_status()
+        else:
+            # Generic fallback for unknown native services
+            log.debug(f"Unknown native service: {service_name}, using generic status check")
+            return ServiceStatus(
+                name=f"{service_name} (Native)",
+                is_running=False,
+                status="unknown",
+                health="unknown"
+            )
     
     def get_running_services_summary(self) -> tuple[list[str], list[str]]:
         """Get lists of running Docker and native services for more specific messaging."""
@@ -136,9 +215,17 @@ class StackManager:
         compose_files = self.get_compose_files()
         yield from self.docker_client.stream_logs(service_or_extension, follow, tail, level, since, until, compose_files)
 
-    def run_docker_environment_checks(self, fix: bool = False, verbose: bool = False) -> CheckReport:
-        """Run environment checks via Docker client."""
-        return self.docker_client.run_environment_checks(fix=fix, verbose=verbose, platform=self.platform)
+    def stream_native_logs(self, service_name: str, follow: bool = False, tail: Optional[int] = None, level: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None):
+        """Stream logs from native services."""
+        log.debug(f"Streaming logs from native service: {service_name}")
+        
+        if service_name == "ollama":
+            yield from self.ollama_api_client.get_logs(follow=follow, tail=tail, level=level, since=since, until=until)
+        else:
+            # Generic fallback for unknown native services
+            log.warning(f"Log streaming not implemented for native service: {service_name}")
+            log.info(f"Service '{service_name}' is running natively on your system")
+            log.info("Check system logs or service-specific log locations for more details")
 
     # Delegation methods for API-based services
     def get_ollama_status(self) -> ServiceStatus:

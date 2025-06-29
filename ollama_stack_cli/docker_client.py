@@ -6,15 +6,14 @@ import urllib.error
 import logging
 import socket
 import sys
+from pathlib import Path
 from typing import Optional, Dict, List
 from .schemas import AppConfig
 from .display import Display
 
 from .schemas import (
     AppConfig,
-    StackStatus,
     ServiceStatus,
-    ExtensionStatus,
     ResourceUsage,
     CheckReport,
     EnvironmentCheck,
@@ -260,59 +259,174 @@ class DockerClient:
             
             process.wait()
             if process.returncode != 0:
-                yield f"[ERROR] Log command failed with exit code {process.returncode}."
+                log.error(f"Docker Compose log command failed with exit code {process.returncode}")
 
         except FileNotFoundError:
-            yield "[ERROR] `docker-compose` command not found. Is it installed and in your PATH?"
+            log.error("docker-compose command not found. Is it installed and in your PATH?")
         except Exception as e:
-            yield f"[ERROR] An unexpected error occurred: {e}"
+            log.error(f"An unexpected error occurred while streaming logs: {e}")
 
     # =============================================================================
     # Environment Validation
     # =============================================================================
 
-    def _check_port(self, port: int) -> bool:
-        """Checks if a TCP port is available."""
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex(('localhost', port)) != 0
-
-    def run_environment_checks(self, fix: bool = False, verbose: bool = False, platform: Optional[str] = None) -> CheckReport:
-        """Runs checks for the environment and returns a report."""
+    def run_environment_checks(self, fix: bool = False, platform: Optional[str] = None) -> CheckReport:
+        """Runs Docker-specific environment checks."""
         checks = []
 
+        # 1. Docker Daemon Check
         try:
-            docker_running = self.client.ping()
-            checks.append(EnvironmentCheck(name="Docker Daemon Running", passed=docker_running))
-        except docker.errors.DockerException:
-            checks.append(EnvironmentCheck(name="Docker Daemon Running", passed=False, details="Docker daemon is not running. Please start Docker Desktop."))
+            self.client.ping()
+            log.debug("Docker daemon is running and accessible")
+            checks.append(EnvironmentCheck(
+                name="Docker Daemon Running",
+                passed=True,
+                details="Docker daemon is accessible and responding"
+            ))
+        except docker.errors.DockerException as e:
+            log.error(f"Docker daemon check failed: {e}")
+            checks.append(EnvironmentCheck(
+                name="Docker Daemon Running",
+                passed=False,
+                details=f"Docker daemon is not running or not accessible: {e}",
+                suggestion="Please start Docker Desktop (or your Docker service) and try again."
+            ))
+            # If Docker isn't available, skip Docker-dependent checks
             return CheckReport(checks=checks)
 
-        ports_to_check = {
-            "Ollama API Port (11434)": 11434,
-            "WebUI Port (8080)": 8080,
-            "MCP Proxy Port (8200)": 8200,
-        }
-        for name, port in ports_to_check.items():
-            if self._check_port(port):
-                checks.append(EnvironmentCheck(name=f"Port {port} Available", passed=True))
-            else:
-                checks.append(EnvironmentCheck(
-                    name=f"Port {port} Available",
-                    passed=False,
-                    details=f"Port {port} is already in use."
-                ))
+        # 2. Port Availability Checks
+        port_checks = self._check_required_ports()
+        checks.extend(port_checks)
 
+        # 3. Platform-Specific Checks
         if platform == 'nvidia':
-            try:
-                info = self.client.info()
-                if info.get("Runtimes", {}).get("nvidia"):
-                     checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", passed=True))
-                else:
-                    checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", passed=False, details="NVIDIA runtime not found in Docker."))
-            except Exception:
-                checks.append(EnvironmentCheck(name="NVIDIA Docker Toolkit", passed=False, details="Could not verify NVIDIA runtime in Docker."))
+            nvidia_check = self._check_nvidia_runtime()
+            checks.append(nvidia_check)
+
+        # 4. Compose File Checks
+        compose_checks = self._check_compose_files(fix)
+        checks.extend(compose_checks)
+
+        # 5. Docker Images Check
+        if fix:
+            image_check = self._check_and_pull_images()
+            checks.append(image_check)
 
         return CheckReport(checks=checks)
+
+    def _check_required_ports(self) -> List[EnvironmentCheck]:
+        """Check if required ports are available."""
+        checks = []
+        
+        ports_to_check = {
+            "Ollama API": 11434,
+            "WebUI": 8080,
+            "MCP Proxy": 8200,
+        }
+        
+        for service_name, port in ports_to_check.items():
+            if self._is_port_available(port):
+                log.debug(f"Port {port} ({service_name}) is available")
+                checks.append(EnvironmentCheck(
+                    name=f"Port {port} Available ({service_name})",
+                    passed=True,
+                    details=f"Port {port} is available for {service_name}"
+                ))
+            else:
+                log.warning(f"Port {port} ({service_name}) is already in use")
+                checks.append(EnvironmentCheck(
+                    name=f"Port {port} Available ({service_name})",
+                    passed=False,
+                    details=f"Port {port} is already in use by another process",
+                    suggestion=f"Stop the process using port {port} or configure {service_name} to use a different port"
+                ))
+        
+        return checks
+
+    def _check_nvidia_runtime(self) -> EnvironmentCheck:
+        """Check NVIDIA Docker runtime availability."""
+        try:
+            info = self.client.info()
+            if info.get("Runtimes", {}).get("nvidia"):
+                log.debug("NVIDIA Docker runtime is available")
+                return EnvironmentCheck(
+                    name="NVIDIA Docker Toolkit",
+                    passed=True,
+                    details="NVIDIA runtime is available in Docker"
+                )
+            else:
+                log.warning("NVIDIA Docker runtime not found")
+                return EnvironmentCheck(
+                    name="NVIDIA Docker Toolkit",
+                    passed=False,
+                    details="NVIDIA runtime not found in Docker",
+                    suggestion="Install nvidia-docker2 package and restart Docker daemon"
+                )
+        except Exception as e:
+            log.error(f"Could not verify NVIDIA runtime: {e}")
+            return EnvironmentCheck(
+                name="NVIDIA Docker Toolkit",
+                passed=False,
+                details=f"Could not verify NVIDIA runtime in Docker: {e}",
+                suggestion="Ensure Docker is running and nvidia-docker2 is installed"
+            )
+
+    def _check_compose_files(self, fix: bool) -> List[EnvironmentCheck]:
+        """Check Docker compose file availability."""
+        checks = []
+        
+        # Check main compose file
+        compose_file = self.config.docker_compose_file
+        compose_path = Path(compose_file)
+        
+        if compose_path.exists():
+            log.debug(f"Compose file found: {compose_file}")
+            checks.append(EnvironmentCheck(
+                name=f"Compose File: {compose_file}",
+                passed=True,
+                details=f"Docker compose file exists: {compose_file}"
+            ))
+        else:
+            log.warning(f"Compose file missing: {compose_file}")
+            checks.append(EnvironmentCheck(
+                name=f"Compose File: {compose_file}",
+                passed=False,
+                details=f"Docker compose file not found: {compose_file}",
+                suggestion=f"Ensure {compose_file} exists in the project directory"
+            ))
+        
+        return checks
+
+    def _check_and_pull_images(self) -> EnvironmentCheck:
+        """Check and optionally pull Docker images."""
+        try:
+            log.info("Attempting to pull latest Docker images...")
+            self.pull_images()
+            log.info("Successfully pulled Docker images")
+            return EnvironmentCheck(
+                name="Docker Images",
+                passed=True,
+                details="Successfully pulled latest Docker images for stack services"
+            )
+        except Exception as e:
+            log.error(f"Failed to pull Docker images: {e}")
+            return EnvironmentCheck(
+                name="Docker Images",
+                passed=False,
+                details=f"Failed to pull Docker images: {e}",
+                suggestion="Check internet connection and run 'ollama-stack start --update'"
+            )
+
+    def _is_port_available(self, port: int) -> bool:
+        """Check if a TCP port is available on localhost."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                return s.connect_ex(('localhost', port)) != 0
+        except Exception:
+            return False
+
+
 
 
 
