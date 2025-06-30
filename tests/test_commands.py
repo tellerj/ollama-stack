@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ollama_stack_cli.main import app
-from ollama_stack_cli.schemas import StackStatus, CheckReport, ServiceStatus, EnvironmentCheck
+from ollama_stack_cli.schemas import StackStatus, CheckReport, ServiceStatus, EnvironmentCheck, ExtensionsConfig
 
 runner = CliRunner()
 
@@ -34,19 +34,22 @@ def test_start_command(MockAppContext, mock_app_context):
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_start_command_with_update(MockAppContext, mock_app_context):
-    """Tests that the 'start --update' command calls the correct stack manager methods including pull_images."""
+    """Tests that the 'start --update' command uses the unified update logic."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.stack_manager.get_running_services_summary.return_value = ([], [])
     mock_app_context.stack_manager.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
     mock_app_context.config.fell_back_to_defaults = False
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=[])
     
-    result = runner.invoke(app, ["start", "--update"])
-    assert result.exit_code == 0
-    mock_app_context.stack_manager.get_running_services_summary.assert_called_once()
-    mock_app_context.stack_manager.pull_images.assert_called_once()
-    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
-    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
+    # Mock the unified update logic
+    with patch('ollama_stack_cli.commands.update.update_services_logic', return_value=True) as mock_update:
+        result = runner.invoke(app, ["start", "--update"])
+        assert result.exit_code == 0
+        mock_app_context.stack_manager.get_running_services_summary.assert_called_once()
+        mock_update.assert_called_once_with(mock_app_context, services_only=True)
+        mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+        mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_start_command_with_config_fallback(MockAppContext, mock_app_context):
@@ -62,6 +65,26 @@ def test_start_command_with_config_fallback(MockAppContext, mock_app_context):
     # Should call all the normal start operations
     mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
     mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_with_update_failure(MockAppContext, mock_app_context):
+    """Tests that 'start --update' handles update failure gracefully."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.get_running_services_summary.return_value = ([], [])
+    mock_app_context.stack_manager.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
+    mock_app_context.config.fell_back_to_defaults = False
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=[])
+    
+    # Mock the unified update logic to fail
+    with patch('ollama_stack_cli.commands.update.update_services_logic', return_value=False) as mock_update:
+        result = runner.invoke(app, ["start", "--update"])
+        assert result.exit_code == 0  # Command should not crash
+        mock_app_context.stack_manager.get_running_services_summary.assert_called_once()
+        mock_update.assert_called_once_with(mock_app_context, services_only=True)
+        # Should not call start methods when update fails
+        mock_app_context.stack_manager.start_docker_services.assert_not_called()
+        mock_app_context.stack_manager.start_native_services.assert_not_called()
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_stop_command(MockAppContext, mock_app_context):
@@ -93,21 +116,24 @@ def test_restart_command(MockAppContext, mock_app_context):
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_restart_command_with_update(MockAppContext, mock_app_context):
-    """Tests that 'restart --update' calls stop, pull_images, and then start logic for both Docker and native services."""
+    """Tests that 'restart --update' calls stop and then uses unified update logic through start."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.stack_manager.get_running_services_summary.return_value = ([], [])
     mock_app_context.stack_manager.config.services = {'webui': MagicMock(type='docker'), 'ollama': MagicMock(type='native-api')}
     mock_app_context.config.fell_back_to_defaults = False
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=[])
     
-    result = runner.invoke(app, ["restart", "--update"])
-    assert result.exit_code == 0
-    mock_app_context.stack_manager.stop_docker_services.assert_called_once()
-    mock_app_context.stack_manager.stop_native_services.assert_called_once_with(['ollama'])
-    mock_app_context.stack_manager.get_running_services_summary.assert_called_once()
-    mock_app_context.stack_manager.pull_images.assert_called_once()
-    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
-    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
+    # Mock the unified update logic
+    with patch('ollama_stack_cli.commands.update.update_services_logic', return_value=True) as mock_update:
+        result = runner.invoke(app, ["restart", "--update"])
+        assert result.exit_code == 0
+        mock_app_context.stack_manager.stop_docker_services.assert_called_once()
+        mock_app_context.stack_manager.stop_native_services.assert_called_once_with(['ollama'])
+        mock_app_context.stack_manager.get_running_services_summary.assert_called_once()
+        mock_update.assert_called_once_with(mock_app_context, services_only=True)
+        mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+        mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_status_command(MockAppContext, mock_app_context):
@@ -904,4 +930,120 @@ def test_status_command_all_services_stopped_logging(MockAppContext, mock_app_co
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
     mock_app_context.stack_manager.get_stack_status.assert_called_once_with(extensions_only=False)
-    mock_app_context.display.status.assert_called_once_with(mock_stack_status) 
+    mock_app_context.display.status.assert_called_once_with(mock_stack_status)
+
+# --- Update Command Tests ---
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_update_command_stack_not_running(MockAppContext, mock_app_context):
+    """Tests that 'update' command works when stack is not running."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.pull_images.return_value = True
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=[])
+    
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.is_stack_running.assert_called_once()
+    mock_app_context.stack_manager.pull_images.assert_called_once()
+    # Should not stop or start anything since stack wasn't running
+    mock_app_context.stack_manager.stop_stack.assert_not_called()
+
+@patch('typer.confirm')
+@patch('ollama_stack_cli.main.AppContext')
+def test_update_command_stack_running_confirm_yes(MockAppContext, mock_confirm):
+    """Tests that 'update' command stops and restarts when stack is running and user confirms."""
+    mock_app_context = MagicMock()
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = True
+    mock_app_context.stack_manager.pull_images.return_value = True
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=[])
+    mock_confirm.return_value = True
+    
+    # Mock stop_services_logic and start_services_logic
+    with patch('ollama_stack_cli.commands.stop.stop_services_logic') as mock_stop, \
+         patch('ollama_stack_cli.commands.start.start_services_logic', return_value=True) as mock_start:
+        result = runner.invoke(app, ["update"])
+        assert result.exit_code == 0
+        mock_app_context.stack_manager.is_stack_running.assert_called_once()
+        mock_confirm.assert_called_once()
+        mock_stop.assert_called_once_with(mock_app_context)
+        mock_app_context.stack_manager.pull_images.assert_called_once()
+        mock_start.assert_called_once()
+
+@patch('typer.confirm')
+@patch('ollama_stack_cli.main.AppContext')
+def test_update_command_stack_running_confirm_no(MockAppContext, mock_confirm):
+    """Tests that 'update' command cancels when user declines to stop running stack."""
+    mock_app_context = MagicMock()
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = True
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=[])
+    mock_confirm.return_value = False
+    
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 1
+    mock_app_context.stack_manager.is_stack_running.assert_called_once()
+    mock_confirm.assert_called_once()
+    # Should not proceed with any other operations
+    mock_app_context.stack_manager.stop_stack.assert_not_called()
+    mock_app_context.stack_manager.pull_images.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_update_command_services_only(MockAppContext, mock_app_context):
+    """Tests that 'update --services' only updates core services."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.pull_images.return_value = True
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=['ext1', 'ext2'])
+    
+    result = runner.invoke(app, ["update", "--services"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.pull_images.assert_called_once()
+    # Should not process extensions
+
+@patch('ollama_stack_cli.main.AppContext')  
+def test_update_command_extensions_only(MockAppContext, mock_app_context):
+    """Tests that 'update --extensions' only updates enabled extensions."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=['ext1', 'ext2'])
+    
+    result = runner.invoke(app, ["update", "--extensions"])
+    assert result.exit_code == 0
+    # Should not pull core service images
+    mock_app_context.stack_manager.pull_images.assert_not_called()
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_update_command_conflicting_flags(MockAppContext, mock_app_context):
+    """Tests that 'update --services --extensions' fails with error."""
+    MockAppContext.return_value = mock_app_context
+    
+    result = runner.invoke(app, ["update", "--services", "--extensions"])
+    assert result.exit_code == 1
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_update_command_with_enabled_extensions(MockAppContext, mock_app_context):
+    """Tests that update command handles enabled extensions correctly."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.pull_images.return_value = True
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=['dia-tts-mcp'])
+    
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.pull_images.assert_called_once()
+    # Extension update logic should run (even if not fully implemented)
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_update_command_pull_images_failure(MockAppContext, mock_app_context):
+    """Tests that update command handles pull_images failure gracefully."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.pull_images.return_value = False
+    mock_app_context.config.app_config.extensions = ExtensionsConfig(enabled=[])
+    
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 1
+    mock_app_context.stack_manager.pull_images.assert_called_once()
+

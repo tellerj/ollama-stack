@@ -134,11 +134,16 @@ def start_services_logic(app_context: AppContext, update: bool = False):
     # If everything is already running, we're done
     if not docker_to_start and not native_to_start:
         log.info("All services are already running.")
-        return
+        return True
 
-    # Pull images if requested
+    # Pull images if requested - route to unified update logic
     if update:
-        app_context.stack_manager.pull_images()
+        from .update import update_services_logic
+        log.info("Running update before starting services...")
+        update_success = update_services_logic(app_context, services_only=True)
+        if not update_success:
+            log.error("Update failed, aborting start")
+            return False
 
     # Start Docker services that aren't running
     if docker_to_start:
@@ -149,6 +154,8 @@ def start_services_logic(app_context: AppContext, update: bool = False):
     if native_to_start:
         log.info(f"Starting native services: {', '.join(native_to_start)}")
         app_context.stack_manager.start_native_services(native_to_start)
+
+    return True
 
 
 def start(

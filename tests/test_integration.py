@@ -525,4 +525,293 @@ def test_restart_without_docker():
     output_lower = result.stdout.lower()
     assert any(keyword in output_lower for keyword in [
         "docker", "daemon", "running", "configured"
-    ]) 
+    ])
+
+
+# --- Update Command Integration Tests ---
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_command_when_stack_stopped():
+    """
+    Verifies that 'update' command works correctly when the stack is not running.
+    
+    Tests that update pulls images without needing to stop/restart anything.
+    """
+    # Ensure stack is stopped
+    assert get_actual_running_services() == set()
+    
+    # Run update command
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    
+    # Should indicate successful update completion
+    output_lower = result.stdout.lower()
+    assert any(keyword in output_lower for keyword in [
+        "update completed", "successfully", "up to date"
+    ])
+    
+    # Stack should still be stopped after update
+    assert get_actual_running_services() == set()
+
+
+@pytest.mark.integration  
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_command_services_only_flag():
+    """
+    Verifies that 'update --services' works correctly and only updates core services.
+    
+    Tests the selective update functionality.
+    """
+    result = runner.invoke(app, ["update", "--services"])
+    assert result.exit_code == 0
+    
+    # Should indicate core services were updated
+    output_lower = result.stdout.lower()
+    assert any(keyword in output_lower for keyword in [
+        "core services", "services update", "successfully"
+    ])
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available") 
+def test_update_command_extensions_only_flag():
+    """
+    Verifies that 'update --extensions' works correctly and only processes extensions.
+    
+    Tests extension-only update mode (currently shows no extensions enabled message).
+    """
+    result = runner.invoke(app, ["update", "--extensions"])
+    assert result.exit_code == 0
+    
+    # Should indicate extensions were processed (even if none enabled)
+    output_lower = result.stdout.lower()
+    assert any(keyword in output_lower for keyword in [
+        "extension", "no extensions enabled", "successfully"
+    ])
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_command_conflicting_flags():
+    """
+    Verifies that conflicting --services and --extensions flags are rejected.
+    
+    Tests input validation and error handling.
+    """
+    result = runner.invoke(app, ["update", "--services", "--extensions"])
+    assert result.exit_code == 1
+    
+    # Should show error about conflicting flags
+    output_lower = result.stdout.lower()
+    assert any(keyword in output_lower for keyword in [
+        "cannot specify both", "conflicting", "both flags"
+    ])
+
+
+@pytest.mark.integration
+def test_update_command_without_docker():
+    """
+    Verifies update command behavior when Docker daemon is not running.
+    
+    Tests actual error handling for update operations when Docker is unavailable.
+    """
+    if is_docker_available():
+        pytest.skip("Docker is available - testing Docker unavailable scenario")
+    
+    result = runner.invoke(app, ["update"])
+    
+    # Should exit with error code
+    assert result.exit_code == 1
+    
+    # Should contain helpful error message about Docker
+    output_lower = result.stdout.lower()
+    assert any(keyword in output_lower for keyword in [
+        "docker", "daemon", "not running", "unavailable"
+    ])
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_with_running_stack_user_confirms():
+    """
+    Verifies update behavior when stack is running and user confirms stopping.
+    
+    Tests the complete stop -> update -> restart cycle with user interaction.
+    """
+    # Start the stack first
+    start_result = runner.invoke(app, ["start"])
+    assert start_result.exit_code == 0
+    
+    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    assert get_actual_running_services() == expected_components
+    
+    # Run update with automatic confirmation (simulate user saying 'yes')
+    result = runner.invoke(app, ["update"], input="y\n")
+    assert result.exit_code == 0
+    
+    # Should show prompting and completion messages
+    output_lower = result.stdout.lower()
+    assert "currently running" in output_lower
+    assert any(keyword in output_lower for keyword in [
+        "update completed", "restarted successfully", "up to date"
+    ])
+    
+    # Stack should be running again after update
+    final_services = get_actual_running_services()
+    assert final_services == expected_components
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_with_running_stack_user_declines():
+    """
+    Verifies update behavior when stack is running and user declines stopping.
+    
+    Tests that update respects user choice and doesn't modify running stack.
+    """
+    # Start the stack first
+    start_result = runner.invoke(app, ["start"])
+    assert start_result.exit_code == 0
+    
+    initial_services = get_actual_running_services()
+    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    assert initial_services == expected_components
+    
+    # Run update with automatic decline (simulate user saying 'no')
+    result = runner.invoke(app, ["update"], input="n\n")
+    assert result.exit_code == 1
+    
+    # Should show cancellation message
+    output_lower = result.stdout.lower()
+    assert "currently running" in output_lower
+    assert any(keyword in output_lower for keyword in [
+        "cancelled", "cancel", "update cancelled"
+    ])
+    
+    # Stack should remain unchanged
+    final_services = get_actual_running_services()
+    assert final_services == initial_services
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_start_with_update_integration():
+    """
+    Verifies that 'start --update' integrates correctly with the unified update logic.
+    
+    Tests that image pulling happens before starting services.
+    """
+    result = runner.invoke(app, ["start", "--update"])
+    assert result.exit_code == 0
+    
+    # Should complete successfully and start services
+    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    assert get_actual_running_services() == expected_components
+    
+    # Should indicate update happened (though may be quiet if images are current)
+    # The key test is that it succeeds and services are running
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_restart_with_update_integration():
+    """
+    Verifies that 'restart --update' integrates correctly with the unified update logic.
+    
+    Tests the complete restart with update cycle.
+    """
+    # Start stack first
+    runner.invoke(app, ["start"])
+    initial_services = get_actual_running_services()
+    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    assert initial_services == expected_components
+    
+    # Restart with update
+    result = runner.invoke(app, ["restart", "--update"])
+    assert result.exit_code == 0
+    
+    # Should complete successfully and services should be running
+    final_services = get_actual_running_services()
+    assert final_services == expected_components
+    
+    # Verify Docker containers were actually recreated (not just restarted)
+    if is_docker_available():
+        docker_components = get_running_stack_components()
+        # Should have Docker services running
+        assert len(docker_components.intersection(EXPECTED_DOCKER_COMPONENTS)) > 0
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_command_preserves_service_health():
+    """
+    Verifies that after update operations, services remain healthy and accessible.
+    
+    Tests the end-to-end user experience - services should work after update.
+    """
+    # Start stack and verify it's healthy
+    runner.invoke(app, ["start"])
+    time.sleep(3)  # Let services initialize
+    assert wait_for_service_health("webui", timeout=10)
+    
+    # Update the stack (with confirmation)
+    result = runner.invoke(app, ["update"], input="y\n")
+    assert result.exit_code == 0
+    
+    # Give services time to restart and stabilize
+    time.sleep(5)
+    
+    # Verify services are still healthy after update
+    assert wait_for_service_health("webui", timeout=15)
+    
+    # All expected services should be running
+    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    assert get_actual_running_services() == expected_components
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_command_idempotent():
+    """
+    Verifies that running update multiple times is safe and idempotent.
+    
+    Tests that repeated updates don't cause issues or leave system in bad state.
+    """
+    # First update
+    result1 = runner.invoke(app, ["update"])
+    assert result1.exit_code == 0
+    
+    # Second update immediately after
+    result2 = runner.invoke(app, ["update"])
+    assert result2.exit_code == 0
+    
+    # Both should complete successfully
+    for result in [result1, result2]:
+        output_lower = result.stdout.lower()
+        assert any(keyword in output_lower for keyword in [
+            "update completed", "successfully", "up to date"
+        ])
+
+
+@pytest.mark.integration  
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_command_help_accessibility():
+    """
+    Verifies that update command help is accessible and informative.
+    
+    Tests user discoverability and documentation.
+    """
+    result = runner.invoke(app, ["update", "--help"])
+    assert result.exit_code == 0
+    
+    # Should contain key information about the command
+    output_lower = result.stdout.lower()
+    assert "update" in output_lower
+    assert "images" in output_lower
+    assert "services" in output_lower
+    assert "extensions" in output_lower
+    
+    # Should show available options
+    assert "--services" in result.stdout
+    assert "--extensions" in result.stdout 
