@@ -1,10 +1,10 @@
-# 01: Project Architecture
+# 02: Project Architecture
 
-This document defines the file and directory structure for the new Python-based CLI tool.
+This document defines the file and directory structure for the Python-based CLI tool and its current implementation status.
 
 ## 1. Top-Level Directory Structure
 
-The root of the project will contain the CLI source code, stack configurations, and project metadata.
+The root of the project contains the CLI source code, stack configurations, and project metadata.
 
 ```
 ollama-stack/
@@ -13,26 +13,37 @@ ollama-stack/
 ├── docker-compose.apple.yml
 ├── docker-compose.nvidia.yml
 ├── extensions/
-├── install.sh
-├── install.ps1
+│   ├── registry.json
+│   ├── manage.sh
+│   └── dia-tts-mcp/
+├── install-ollama-stack.sh
+├── install-ollama-stack.ps1
 ├── pyproject.toml
 ├── .ollama-stack.json
-└── README.md
+├── README.md
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+└── project-plan/
 ```
 
 ### 1.1. Component Responsibilities
 
 - **`ollama_stack_cli/`**: The Python source package for the command-line tool.
-- **`docker-compose.*.yml`**: The Docker Compose files that define the stack's services. These are considered static assets and are not modified by the CLI.
-- **`extensions/`**: Directory containing all available extensions. The CLI reads from this directory but does not modify its contents.
-- **`install.sh` / `install.ps1`**: Simplified installer scripts. Their sole responsibility is to verify the Python environment and run `pip install .`.
-- **`pyproject.toml`**: The unified Python project definition file. It specifies build system requirements, project dependencies, and defines the `ollama-stack` console script entry point.
-- **`.ollama-stack.json`**: A machine-readable file for storing the CLI's internal state, such as the list of enabled extensions.
-- **`README.md`**: Project documentation, to be updated to reflect the new CLI tool and installation process.
+- **`docker-compose.*.yml`**: Docker Compose files defining the stack's services. These are static assets not modified by the CLI.
+- **`extensions/`**: Directory containing all available extensions and the extension registry.
+  - **`registry.json`**: Central catalog of available MCP extensions
+  - **`manage.sh`**: Extension management utility script
+  - **Individual extension directories**: Self-contained extension implementations
+- **`install-ollama-stack.sh` / `install-ollama-stack.ps1`**: Cross-platform installer scripts that verify the Python environment and run `pip install -e .`.
+- **`pyproject.toml`**: Python project definition file specifying build requirements, dependencies, and the `ollama-stack` console script entry point.
+- **`.ollama-stack.json`**: Machine-readable file storing CLI internal state (enabled extensions, configuration).
+- **`README.md`**: Project documentation with installation and usage instructions.
+- **`CHANGELOG.md`**: Version history and user-facing changes (currently at v0.2.0).
+- **`CONTRIBUTING.md`**: Developer guidelines and contribution workflow.
 
 ## 2. Python Package Architecture (`ollama_stack_cli/`)
 
-Below is a high-level diagram illustrating the flow of control and dependency management within the `ollama-stack` CLI. The central `AppContext` is passed to each command, providing a consistent and decoupled way to access core services like the `StackManager` and `Display` handler.
+The application follows a centralized architecture with `StackManager` orchestrating operations and `AppContext` providing dependency injection.
 
 ```mermaid
 graph TD
@@ -54,6 +65,7 @@ graph TD
 
         StackManager -- "orchestrates" --> DockerClient;
         StackManager -- "orchestrates" --> OllamaApiClient;
+        StackManager -- "provides unified health checks" --> HealthCheck[Health Check System];
     end
 
     subgraph "External Dependencies"
@@ -61,12 +73,14 @@ graph TD
         Display -- "renders to" --> Console(Console Output);
         DockerClient -- "communicates with" --> DockerDaemon("Docker Daemon");
         OllamaApiClient -- "communicates with" --> OllamaAPI("Ollama REST API");
+        HealthCheck -- "HTTP→TCP fallback" --> Services("Service Endpoints");
     end
 
     style AppContext fill:#f9f,stroke:#333,stroke-width:2px
+    style StackManager fill:#9ff,stroke:#333,stroke-width:2px
 ```
 
-The source code is organized into modules with clear, single responsibilities.
+### 2.1. Current Source Code Structure
 
 ```
 ollama_stack_cli/
@@ -80,71 +94,154 @@ ollama_stack_cli/
 ├── docker_client.py
 ├── ollama_api_client.py
 ├── schemas.py
+├── options.py
 │
 └── commands/
     ├── __init__.py
-    ├── start.py
-    ├── stop.py
-    ├── status.py
-    └── extensions.py
+    ├── start.py           ✅ Implemented
+    ├── stop.py            ✅ Implemented  
+    ├── restart.py         ✅ Implemented
+    ├── status.py          ✅ Implemented
+    ├── logs.py            ✅ Implemented
+    ├── check.py           ✅ Implemented
+    ├── update.py          🔄 Planned (Phase 5)
+    ├── uninstall.py       🔄 Planned (Phase 5)
+    ├── backup.py          🔄 Planned (Phase 6)
+    ├── restore.py         🔄 Planned (Phase 6)
+    ├── migrate.py         🔄 Planned (Phase 6)
+    └── extensions.py      🔄 Planned (Phase 7)
 ```
 
-### 2.1. Module Responsibilities
+### 2.2. Module Responsibilities
 
-- **`main.py`**: The main entry point of the application. It is responsible for:
-    - Initializing a single `AppContext` instance.
-    - Using `typer` to construct the CLI and register commands.
-    - Handling global options and passing the `AppContext` to all command functions.
+#### Core Infrastructure (✅ Complete)
 
-- **`context.py`**: Defines the `AppContext` class. This class acts as a central container for the application's runtime state. It is responsible for:
-    - Loading and holding the configuration object from `config.py`.
-    - Initializing and holding the `StackManager` instance.
-    - Initializing and holding the `Display` handler instance.
+- **`main.py`**: Application entry point responsible for:
+    - Initializing a single `AppContext` instance
+    - Using `typer` to construct the CLI and register commands
+    - Handling global options (`--verbose`) and passing the `AppContext` to all command functions
 
-- **`display.py`**: The single source of truth for all user-facing output and logging configuration. This module is responsible for initializing the root logger and configuring a `RichHandler` to ensure all output—both direct and logged—is consistently styled. It provides methods for user-facing results (e.g., `display.success()`, `display.table()`) and is the only module that should directly import and configure `rich`.
+- **`context.py`**: Defines the `AppContext` class - the central dependency injection container:
+    - Loads and holds the configuration object from `config.py`
+    - Initializes and holds the `StackManager` instance  
+    - Initializes and holds the `Display` handler instance
+    - Provides consistent access to core services across all commands
 
-- **`config.py`**: The interface for all persistent configuration and state. It reads the base configuration from files and is responsible for applying any platform-specific overrides to the service registry (e.g., re-configuring the `ollama` service to be of type `native-api` on Apple Silicon).
+- **`display.py`**: Single source of truth for all user-facing output and logging:
+    - Initializes the root logger and configures `RichHandler` for consistent styling
+    - Provides methods for user-facing results (`success()`, `error()`, `table()`, `spinner()`)
+    - Only module that directly imports and configures `rich`
+    - Ensures 100% consistent look and feel across all output
 
-- **`stack_manager.py`**: A config-driven orchestrator that acts as the primary backend for all CLI commands. It iterates over the service registry from the `AppConfig` and delegates tasks to the appropriate client based on each service's configured `type` (e.g., 'docker', 'native-api'). It contains no platform-specific logic itself, making it highly extensible.
+- **`config.py`**: Interface for all persistent configuration and state management:
+    - Reads base configuration from `.env` and `.ollama-stack.json`
+    - Applies platform-specific overrides to service configurations
+    - Manages the service registry and extension state
+    - Handles default values and configuration validation using Pydantic
 
-- **`docker_client.py`**: A low-level abstraction layer over the Docker Engine.
-    - It is the only module that imports and uses the `docker` Python SDK.
-    - Provides functions for managing Docker resources (containers, volumes, networks) when instructed by the `StackManager`.
-    - It is "platform-unaware" and simply executes the Docker tasks it is given.
+- **`stack_manager.py`**: Central orchestrator and primary backend for all CLI commands:
+    - **Service Orchestration**: Iterates over service registry and delegates to appropriate clients
+    - **Unified Health Checking**: Provides consistent health monitoring across all service types using HTTP → TCP fallback
+    - **Platform-Agnostic Logic**: Contains no platform-specific code, making it highly extensible
+    - **Extension Management**: Will coordinate extension lifecycle operations
+    - **State Coordination**: Manages complex multi-service operations
 
-- **`ollama_api_client.py`**: A low-level client for the native Ollama HTTP API.
-    - Responsible for making HTTP requests to the Ollama server (e.g., `GET /api/ps`).
-    - Handles parsing the JSON responses from the Ollama API.
+- **`docker_client.py`**: Low-level Docker Engine abstraction layer:
+    - Only module that imports and uses the `docker` Python SDK
+    - Provides container, volume, and network management functions
+    - **No Health Checking**: Returns `health="unknown"` for containers, delegating health checks to `StackManager`
+    - Platform-unaware - executes Docker tasks as instructed
+    - Graceful error handling for Docker daemon unavailability
 
-- **`schemas.py`**: Defines the data structures used throughout the application. It contains Pydantic models for all major data structures, including `ServiceConfig` which defines a service's `type`. The main `AppConfig` model uses these to create a **Service Registry**—a dictionary that maps service names to their configurations. This registry-based approach is the key to the application's extensibility.
+- **`ollama_api_client.py`**: Native Ollama HTTP API client:
+    - Makes HTTP requests to Ollama server (e.g., `GET /api/ps`)
+    - Parses JSON responses from Ollama API
+    - **Rich Native Status**: Provides detailed service information (model counts, installation status) beyond basic connectivity
+    - Different purpose than unified health checks - detailed status vs basic reachability
 
-- **`commands/`**: A Python sub-package containing the implementation for each CLI command.
-    - Each file (e.g., `start.py`, `status.py`) contains a `typer` command function.
-    - Command functions receive the `AppContext` object.
-    - They are responsible for orchestrating calls to the services held in the context (`ctx.stack_manager`, `ctx.config`) and using the display handler (`ctx.display`) to report results. They contain minimal business logic themselves.
+- **`schemas.py`**: Data structure definitions using Pydantic models:
+    - Defines all major data structures (`ServiceConfig`, `ExtensionConfig`, `AppConfig`)
+    - Service registry implementation mapping service names to configurations
+    - Configuration validation and type safety
+    - Foundation for the application's extensible architecture
 
-### 2.2. Internal Safety Mechanisms
+- **`options.py`**: Shared command-line option definitions and utilities for consistent CLI behavior
 
-The CLI tool implements several internal mechanisms to ensure safe operation and prevent conflicts:
+#### Command Modules
 
-1. **Operation State Management**
-   - The `docker_client.py` module tracks operation state internally
-   - Operations are atomic and can be rolled back if interrupted
-   - State changes are verified before and after operations
+**✅ Implemented Commands (Phase 1-3):**
+- **`start.py`**: Core stack startup with platform detection and health verification
+- **`stop.py`**: Graceful shutdown preserving data volumes  
+- **`restart.py`**: Full restart with option passthrough
+- **`status.py`**: Comprehensive status overview with unified health checking
+- **`logs.py`**: Service log viewing with real-time capabilities
+- **`check.py`**: Environment validation and diagnostics
 
-2. **Concurrency Control**
-   - The `docker_client.py` module implements internal locking
-   - Prevents concurrent operations on the same resources
-   - Automatically handles lock timeouts and cleanup
+**🔄 Planned Commands (Phase 5-7):**
+- **`update.py`**: Image updates for stack and extensions
+- **`uninstall.py`**: Safe resource removal with confirmation prompts
+- **`backup.py`**: Full backup creation with volume support
+- **`restore.py`**: Backup restoration with validation
+- **`migrate.py`**: Version migration with automatic backups
+- **`extensions.py`**: Complete extension lifecycle management
 
-3. **Recovery Procedures**
-   - Built-in recovery for common failure scenarios
-   - Automatic rollback of partial operations
-   - State verification and repair if needed
+### 2.3. Unified Health Check Architecture (✅ Implemented)
 
-## 3. Versioning and Distribution
-- **Principle**: The project must have a clear versioning scheme and a standard distribution channel to provide a stable and predictable experience for users.
-- **Implementation**:
-    - **Versioning**: The project will follow **Semantic Versioning (SemVer)** (e.g., `v1.2.3`).
-    - **Changelog**: A `CHANGELOG.md` file will be maintained to document all user-facing changes in each release.
-    - **Distribution**: The `ollama-stack` CLI tool will be packaged and distributed via the Python Package Index (PyPI).
+The application implements a centralized health checking system to ensure consistent status reporting:
+
+1. **StackManager Coordination**
+   - Provides `check_service_health()` method with HTTP → TCP fallback
+   - Applies unified health checks to all running services
+   - Single source of truth for service health status
+
+2. **Service-Specific Responsibilities**  
+   - `DockerClient`: Container management only, no health checking
+   - `OllamaApiClient`: Rich native service status for detailed information
+   - `StackManager`: Unified health checking for consistent user experience
+
+3. **Health Check Flow**
+   - `get_docker_services_status()` gets containers from Docker
+   - For running services, applies unified health checks
+   - Returns consistent health status across all service types
+
+### 2.4. Future Architecture Enhancements
+
+**Phase 5 (Resource Management) Additions:**
+- `stack_manager.py`: Add resource discovery, update orchestration, and cleanup workflows
+- `docker_client.py`: Add image pulling with progress, resource removal with safety checks
+
+**Phase 6 (Backup/Migration) Additions:**
+- `stack_manager.py`: Add backup creation, restoration workflows, and migration orchestration
+- `docker_client.py`: Add volume backup/restore capabilities
+- `config.py`: Add configuration export/import with validation
+
+**Phase 7 (Extension Management) Additions:**
+- `stack_manager.py`: Add extension lifecycle management and dependency validation
+- `config.py`: Add extension state management and configuration validation
+
+## 3. Testing Architecture
+
+**Current Status:** 296 unit tests + 11 integration tests (100% pass rate)
+
+### 3.1. Current Testing Coverage ✅
+- **Unit Tests**: Comprehensive coverage of all core modules with mocked dependencies
+- **Integration Tests**: End-to-end validation against live Docker daemon
+- **Test Organization**: Parallel structure to source code in `tests/` directory
+
+### 3.2. Future Testing Requirements 🔄
+- **Phase 5**: Resource management testing with Docker operations
+- **Phase 6**: Backup/restore workflow validation and migration testing
+- **Phase 7**: Extension lifecycle and dependency resolution testing
+
+## 4. Versioning and Distribution
+
+- **Current Version**: v0.2.0 (Mid-Implementation)
+- **Changelog**: `CHANGELOG.md` documents all user-facing changes
+- **Distribution**: Ready for Python Package Index (PyPI) distribution
+- **Installation**: Cross-platform scripts for streamlined setup
+
+### 4.1. Release Roadmap
+- **v0.3.0**: Resource Management (update, uninstall commands)
+- **v0.4.0**: Backup and Migration (backup, restore, migrate commands)  
+- **v0.5.0**: Extension Management (full extensions command group)
+- **v1.0.0**: Production Release with PyPI distribution

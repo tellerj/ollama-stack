@@ -1,231 +1,277 @@
-# 06: Implementation Plan
+# 06: Implementation Plan and Status
 
-This document outlines the sequential, phased plan for implementing the `ollama-stack` CLI tool. Each phase represents a major milestone, and each step is an actionable, testable unit of work.
+This document outlines the phased implementation plan for the `ollama-stack` CLI tool, showing completed work and remaining phases.
 
 ---
 
-## Phase 1: Core Lifecycle Commands
+## Current Status: Mid-Implementation (v0.2.0)
 
-**Goal:** Implement the fundamental commands for managing the core stack lifecycle, leveraging Docker's capabilities while adding Ollama-specific functionality and consistent styling.
+The CLI tool is **functionally complete for core operations** and production-ready for basic stack management. Advanced features are planned for future releases.
+
+---
+
+## ✅ Phase 1: Core Lifecycle Commands (COMPLETED)
+
+**Goal:** Implement fundamental commands for managing the core stack lifecycle with platform-aware optimization and health verification.
+
+**Delivered Features:**
+- **Project Foundation**: Complete with `pyproject.toml`, `CONTRIBUTING.md`, and `CHANGELOG.md`
+- **Core Architecture**: All 9 modules implemented:
+  - `main.py`: Typer CLI framework with AppContext injection
+  - `context.py`: Central dependency injection container
+  - `config.py`: Configuration and state management with Pydantic validation
+  - `display.py`: Unified Rich-based output formatting
+  - `stack_manager.py`: Central orchestration with unified health checking
+  - `docker_client.py`: Docker Engine abstraction
+  - `ollama_api_client.py`: Native Ollama API integration
+  - `schemas.py`: Pydantic data models and service registry
+  - `options.py`: Shared CLI utilities
+
+**Implemented Commands:**
+- `start`: Platform detection, service startup, health verification
+- `stop`: Graceful shutdown preserving data volumes
+- `restart`: Full restart with option passthrough
+
+**Testing:** 296 unit tests with comprehensive mocking and validation
+
+**Architecture Achievements:**
+- AppContext dependency injection pattern
+- StackManager centralized orchestration
+- Platform-specific Docker Compose integration
+- Cross-platform installation scripts
+
+---
+
+## ✅ Phase 2: State and Information Commands (COMPLETED)
+
+**Goal:** Provide comprehensive monitoring and diagnostic capabilities with consistent formatting.
+
+**Delivered Features:**
+- **`status` Command**: Unified health checking with rich table output
+  - JSON output support for programmatic integration
+  - Extension status reporting from registry
+  - Helpful getting-started messages for new users
+- **`logs` Command**: Service log viewing with real-time capabilities
+  - Follow and tail options
+  - Consistent formatting with timestamps
+- **`check` Command**: Environment validation and requirements checking
+  - Docker daemon and Compose version validation
+  - Port availability testing (11434, 8080, 8200)
+  - Platform-specific requirement checking
+  - Clear pass/fail reporting with remediation guidance
+
+**Testing:** 11 integration tests validating end-to-end functionality
+
+**User Experience Achievements:**
+- All output consistently styled through `display.py`
+- Clear error messages with actionable guidance
+- Progress indicators for long-running operations
+
+---
+
+## ✅ Phase 3: Unified Health Check System (COMPLETED)
+
+**Goal:** Implement consistent, reliable health monitoring across all service types.
+
+**Major Technical Achievement:**
+- **Centralized Health Logic**: Unified system in StackManager replacing disparate implementations
+- **Service Role Clarification**:
+  - `DockerClient`: Container management only, returns health="unknown"
+  - `OllamaApiClient`: Rich native service status (unchanged)
+  - `StackManager`: Unified health checking for all services
+- **HTTP → TCP Fallback**: Robust connectivity testing with graceful degradation
+- **Consistent Status Reporting**: Eliminated discrepancies between Docker health and CLI status
+
+**Technical Implementation:**
+- `HEALTH_CHECK_URLS` mapping for service endpoints
+- `check_service_health()` method with automatic fallback
+- `_check_tcp_connectivity()` helper for network validation
+- 12 additional health check tests
+
+---
+
+## ✅ Phase 4: Extension Architecture Foundation (COMPLETED)
+
+**Goal:** Establish the foundation for Model Context Protocol (MCP) extension system.
+
+**Infrastructure Complete:**
+- **Extension Registry**: `extensions/registry.json` catalog system
+- **Extension State Management**: Tracking in `.ollama-stack.json`
+- **Self-Contained Extensions**: Directory structure with Docker Compose integration
+- **Sample Extension**: `dia-tts-mcp` as reference implementation
+- **Management Utilities**: `extensions/manage.sh` for development workflows
+
+---
+
+## 🔄 Phase 5: Resource Management Commands (PLANNED)
+
+**Goal:** Implement robust commands for managing stack resources with safety controls.
+
+### Phase 5.1: Core Module Enhancements
+**Required Changes to Support Resource Management:**
+
+- **`stack_manager.py`** enhancements:
+  - `update_stack()`: Orchestrate stop → pull → restart workflow
+  - `find_resources_by_label()`: Discover stack-related Docker resources
+  - `cleanup_resources()`: Safe resource removal with confirmation prompts
+  - `uninstall_stack()`: Complete decommissioning workflow
+
+- **`docker_client.py`** additions:
+  - `pull_images_with_progress()`: Image pulling with progress display
+  - `remove_resources()`: Safe resource removal with volume handling
+  - `export_compose_config()`: Configuration export for backups
+
+### Phase 5.2: Command Implementation
+- **`update` Command**:
+  - Call `ctx.stack_manager.update_stack()` with service/extension filtering
+  - Use `ctx.display` for progress reporting and results
+  - Handle running services with user confirmation
+
+- **`uninstall` Command**:
+  - Call `ctx.stack_manager.uninstall_stack()` with appropriate flags
+  - Use `ctx.display` for warnings, confirmations, and final instructions
+  - Support `--remove-volumes`, `--force`, and `--keep-config` options
+
+### Phase 5.3: Testing Requirements
+- **Unit Tests**: Mock Docker operations to test orchestration logic
+- **Integration Tests**: Test full update and uninstall workflows against live Docker
+- **Safety Tests**: Verify volume preservation and confirmation prompts
 
 **Success Criteria:**
-- CLI tool can be installed and run
-- Core services can be started, stopped, and restarted reliably
-- Platform-specific configurations are handled correctly
-- Health checks verify service availability
-- All operations are safe and recoverable
-- Clear, consistently formatted error messages guide users through issues
-
-**Step 1.1: Project Initialization and Onboarding**
-- **Goal**: Prepare the repository for development by setting up tooling and creating contributor guides.
-- **Tasks**:
-    - Initialize `pyproject.toml` with project metadata and dependencies.
-    - Configure `black` and `ruff` for code formatting and linting within `pyproject.toml`.
-    - Create the `CONTRIBUTING.md` file with a comprehensive developer setup guide.
-    - Create the `CHANGELOG.md` file.
-    - Create the initial directory structure (`ollama_stack_cli/`, `tests/`).
-  ```
-  ollama-stack/
-  ├── ollama_stack_cli/
-  │   ├── __init__.py
-  │   ├── main.py
-  │   ├── context.py
-  │   ├── config.py
-  │   ├── display.py
-  │   ├── docker_client.py
-  │   └── schemas.py
-  ├── tests/
-  │   └── test_*.py
-  ├── pyproject.toml
-  └── README.md
-  ```
-
-**Step 1.2: Core Module Implementation**
-- **`main.py`**:
-  - Create and initialize a single `AppContext`.
-  - Implement Typer app, passing the `AppContext` to all commands.
-  - Handle global options like `--verbose`.
-
-- **`context.py`**:
-  - Define the `AppContext` class.
-  - Initialize and hold the `Config` object.
-  - Initialize and hold the `DockerClient` instance.
-  - Initialize and hold the `Display` handler.
-
-- **`display.py`**:
-  - Create a `Display` class that abstracts `rich`.
-  - Implement methods for all user-facing output (`success`, `error`, `table`, etc.).
-  - This is the only module that imports `rich`.
-
-- **`docker_client.py`**:
-  - Implement platform detection (cpu/nvidia/apple).
-  - Wrap Docker Compose operations for service management.
-  - Implement Ollama-specific health checks.
-  - Implement internal operation safety (locking, state management).
-
-- **`schemas.py`**:
-  - Define Pydantic models for configuration, state, and other data structures.
-
-- **`config.py`**:
-  - Implement loading of `.env` and `.ollama-stack.json`.
-  - Handle default values and configuration validation.
-
-**Step 1.3: Command Implementation**
-- **Commands receive an `AppContext` (`ctx`)**.
-- **`start` command**:
-  - Use `ctx.docker_client` to perform platform detection and start services.
-  - Use `ctx.display` for progress reporting and results.
-- **`stop` command**:
-  - Use `ctx.docker_client` to stop services.
-  - Use `ctx.display` to report status.
-- **`restart` command**:
-  - Orchestrate `stop` and `start` logic through the `ctx.docker_client`.
-  - Use `ctx.display` to report progress.
-
-**Step 1.4: Testing**
-- **Unit Tests**:
-  - Test command logic by passing a mocked `AppContext`.
-  - Test `docker_client` methods by mocking the Docker SDK.
-  - Test configuration and schema validation.
-- **Integration Tests**:
-  - Test the full `start` -> `stop` -> `restart` lifecycle against a live Docker daemon.
-  - Verify output formatting consistency.
-
-**Testable Outcomes:**
-1. `ollama-stack start`, `stop`, `restart` commands are fully functional.
-2. All command output is consistently styled.
-3. The `AppContext` is successfully used to manage application state and services.
+1. `ollama-stack update` successfully updates all stack components
+2. `ollama-stack uninstall` safely removes resources with proper confirmations
+3. Volume preservation works correctly without `--remove-volumes` flag
 
 ---
 
-## Phase 2: State and Information Commands
+## 🔄 Phase 6: Backup and Migration Commands (PLANNED)
 
-**Goal:** Implement a consistent, user-friendly interface for monitoring and managing the Ollama stack.
+**Goal:** Implement comprehensive backup, restore, and migration capabilities.
+
+### Phase 6.1: Core Module Enhancements
+**Required Changes:**
+
+- **`stack_manager.py`** additions:
+  - `create_backup()`: Orchestrate full backup workflow
+  - `restore_from_backup()`: Restore workflow with validation
+  - `migrate_stack()`: Version-specific migration logic
+
+- **`docker_client.py`** additions:
+  - `backup_volumes()`: Docker volume backup using containers
+  - `restore_volumes()`: Docker volume restoration
+  - `export_stack_state()`: Current state export for migration
+
+- **`config.py`** additions:
+  - `export_configuration()`: Configuration file export
+  - `import_configuration()`: Configuration file import with validation
+  - `validate_backup_manifest()`: Backup integrity checking
+
+### Phase 6.2: Command Implementation
+- **`backup` Command**: 
+  - Orchestrate calls to `ctx.stack_manager.create_backup()`
+  - Support volume backup, compression, and custom output locations
+  - Create manifest files with checksums for integrity
+
+- **`restore` Command**:
+  - Call `ctx.stack_manager.restore_from_backup()`
+  - Validate backup integrity before restoration
+  - Handle conflicts with existing installations
+
+- **`migrate` Command**:
+  - Implement version detection and migration paths
+  - Support dry-run mode and automatic backups
+  - Handle configuration format changes across versions
+
+### Phase 6.3: Testing Requirements
+- **Unit Tests**: Test backup/restore logic with mocked file system operations
+- **Integration Tests**: Full backup and restore cycle validation
+- **Migration Tests**: Test upgrade paths between versions
 
 **Success Criteria:**
-- Commands provide a comprehensive and consistently formatted overview of the stack.
-- All output is styled through the `display` module.
-
-**Step 2.1: Enhance Core Modules**
-- **`docker_client.py`**:
-  - Add methods to aggregate data from Docker (stats, inspect, logs).
-  - Add methods for Ollama-specific health checks and extension status tracking.
-- **`schemas.py`**:
-  - Add Pydantic models for `ServiceStatus`, `ExtensionStatus`, `ResourceUsage`, etc.
-
-**Step 2.2: Command Implementation**
-- **Commands receive an `AppContext` (`ctx`)**.
-- **`status` command**:
-  - Call `ctx.docker_client.get_stack_status()`.
-  - Pass the resulting data model to `ctx.display.status_table()`.
-- **`logs` command**:
-  - Use `ctx.docker_client` to stream logs.
-  - Use `ctx.display` to format and print each log entry.
-- **`check` command**:
-  - Call `ctx.docker_client.run_environment_checks()`.
-  - Pass the results to `ctx.display.check_report()`.
-
-**Step 2.3: Testing**
-- **Unit Tests**: Test logic for `get_stack_status`, etc., by mocking Docker SDK responses.
-- **Integration Tests**: Verify the formatted output of `status`, `logs`, and `check` against a live stack.
-
-**Testable Outcomes:**
-1. `ollama-stack status`, `logs`, `check` commands are fully functional.
-2. The CLI provides a rich, consistently styled view of the stack's state.
+1. Complete backup and restore workflow including volumes
+2. Migration between configuration versions
+3. Backup integrity validation and error recovery
 
 ---
 
-## Phase 3: Resource Management
+## 🔄 Phase 7: Extension Management Interface (PLANNED)
 
-**Goal:** Implement robust commands for managing the stack's underlying resources, with a focus on safety and adherence to the established architecture.
+**Goal:** Complete the extension management system with full user interface.
 
-**Step 3.1: Enhance Core Modules (`stack_manager.py` and `docker_client.py`)**
--   **In `docker_client.py`**:
-    -   Implement a method `find_resources_by_label(label: str)` that returns a list of all containers, networks, and volumes matching the given Docker label.
-    -   Implement a method `remove_resources(resources: list, remove_volumes: bool)` that safely removes the provided resources.
-    -   Ensure the `pull_images()` method can show progress.
--   **In `stack_manager.py`**:
-    -   Implement an `update_stack()` method that orchestrates checking if the stack is running, stopping it if necessary, pulling images, and restarting.
-    -   Implement `cleanup_resources(force: bool, remove_volumes: bool)` and `uninstall_stack(...)` methods that use the new `docker_client` methods to discover and remove resources, handling all user-facing prompts and warnings.
+### Phase 7.1: Core Module Enhancements
+**Required Changes:**
 
-**Step 3.2: Command Implementation**
--   **`update` command**:
-    -   Call `ctx.stack_manager.update_stack()`.
-    -   Use `ctx.display` to report progress and results.
--   **`cleanup` and `uninstall` commands**:
-    -   Call `ctx.stack_manager.cleanup_resources(...)` or `uninstall_stack(...)`, passing the appropriate flags from the CLI.
-    -   Use `ctx.display` to present warnings and confirmation prompts.
+- **`stack_manager.py`** additions:
+  - `manage_extension_lifecycle()`: Start, stop, restart extensions
+  - `validate_extension_dependencies()`: Dependency checking
+  - `get_extension_status()`: Comprehensive extension status
 
-**Step 3.3: Testing**
--   **Unit Tests**:
-    -   Mock `docker_client` to test the orchestration logic in `stack_manager` (e.g., test that `update_stack` calls `stop` before `pull`).
-    -   Mock the Docker SDK to test that `find_resources_by_label` correctly filters resources.
--   **Integration Tests**:
-    -   Test that `update` pulls new images.
-    -   Test that `cleanup` with `--remove-volumes` correctly removes all resources, and without it, preserves volumes.
+- **`config.py`** enhancements:
+  - `update_extension_state()`: Manage enabled extensions list
+  - `validate_extension_config()`: Extension configuration validation
 
-**Testable Outcomes:**
-1.  All resource management commands are fully functional and architecturally sound.
-2.  The `cleanup` and `uninstall` commands include user safety prompts and respect the `--force` and `--remove-volumes` flags.
-3.  The CLI can successfully find and manage only those Docker resources that are labeled as part of the stack.
+### Phase 7.2: Command Implementation
+- **`extensions` Command Group**:
+  - `list`: Show available, enabled, and running extensions
+  - `info <name>`: Display detailed extension information
+  - `enable/disable <name>`: Extension state management
+  - `start/stop/restart <name>`: Extension lifecycle control
 
----
+### Phase 7.3: Testing Requirements
+- **Unit Tests**: Extension discovery, state management, and lifecycle logic
+- **Integration Tests**: Full extension lifecycle (enable → start → stop → disable)
+- **Dependency Tests**: Extension dependency resolution and validation
 
-## Phase 4: Backup and Migration
-
-**Goal:** Implement robust backup, restore, and migration capabilities.
-
-**Step 4.1: Enhance Core Modules**
-- **`docker_client.py`**: Add methods for creating and restoring volume backups.
-- **`config.py`**: Add methods for exporting and importing configuration files.
-
-**Step 4.2: Command Implementation**
-- **Commands receive an `AppContext` (`ctx`)**.
-- **`backup` command**: Orchestrate calls to `ctx.docker_client` and `ctx.config`.
-- **`restore` command**: Orchestrate calls to `ctx.docker_client` and `ctx.config`.
-- **`migrate` command**: Implement version-specific migration logic.
-
-**Step 4.3: Testing**
-- **Unit Tests**: Test backup/restore logic by mocking file system and Docker volume operations.
-- **Integration Tests**: Test a full backup and restore cycle.
-
-**Testable Outcomes:**
-1. `ollama-stack backup`, `restore`, `migrate` commands are fully functional.
+**Success Criteria:**
+1. Complete extension lifecycle management
+2. Dependency validation and compatibility checking
+3. Seamless integration with core stack operations
 
 ---
 
-## Phase 5: Extension Management
+## Quality Assurance Standards
 
-**Goal:** Implement the full lifecycle management for MCP extensions.
+All phases must meet these standards:
 
-**Step 5.1: Enhance Core Modules**
-- **`docker_client.py`**: Add methods to run Compose commands within an extension's directory.
-- **`config.py`**: Add methods to manage the `enabled_extensions` list in `.ollama-stack.json`.
-- **`schemas.py`**: Add `Extension` data schema.
+### Testing Requirements
+- **Unit Tests**: Comprehensive coverage with mocked dependencies
+- **Integration Tests**: End-to-end validation against live Docker
+- **Test Organization**: Parallel structure to source code in `tests/`
 
-**Step 5.2: Command Implementation**
-- **Commands receive an `AppContext` (`ctx`)**.
-- Implement all `extensions` subcommands by orchestrating calls to `ctx.docker_client` and `ctx.config`.
-- Use `ctx.display` to show all extension-related information.
+### Code Quality
+- **Formatting**: Black compliance for consistent style
+- **Linting**: Ruff validation for bugs and quality issues
+- **Architecture**: Follow AppContext and StackManager patterns
+- **Documentation**: Inline documentation and help text
 
-**Step 5.3: Testing**
-- **Unit Tests**: Test extension discovery, parsing, and state-change logic.
-- **Integration Tests**: Test the full `enable` -> `start` -> `stop` -> `disable` lifecycle for an extension.
-
-**Testable Outcomes:**
-1. All `ollama-stack extensions` subcommands are fully functional.
+### User Experience
+- **Consistent Output**: All formatting through `display.py`
+- **Error Handling**: Specific, actionable error messages
+- **Progress Reporting**: Clear progress indicators for long operations
+- **Safety**: Confirmation prompts for destructive operations
 
 ---
 
-## Phase 6: Finalization & Quality Assurance
+## Release Strategy
 
-**Goal:** Ensure the CLI is robust, has a polished user experience, and is ready for release.
+### v0.3.0: Resource Management (Next Release)
+- Complete Phase 5 implementation
+- Focus on `update` and `uninstall` commands
+- Enhanced Docker resource management
 
--   **Step 6.1: Refine `display.py`**:
-    -   Ensure all user-facing messages are clear and consistent.
-    -   Integrate `logging` with the `display` handler so the `--verbose` flag controls both `print` and `log` output.
--   **Step 6.2: Write Comprehensive Integration Tests**:
-    -   Write end-to-end tests for the primary user workflows (`start` -> `status` -> `stop`).
-    -   Write an integration test for the full extension lifecycle.
--   **Step 6.3: Update `README.md`**:
-    -   Replace the `README.md` content with instructions for the new Python CLI.
+### v0.4.0: Backup and Migration
+- Complete Phase 6 implementation
+- Focus on data protection and version migration
+- Enterprise-ready backup solutions
+
+### v0.5.0: Full Extension Management
+- Complete Phase 7 implementation
+- Full MCP extension ecosystem support
+- Extension marketplace integration
+
+### v1.0.0: Production Release
+- PyPI distribution
+- Long-term support commitment
+- Enterprise documentation and guides
+
+The ollama-stack CLI has successfully established a solid foundation with core functionality complete. The remaining phases will enhance the tool with advanced features for professional and enterprise use cases.

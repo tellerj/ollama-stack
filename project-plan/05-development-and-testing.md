@@ -1,54 +1,156 @@
 # 05: Development and Testing Strategy
 
-This document outlines non-functional requirements and development practices to ensure the CLI tool is robust, supportable, and of high quality.
+This document outlines the development practices and testing strategy that ensure the CLI tool is robust, supportable, and of high quality throughout its phased implementation.
 
-### 1. Testing and Validation Strategy
+## 1. Testing and Validation Strategy
 
-- **Principle**: The tool's correctness will be verified through an automated testing suite to ensure that new features or bug fixes do not break existing functionality.
-- **Implementation**:
-    - **Unit Tests**:
-        - `pytest` will be the testing framework.
-        - The `unittest.mock` library will be used to simulate external dependencies (e.g., Docker API, file system interactions), allowing for testing logic in isolation.
-        - Tests will be located in a top-level `tests/` directory.
-    - **Integration Tests**:
-        - A separate test suite will run CLI commands against a live, local Docker daemon.
-        - These tests will validate the end-to-end functionality of commands, confirming that the correct Docker resources are created and managed.
+- **Principle**: The tool's correctness is verified through a comprehensive automated testing suite that ensures new features or bug fixes do not break existing functionality.
 
-### 2. Diagnostics and Environment Validation
+### 1.1. Current Implementation ✅ (Phases 1-3)
+- **Unit Tests**: 296 tests with 100% pass rate
+    - `pytest` framework with extensive mocking using `unittest.mock`
+    - Tests simulate external dependencies (Docker API, file system interactions) for isolated testing
+    - Located in top-level `tests/` directory with parallel structure to source code
+    - Comprehensive coverage of all core modules: main, config, docker_client, stack_manager, etc.
+- **Integration Tests**: 11 tests with 100% pass rate
+    - Run CLI commands against live, local Docker daemon
+    - Validate end-to-end functionality confirming correct Docker resource management
+    - Test real service health checking and status reporting
+    - 4 tests appropriately skipped when Docker/services unavailable
 
-- **Principle**: The tool must provide a dedicated command to help users diagnose their environment and validate that all requirements are met. This prevents confusing runtime failures and reduces the support burden.
-- **Implementation**:
-    - **`check` Command**: The `ollama-stack check` command is the primary tool for this purpose.
-    - **Checks Performed**: The command will validate and report on:
-        - Docker daemon availability.
-        - `docker compose` plugin availability and version.
-        - NVIDIA Container Toolkit presence (on Linux).
-        - Connectivity to required image registries (e.g., Docker Hub).
-    - **Installation Scripts**: The `install.sh` and `install.ps1` scripts will perform a minimal check for a compatible Python version and `pip` before attempting to install the CLI.
+### 1.2. Future Testing Requirements 🔄 (Phases 5-7)
+- **Phase 5 (Resource Management)**: 
+    - Unit tests for update orchestration and resource cleanup logic
+    - Integration tests for full update and uninstall workflows
+    - Safety tests for volume preservation and confirmation prompts
+- **Phase 6 (Backup/Migration)**:
+    - Unit tests for backup/restore logic with mocked file system operations
+    - Integration tests for full backup and restore cycles
+    - Migration tests for upgrade paths between versions
+- **Phase 7 (Extension Management)**:
+    - Unit tests for extension discovery, state management, and lifecycle logic
+    - Integration tests for full extension lifecycle (enable → start → stop → disable)
+    - Dependency tests for extension dependency resolution and validation
 
-### 3. Logging and Debuggability
+## 2. Diagnostics and Environment Validation ✅ (Implemented)
 
-- **Principle**: The tool must provide a mechanism for users and developers to get detailed diagnostic information when troubleshooting issues.
-- **Implementation**:
-    - **Rich Logging**: The `rich` library will be used to implement a handler for Python's standard `logging` module, providing clear, color-coded output.
-    - **Logging Levels**: Standard levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`) will be used.
-    - **Global `--verbose` Flag**: A global `--verbose` flag will control the output verbosity.
-    - **Default Output**: Displays `INFO` level and higher.
-    - **Verbose Output**: Displays `DEBUG` level and higher, providing detailed diagnostics for troubleshooting and bug reports. 
+- **Principle**: The tool provides dedicated commands to help users diagnose their environment and validate that all requirements are met, preventing confusing runtime failures.
+- **Current Implementation**:
+    - **`check` Command**: Fully implemented as primary diagnostic tool
+    - **Checks Performed**: 
+        - Docker daemon availability and version
+        - Docker Compose plugin availability and version  
+        - Port availability (11434, 8080, 8200)
+        - Platform-specific requirements:
+          - Apple Silicon: Native Ollama installation
+          - NVIDIA: Container Toolkit presence
+        - Project configuration file validation
+    - **Installation Scripts**: `install-ollama-stack.sh` and `install-ollama-stack.ps1` verify Python 3.8+ and pip before installation
 
-### 4. Coding Standards and Quality
-- **Principle**: The codebase must be consistent, readable, and of high quality to facilitate long-term maintenance and contributions.
-- **Implementation**:
-    - **Formatter**: We will use `black` for deterministic, non-negotiable code formatting.
-    - **Linter**: We will use `ruff` to catch a wide range of potential bugs and style inconsistencies.
-    - **Configuration**: The settings for these tools will be managed in `pyproject.toml`.
-    - **Automation**: We will encourage the use of `pre-commit` hooks to automate these checks.
+## 3. Logging and Debuggability ✅ (Implemented)
 
-### 5. Definition of Done
-- **Principle**: Every new feature or fix must meet a consistent set of criteria to be considered complete, ensuring quality is built into the development process.
-- **Implementation**: A feature is "done" only when it:
-    - Is implemented according to the project's architecture.
-    - Has passing unit and integration tests.
-    - Includes clear user-facing documentation (e.g., help text).
-    - Adheres to all coding standards.
-    - Is documented in the `CHANGELOG.md` if it has a user-facing impact. 
+- **Principle**: The tool provides comprehensive diagnostic information for troubleshooting issues.
+- **Current Implementation**:
+    - **Rich Logging**: `rich` library integrated with Python's standard `logging` module for color-coded output
+    - **Logging Levels**: Standard levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`) used throughout
+    - **Global `--verbose` Flag**: Controls output verbosity across all commands
+      - **Default Output**: `INFO` level and higher with clean, user-friendly formatting
+      - **Verbose Output**: `DEBUG` level and higher for detailed diagnostics
+    - **Consistent Output**: All user-facing output managed through `display.py` module
+
+## 4. Coding Standards and Quality ✅ (Implemented)
+
+- **Principle**: The codebase maintains consistent style and high quality through automated tooling and established practices.
+- **Current Implementation**:
+    - **Formatter**: `black` for deterministic, non-negotiable code formatting
+    - **Linter**: `ruff` catches bugs, style inconsistencies, and quality issues
+    - **Configuration**: Settings managed in `pyproject.toml`
+    - **Developer Guidelines**: Comprehensive `CONTRIBUTING.md` with:
+      - Setup instructions and development workflow
+      - Code style requirements and tooling usage
+      - Testing standards and procedures
+      - Pull request and review process
+
+## 5. Unified Health Check System ✅ (Implemented)
+
+- **Principle**: Service health monitoring must be accurate, consistent, and reliable across all service types.
+- **Current Implementation**:
+    - **Centralized Logic**: `StackManager` provides unified health checking for all services
+    - **HTTP → TCP Fallback**: Robust connectivity testing with graceful degradation
+    - **Service-Specific Roles**:
+      - `DockerClient`: Container management without health checking
+      - `OllamaApiClient`: Rich native service status information
+      - `StackManager`: Unified health checks for consistent user experience
+    - **Consistent Methodology**: Eliminates discrepancies between Docker health and CLI status
+
+## 6. Definition of Done (Applied Throughout)
+
+- **Principle**: Every feature meets consistent criteria to ensure quality is built into the development process.
+- **Current Standard**: A feature is complete when it:
+    - Is implemented according to the project's architecture
+    - Has passing unit and integration tests
+    - Includes clear user-facing documentation (help text, README updates)
+    - Adheres to all coding standards (`black`, `ruff` compliance)
+    - Is documented in `CHANGELOG.md` for user-facing impact
+    - Follows the `AppContext` dependency injection pattern
+    - Uses `display.py` for all user output
+
+## 7. Architecture Validation ✅ (Proven)
+
+The v0.2.0 core implementation successfully validates the architectural decisions:
+
+- **AppContext Pattern**: Proven effective for dependency injection and service management
+- **StackManager Orchestration**: Central coordination simplifies command implementation
+- **Unified Health Checking**: Resolves previous inconsistencies in service status reporting
+- **Modular Design**: Clear separation of concerns enables maintainable and testable code
+- **Cross-Platform Support**: Installation scripts and platform detection work reliably
+
+## 8. Future Development Standards 🔄 (For Upcoming Phases)
+
+### 8.1. Phase 5 (Resource Management) Standards
+- **Safety First**: All destructive operations require confirmation prompts unless `--force` specified
+- **Progress Reporting**: Long-running operations (image pulls, cleanup) show clear progress
+- **Rollback Capability**: Update operations can be safely rolled back if issues occur
+- **Resource Discovery**: Automated discovery of stack-related Docker resources by labels
+
+### 8.2. Phase 6 (Backup/Migration) Standards
+- **Data Integrity**: All backups include checksums and integrity validation
+- **Version Compatibility**: Migration paths defined for all supported version combinations
+- **Backup Verification**: Restored configurations validated before marking operation complete
+- **Conflict Resolution**: Clear handling of conflicts during restore operations
+
+### 8.3. Phase 7 (Extension Management) Standards
+- **Dependency Management**: Extension dependencies checked and validated before operations
+- **State Consistency**: Extension state always consistent between registry and runtime
+- **Lifecycle Safety**: Extensions cannot be modified while running without explicit stop
+- **Compatibility Checking**: Extensions validated against current stack version
+
+## 9. Continuous Quality Assurance
+
+### 9.1. Current Achievements ✅
+- **Test Reliability**: All 307 tests pass consistently across development cycles
+- **Code Coverage**: Comprehensive unit test coverage of all critical paths
+- **Integration Validation**: Real-world testing ensures Docker operations work correctly
+- **User Experience**: Rich formatting and clear error messages provide excellent usability
+
+### 9.2. Ongoing Requirements 🔄
+- **Test Growth**: Test suite will expand with each phase, maintaining 100% pass rate
+- **Performance Monitoring**: Ensure new commands maintain acceptable performance
+- **Documentation Currency**: Keep all documentation synchronized with implementation
+- **Backward Compatibility**: Maintain compatibility with existing configurations and workflows
+
+## 10. Development Workflow
+
+### 10.1. Established Process ✅
+1. **Feature Planning**: Requirements documented in project-plan
+2. **Implementation**: Following AppContext and StackManager patterns
+3. **Testing**: Unit and integration tests for all features
+4. **Documentation**: README, CHANGELOG, and help text updates
+5. **Quality Gates**: Black formatting, Ruff linting, test validation
+
+### 10.2. Phase-Specific Considerations 🔄
+- **Phase 5**: Focus on Docker operation safety and user confirmation workflows
+- **Phase 6**: Emphasis on data integrity and backup validation procedures
+- **Phase 7**: Priority on extension compatibility and dependency management
+
+The development strategy ensures that each phase builds upon the solid foundation established in the initial implementation, maintaining the same high standards of quality, testing, and user experience. 
