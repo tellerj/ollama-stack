@@ -275,3 +275,164 @@ All phases must meet these standards:
 - Enterprise documentation and guides
 
 The ollama-stack CLI has successfully established a solid foundation with core functionality complete. The remaining phases will enhance the tool with advanced features for professional and enterprise use cases.
+
+---
+
+## 🔮 Phase 8: Infrastructure-Agnostic Update System (POST v1.0.0)
+
+**Goal:** Enhance the `update` command to achieve true infrastructure abstraction, making it consistent with all other CLI commands that handle multiple service types.
+
+### Phase 8.1: Architectural Analysis and Design
+
+**Current Limitation:** The `update` command only handles Docker services via `pull_images()`, breaking the CLI's infrastructure-agnostic philosophy.
+
+**Target Architecture:** Follow the same service-type filtering pattern as `start`, `stop`, and other commands:
+
+```python
+# Current (Docker-only)
+ctx.stack_manager.pull_images()  # Only Docker
+
+# Target (Infrastructure-agnostic)
+if docker_services:
+    ctx.stack_manager.update_docker_services()
+if native_services:
+    ctx.stack_manager.update_native_services(native_services)
+if remote_services:
+    ctx.stack_manager.update_remote_services(remote_services)
+```
+
+### Phase 8.2: Core Module Enhancements
+
+**Required Changes for Infrastructure Abstraction:**
+
+- **`stack_manager.py`** additions:
+  - `update_docker_services()`: Current Docker image pulling behavior (refactored)
+  - `update_native_services()`: Native service update mechanisms
+  - `update_remote_services()`: Remote service validation/refresh
+  - `get_updatable_services()`: Service discovery with update capability detection
+
+- **`ollama_api_client.py`** additions:
+  - `update_service()`: Update native Ollama installation using detected package manager
+  - `check_update_availability()`: Check for available updates to native services
+  - `detect_installation_method()`: Homebrew, direct install, package manager detection
+
+- **`docker_client.py`** enhancements:
+  - `pull_images_with_progress()`: Enhanced progress reporting for image updates
+  - `get_image_update_status()`: Check if newer images are available
+
+### Phase 8.3: Update Strategy Per Service Type
+
+**Docker Services (`docker`):**
+- ✅ Pull latest images (current behavior)
+- Enhanced: Progress reporting, selective image updates
+- Enhanced: Pre-update image comparison and change detection
+
+**Native Services (`native-api`):**
+- **Package Manager Detection**: 
+  - macOS: Homebrew (`brew upgrade ollama`)
+  - Linux: Package managers (`apt`, `yum`, `pacman`)
+  - Direct installs: Native update commands (`ollama update` if available)
+- **Permission Handling**: Detect when `sudo` required, provide clear instructions
+- **Version Compatibility**: Ensure updated services remain compatible with CLI
+- **Graceful Fallback**: Clear messaging when auto-update unavailable
+
+**Remote Services (`remote-api`):**
+- **Configuration Refresh**: Validate and refresh endpoint configurations
+- **API Compatibility Check**: Verify remote service API versions
+- **Authentication Refresh**: Update tokens/credentials if needed
+- **Connection Validation**: Test connectivity post-update
+
+### Phase 8.4: Technical Implementation Challenges
+
+**High Complexity Areas:**
+
+1. **Native Service Update Detection:**
+   ```python
+   # Complex platform/method detection
+   installation_method = detect_installation_method()
+   if installation_method == "homebrew":
+       update_cmd = ["brew", "upgrade", "ollama"]
+   elif installation_method == "direct":
+       update_cmd = ["ollama", "update"]  # if supported
+   else:
+       # Manual update instructions
+   ```
+
+2. **Cross-Service Compatibility:**
+   - Ensure Docker and native services remain compatible after updates
+   - Handle scenarios where some services update successfully, others fail
+   - Maintain dependency resolution across service boundaries
+
+3. **Permission and Security:**
+   - Handle system-level update permissions gracefully
+   - Provide clear user guidance when manual intervention required
+   - Secure handling of remote service credentials
+
+**Low Complexity Areas:**
+
+1. **Remote Service Updates:**
+   - Mostly configuration validation and endpoint testing
+   - Minimal system-level changes required
+
+### Phase 8.5: Enhanced User Experience
+
+**Improved Update Flow:**
+
+```bash
+# Current (Docker-only)
+$ ollama-stack update
+> Updating Docker services only...
+
+# Target (Infrastructure-agnostic)
+$ ollama-stack update
+> Updating Docker services: webui, mcp_proxy
+> Updating native services: ollama (Homebrew)
+> Validating remote services: external_api
+> All service types updated successfully
+```
+
+**Enhanced Filtering Options:**
+- `--docker-only`: Update only Docker services (current behavior)
+- `--native-only`: Update only native services  
+- `--remote-only`: Update only remote services
+- `--services` / `--extensions`: Maintain current filtering
+
+### Phase 8.6: Testing Requirements
+
+**Comprehensive Test Coverage:**
+
+- **Unit Tests**: Mock package managers, Docker operations, and remote APIs
+- **Integration Tests**: Test actual updates across service types
+- **Platform Tests**: Validate behavior on macOS, Linux, Windows
+- **Permission Tests**: Test scenarios requiring elevated privileges
+- **Failure Scenario Tests**: Mixed success/failure across service types
+- **Compatibility Tests**: Ensure post-update service interoperability
+
+### Phase 8.7: Migration Strategy
+
+**Backward Compatibility:**
+- Existing `update` behavior preserved as default for Docker-heavy stacks
+- New infrastructure-agnostic behavior enabled automatically based on service configuration
+- Clear user communication about enhanced capabilities
+
+**Phased Rollout:**
+1. Native service update detection (read-only)
+2. Native service update execution (with user confirmation)
+3. Remote service update capabilities
+4. Full infrastructure-agnostic update by default
+
+**Success Criteria:**
+1. `ollama-stack update` successfully handles ALL service types (docker, native-api, remote-api)
+2. Infrastructure-agnostic pattern matches `start`/`stop` command consistency
+3. Native service updates work across different installation methods and platforms
+4. Update command gracefully handles mixed-success scenarios
+5. User experience remains intuitive while providing enhanced capabilities
+6. Zero breaking changes to existing Docker-focused workflows
+
+---
+
+**Priority Level:** Enhancement (Post-v1.0.0)  
+**Complexity:** High  
+**Impact:** Architectural Consistency and Future-Proofing  
+
+This phase represents a significant architectural enhancement that will complete the CLI's infrastructure abstraction vision, ensuring that ALL commands treat service types consistently regardless of underlying technology.
