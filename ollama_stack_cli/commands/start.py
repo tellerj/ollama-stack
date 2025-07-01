@@ -136,11 +136,14 @@ def start_services_logic(app_context: AppContext, update: bool = False):
         log.info("All services are already running.")
         return True
 
-    # Pull images if requested - route to unified update logic
+    # Pull images if requested
     if update:
-        from .update import update_services_logic
         log.info("Running update before starting services...")
-        update_success = update_services_logic(app_context, services_only=True)
+        update_success = app_context.stack_manager.update_stack(
+            services_only=True, 
+            force_restart=True, 
+            called_from_start_restart=True
+        )
         if not update_success:
             log.error("Update failed, aborting start")
             return False

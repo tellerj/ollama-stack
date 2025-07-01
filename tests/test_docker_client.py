@@ -773,3 +773,488 @@ def test_check_and_pull_images_failure(mock_docker_from_env, mock_config, mock_d
     assert check.passed is False
     assert "Failed to pull" in check.details
     assert "Network error" in check.details
+
+
+# =============================================================================
+# Enhanced Resource Management Tests - Phase 5.1
+# =============================================================================
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_pull_images_with_progress_success(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests pull_images_with_progress successful execution with progress display."""
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout.readline.side_effect = [
+        "Pulling ollama (ollama/ollama:latest)...\n",
+        "Downloading 12345678 [====>    ] 45%\n",
+        "Downloaded layer\n",
+        "Pull complete for ollama\n",
+        ""
+    ]
+    mock_popen.return_value = mock_process
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    compose_files = ['docker-compose.yml']
+    
+    result = client.pull_images_with_progress(compose_files)
+    
+    assert result is True
+    mock_popen.assert_called_once()
+    expected_cmd = ["docker-compose", "-f", "docker-compose.yml", "pull"]
+    mock_popen.assert_called_with(
+        expected_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        encoding='utf-8'
+    )
+    
+    # Display methods should not be called (using logging instead)
+    assert not hasattr(mock_display, 'info') or not mock_display.info.called
+    assert not hasattr(mock_display, 'success') or not mock_display.success.called
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_pull_images_with_progress_default_compose_files(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests pull_images_with_progress uses default compose file when none provided."""
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout.readline.side_effect = [""]
+    mock_popen.return_value = mock_process
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.pull_images_with_progress()
+    
+    assert result is True
+    expected_cmd = ["docker-compose", "-f", "base.yml", "pull"]
+    mock_popen.assert_called_with(
+        expected_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        encoding='utf-8'
+    )
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_pull_images_with_progress_process_failure(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests pull_images_with_progress handles process failure."""
+    mock_process = MagicMock()
+    mock_process.returncode = 1
+    mock_process.stdout.readline.side_effect = [
+        "ERROR: Failed to pull image\n",
+        "Network connection failed\n",
+        ""
+    ]
+    mock_popen.return_value = mock_process
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.pull_images_with_progress()
+    
+    assert result is False
+    # Error logging should happen, but not through display methods
+    assert not hasattr(mock_display, 'error') or not mock_display.error.called
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_pull_images_with_progress_file_not_found(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests pull_images_with_progress handles docker-compose not found."""
+    mock_popen.side_effect = FileNotFoundError("docker-compose not found")
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.pull_images_with_progress()
+    
+    assert result is False
+    # Error logging should happen, but not through display methods  
+    assert not hasattr(mock_display, 'error') or not mock_display.error.called
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_pull_images_with_progress_unexpected_exception(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests pull_images_with_progress handles unexpected exceptions."""
+    mock_popen.side_effect = RuntimeError("Unexpected error")
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.pull_images_with_progress()
+    
+    assert result is False
+    # Error logging should happen, but not through display methods
+    assert not hasattr(mock_display, 'error') or not mock_display.error.called
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_pull_images_with_progress_error_in_output(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests pull_images_with_progress processes error lines in output."""
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout.readline.side_effect = [
+        "Pulling ollama...\n",
+        "ERROR: Network timeout\n",
+        "FAILED to download layer\n",
+        "Pull complete\n",
+        ""
+    ]
+    mock_popen.return_value = mock_process
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.pull_images_with_progress()
+    
+    # Should still return True if process exit code is 0
+    assert result is True
+
+@patch('docker.from_env')
+def test_remove_resources_no_docker_client(mock_docker_from_env, mock_config, mock_display):
+    """Tests remove_resources when Docker client is not available."""
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = None  # Simulate no Docker client
+    
+    result = client.remove_resources(remove_images=True)
+    
+    assert result is False
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_remove_resources_success_with_images(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests remove_resources successfully removes images."""
+    mock_docker_client = MagicMock()
+    
+    # Mock images with stack labels
+    mock_image1 = MagicMock()
+    mock_image1.id = "image1"
+    mock_image2 = MagicMock()
+    mock_image2.id = "image2"
+    mock_docker_client.images.list.return_value = [mock_image1, mock_image2]
+    mock_docker_from_env.return_value = mock_docker_client
+
+    # Mock subprocess for compose down --rmi all
+    mock_subprocess_run.return_value = MagicMock(returncode=0)
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.remove_resources(remove_images=True, force=False)
+    
+    assert result is True
+    
+    # Verify images were removed
+    mock_docker_client.images.list.assert_called_with(filters={"label": "ollama-stack.component"})
+    mock_docker_client.images.remove.assert_any_call("image1", force=False)
+    mock_docker_client.images.remove.assert_any_call("image2", force=False)
+    
+    # Verify compose down --rmi all was called
+    expected_cmd = ["docker-compose", "-f", "base.yml", "down", "--rmi", "all"]
+    mock_subprocess_run.assert_called_with(expected_cmd, capture_output=True, text=True)
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_remove_resources_success_without_images(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests remove_resources when remove_images=False."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.remove_resources(remove_images=False)
+    
+    assert result is True
+    
+    # Should not attempt to remove images
+    mock_docker_client.images.list.assert_not_called()
+    mock_docker_client.images.remove.assert_not_called()
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_remove_resources_image_removal_failure(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests remove_resources handles image removal failures gracefully."""
+    mock_docker_client = MagicMock()
+    
+    mock_image1 = MagicMock()
+    mock_image1.id = "image1"
+    mock_image2 = MagicMock()
+    mock_image2.id = "image2"
+    mock_docker_client.images.list.return_value = [mock_image1, mock_image2]
+    
+    # Make first image removal fail
+    mock_docker_client.images.remove.side_effect = [
+        Exception("Image in use"),
+        None  # Second removal succeeds
+    ]
+    mock_docker_from_env.return_value = mock_docker_client
+    mock_subprocess_run.return_value = MagicMock(returncode=0)
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.remove_resources(remove_images=True)
+    
+    # Should return False due to partial failure
+    assert result is False
+    
+    # But should continue and try to remove other images
+    assert mock_docker_client.images.remove.call_count == 2
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_remove_resources_compose_command_failure(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests remove_resources handles compose command failure."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.images.list.return_value = []
+    mock_docker_from_env.return_value = mock_docker_client
+
+    # Make compose command fail
+    mock_subprocess_run.return_value = MagicMock(returncode=1, stderr="Compose error")
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.remove_resources(remove_images=True)
+    
+    # Should still return True since we only warn about compose failures
+    assert result is True
+
+@patch('docker.from_env')
+def test_remove_resources_exception_handling(mock_docker_from_env, mock_config, mock_display):
+    """Tests remove_resources handles exceptions during image listing."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.images.list.side_effect = Exception("Docker API error")
+    mock_docker_from_env.return_value = mock_docker_client
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.remove_resources(remove_images=True)
+    
+    assert result is False
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_export_compose_config_to_file_success(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests export_compose_config successfully exports to file."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_subprocess_run.return_value = MagicMock(
+        returncode=0,
+        stdout="version: '3.8'\nservices:\n  ollama:\n    image: ollama/ollama\n"
+    )
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    with patch('builtins.open', mock_open()) as mock_file:
+        result = client.export_compose_config(output_file="config.yml")
+    
+    assert result is True
+    
+    # Verify file was written
+    mock_file.assert_called_once_with("config.yml", 'w')
+    handle = mock_file()
+    handle.write.assert_called_once_with("version: '3.8'\nservices:\n  ollama:\n    image: ollama/ollama\n")
+    
+    # Verify subprocess call
+    expected_cmd = ["docker-compose", "-f", "base.yml", "config"]
+    mock_subprocess_run.assert_called_with(expected_cmd, capture_output=True, text=True, encoding='utf-8')
+    
+    # Display methods should not be called (using logging instead)
+    assert not hasattr(mock_display, 'success') or not mock_display.success.called
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_export_compose_config_to_stdout_success(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests export_compose_config exports to stdout when no file specified."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    config_yaml = "version: '3.8'\nservices:\n  ollama:\n    image: ollama/ollama\n"
+    mock_subprocess_run.return_value = MagicMock(
+        returncode=0,
+        stdout=config_yaml
+    )
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    with patch('builtins.print') as mock_print:
+        result = client.export_compose_config()
+    
+    assert result is True
+    
+    # Verify output to stdout
+    mock_print.assert_called_once_with(config_yaml)
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_export_compose_config_custom_compose_files(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests export_compose_config with custom compose files."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="config")
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    compose_files = ['docker-compose.yml', 'docker-compose.override.yml']
+    
+    with patch('builtins.print'):
+        result = client.export_compose_config(compose_files=compose_files)
+    
+    assert result is True
+    
+    # Verify command with multiple files
+    expected_cmd = [
+        "docker-compose", 
+        "-f", "docker-compose.yml", 
+        "-f", "docker-compose.override.yml", 
+        "config"
+    ]
+    mock_subprocess_run.assert_called_with(expected_cmd, capture_output=True, text=True, encoding='utf-8')
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_export_compose_config_process_failure(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests export_compose_config handles subprocess failure."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_subprocess_run.return_value = MagicMock(
+        returncode=1,
+        stderr="Invalid compose file"
+    )
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.export_compose_config()
+    
+    assert result is False
+    # Error logging should happen, but not through display methods
+    assert not hasattr(mock_display, 'error') or not mock_display.error.called
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_export_compose_config_exception_handling(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests export_compose_config handles exceptions."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_subprocess_run.side_effect = Exception("Unexpected error")
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.export_compose_config()
+    
+    assert result is False
+    # Error logging should happen, but not through display methods
+    assert not hasattr(mock_display, 'error') or not mock_display.error.called
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_export_compose_config_file_write_permission_error(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests export_compose_config handles file permission errors."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="config")
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    with patch('builtins.open', side_effect=PermissionError("Permission denied")):
+        result = client.export_compose_config(output_file="config.yml")
+    
+    assert result is False
+    # Error logging should happen, but not through display methods
+    assert not hasattr(mock_display, 'error') or not mock_display.error.called
+
+# =============================================================================
+# Edge Cases and Error Scenarios for Phase 5.1 Methods
+# =============================================================================
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_pull_images_with_progress_empty_output(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests pull_images_with_progress with empty stdout."""
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout.readline.side_effect = [""]
+    mock_popen.return_value = mock_process
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.pull_images_with_progress()
+    
+    assert result is True
+
+@patch('subprocess.Popen')
+@patch('docker.from_env')
+def test_pull_images_with_progress_mixed_output_levels(mock_docker_from_env, mock_popen, mock_config, mock_display):
+    """Tests pull_images_with_progress processes different output types correctly."""
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout.readline.side_effect = [
+        "Pulling service1\n",
+        "Downloading layer abc123\n",
+        "Downloaded layer def456\n",
+        "Pull complete for service1\n",
+        "WARNING: Deprecated feature\n",
+        "INFO: Using cached layer\n",
+        ""
+    ]
+    mock_popen.return_value = mock_process
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    result = client.pull_images_with_progress()
+    
+    assert result is True
+
+@patch('docker.from_env')
+def test_remove_resources_force_removal(mock_docker_from_env, mock_config, mock_display):
+    """Tests remove_resources with force=True."""
+    mock_docker_client = MagicMock()
+    mock_image = MagicMock()
+    mock_image.id = "image1"
+    mock_docker_client.images.list.return_value = [mock_image]
+    mock_docker_from_env.return_value = mock_docker_client
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    with patch('subprocess.run') as mock_subprocess_run:
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
+        result = client.remove_resources(remove_images=True, force=True)
+    
+    assert result is True
+    mock_docker_client.images.remove.assert_called_with("image1", force=True)
+
+@patch('docker.from_env')
+def test_remove_resources_no_images_found(mock_docker_from_env, mock_config, mock_display):
+    """Tests remove_resources when no images with stack labels exist."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.images.list.return_value = []  # No images
+    mock_docker_from_env.return_value = mock_docker_client
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    with patch('subprocess.run') as mock_subprocess_run:
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
+        result = client.remove_resources(remove_images=True)
+    
+    assert result is True
+    # Should not attempt to remove any images
+    mock_docker_client.images.remove.assert_not_called()
+
+@patch('subprocess.run')
+@patch('docker.from_env')
+def test_export_compose_config_empty_config(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+    """Tests export_compose_config with empty configuration output."""
+    mock_docker_client = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="")
+
+    client = DockerClient(config=mock_config, display=mock_display)
+    
+    with patch('builtins.print') as mock_print:
+        result = client.export_compose_config()
+    
+    assert result is True
+    mock_print.assert_called_once_with("")

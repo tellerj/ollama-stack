@@ -1,8 +1,9 @@
 import pytest
 from unittest.mock import MagicMock, patch, call
+from pathlib import Path
 
 from ollama_stack_cli.stack_manager import StackManager
-from ollama_stack_cli.schemas import AppConfig, PlatformConfig, ServiceStatus, StackStatus, CheckReport, ResourceUsage, ServiceConfig
+from ollama_stack_cli.schemas import AppConfig, PlatformConfig, ServiceStatus, StackStatus, CheckReport, ResourceUsage, ServiceConfig, ExtensionsConfig
 
 # Fixtures
 
@@ -26,6 +27,8 @@ def mock_config():
         "webui": ServiceConfig(type="docker"),
         "mcp_proxy": ServiceConfig(type="docker"),
     }
+    # Mock extensions configuration
+    config.extensions = ExtensionsConfig(enabled=[])
     return config
 
 @pytest.fixture
@@ -772,6 +775,578 @@ def test_get_ollama_status_delegation(stack_manager, mock_ollama_api_client):
     
     assert result == mock_status
     mock_ollama_api_client.get_status.assert_called_once()
+
+
+# =============================================================================
+# Phase 5.1 New Methods Tests - Update Stack Orchestration
+# =============================================================================
+
+def test_update_stack_flag_validation_conflicting_flags(stack_manager):
+    """Tests update_stack returns False when both services_only and extensions_only are True."""
+    result = stack_manager.update_stack(services_only=True, extensions_only=True)
+    
+    assert result is False
+
+def test_update_stack_stack_not_running_services_only(stack_manager, mock_docker_client):
+    """Tests update_stack when stack is not running and services_only=True."""
+    # Mock stack not running
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    # Mock successful image pull
+    mock_docker_client.pull_images_with_progress.return_value = True
+    
+    # Mock get_compose_files
+    stack_manager.get_compose_files = MagicMock(return_value=['docker-compose.yml'])
+    
+    result = stack_manager.update_stack(services_only=True)
+    
+    assert result is True
+    mock_docker_client.pull_images_with_progress.assert_called_once_with(['docker-compose.yml'])
+
+def test_update_stack_stack_not_running_extensions_only(stack_manager):
+    """Tests update_stack when stack is not running and extensions_only=True."""
+    # Mock stack not running
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    # Mock no enabled extensions
+    stack_manager.config.extensions.enabled = []
+    
+    result = stack_manager.update_stack(extensions_only=True)
+    
+    assert result is True
+
+def test_update_stack_stack_not_running_both_services_and_extensions(stack_manager, mock_docker_client):
+    """Tests update_stack when stack is not running and updating both services and extensions."""
+    # Mock stack not running
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    # Mock successful image pull
+    mock_docker_client.pull_images_with_progress.return_value = True
+    stack_manager.get_compose_files = MagicMock(return_value=['docker-compose.yml'])
+    
+    # Mock enabled extensions
+    stack_manager.config.extensions.enabled = ['ext1', 'ext2']
+    
+    result = stack_manager.update_stack()  # Both services and extensions
+    
+    assert result is True
+    mock_docker_client.pull_images_with_progress.assert_called_once_with(['docker-compose.yml'])
+
+def test_update_stack_stack_running_no_force_restart(stack_manager):
+    """Tests update_stack returns False when stack is running and force_restart=False."""
+    # Mock stack running
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    
+    result = stack_manager.update_stack(force_restart=False)
+    
+    assert result is False
+
+def test_update_stack_stack_running_force_restart_called_from_start_restart(stack_manager, mock_docker_client):
+    """Tests update_stack inline update when called from start/restart commands."""
+    # Mock stack running
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    
+    # Mock successful image pull
+    mock_docker_client.pull_images_with_progress.return_value = True
+    stack_manager.get_compose_files = MagicMock(return_value=['docker-compose.yml'])
+    
+    result = stack_manager.update_stack(force_restart=True, called_from_start_restart=True)
+    
+    assert result is True
+    mock_docker_client.pull_images_with_progress.assert_called_once_with(['docker-compose.yml'])
+    # Should not call stop or start services during inline update
+
+def test_update_stack_stack_running_force_restart_direct_call(stack_manager, mock_docker_client):
+    """Tests update_stack stop and restart when called directly."""
+    # Mock stack running
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    
+    # Mock successful operations
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    mock_docker_client.pull_images_with_progress.return_value = True
+    stack_manager.get_compose_files = MagicMock(return_value=['docker-compose.yml'])
+    stack_manager.start_docker_services = MagicMock(return_value=True)
+    stack_manager.start_native_services = MagicMock(return_value=True)
+    
+    # Mock services configuration
+    stack_manager.config.services = {
+        'webui': MagicMock(type='docker'),
+        'ollama': MagicMock(type='native-api')
+    }
+    
+    result = stack_manager.update_stack(force_restart=True, called_from_start_restart=False)
+    
+    assert result is True
+    stack_manager.stop_docker_services.assert_called_once()
+    mock_docker_client.pull_images_with_progress.assert_called_once_with(['docker-compose.yml'])
+    stack_manager.start_docker_services.assert_called_once_with(['webui'])
+    stack_manager.start_native_services.assert_called_once_with(['ollama'])
+
+def test_update_stack_stop_services_failure(stack_manager):
+    """Tests update_stack handles stop services failure."""
+    # Mock stack running
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    
+    # Mock stop failure
+    stack_manager.stop_docker_services = MagicMock(return_value=False)
+    
+    result = stack_manager.update_stack(force_restart=True, called_from_start_restart=False)
+    
+    assert result is False
+
+def test_update_stack_pull_images_failure(stack_manager, mock_docker_client):
+    """Tests update_stack handles image pull failure."""
+    # Mock stack not running
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    # Mock pull failure
+    mock_docker_client.pull_images_with_progress.return_value = False
+    stack_manager.get_compose_files = MagicMock(return_value=['docker-compose.yml'])
+    
+    result = stack_manager.update_stack()
+    
+    assert result is False
+
+def test_update_stack_restart_docker_services_failure(stack_manager, mock_docker_client):
+    """Tests update_stack handles Docker service restart failure."""
+    # Mock stack running with direct call
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    mock_docker_client.pull_images_with_progress.return_value = True
+    stack_manager.get_compose_files = MagicMock(return_value=['docker-compose.yml'])
+    
+    # Mock Docker restart failure
+    stack_manager.start_docker_services = MagicMock(return_value=False)
+    
+    # Mock services configuration
+    stack_manager.config.services = {'webui': MagicMock(type='docker')}
+    
+    result = stack_manager.update_stack(force_restart=True, called_from_start_restart=False)
+    
+    assert result is False
+
+def test_update_stack_restart_native_services_failure(stack_manager, mock_docker_client):
+    """Tests update_stack handles native service restart failure."""
+    # Mock stack running with direct call
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    mock_docker_client.pull_images_with_progress.return_value = True
+    stack_manager.get_compose_files = MagicMock(return_value=['docker-compose.yml'])
+    stack_manager.start_docker_services = MagicMock(return_value=True)
+    
+    # Mock native restart failure
+    stack_manager.start_native_services = MagicMock(return_value=False)
+    
+    # Mock services configuration
+    stack_manager.config.services = {
+        'webui': MagicMock(type='docker'),
+        'ollama': MagicMock(type='native-api')
+    }
+    
+    result = stack_manager.update_stack(force_restart=True, called_from_start_restart=False)
+    
+    assert result is False
+
+def test_update_stack_exception_handling(stack_manager):
+    """Tests update_stack handles exceptions gracefully."""
+    # Mock stack running check to raise exception
+    stack_manager.is_stack_running = MagicMock(side_effect=Exception("Docker daemon not running"))
+    
+    result = stack_manager.update_stack()
+    
+    assert result is False
+
+def test_update_stack_extensions_with_enabled_list(stack_manager, mock_docker_client):
+    """Tests update_stack handles enabled extensions correctly."""
+    # Mock stack not running
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    # Mock successful image pull
+    mock_docker_client.pull_images_with_progress.return_value = True
+    stack_manager.get_compose_files = MagicMock(return_value=['docker-compose.yml'])
+    
+    # Mock enabled extensions
+    stack_manager.config.extensions.enabled = ['ext1', 'ext2', 'ext3']
+    
+    result = stack_manager.update_stack()
+    
+    assert result is True
+
+
+# =============================================================================
+# Phase 5.1 New Methods Tests - Resource Management
+# =============================================================================
+
+def test_find_resources_by_label_docker_client_unavailable(stack_manager, mock_docker_client):
+    """Tests find_resources_by_label when Docker client is unavailable."""
+    mock_docker_client.client = None
+    
+    result = stack_manager.find_resources_by_label("ollama-stack.component")
+    
+    expected = {"containers": [], "volumes": [], "networks": []}
+    assert result == expected
+
+def test_find_resources_by_label_successful_search(stack_manager, mock_docker_client):
+    """Tests find_resources_by_label successful resource discovery."""
+    # Mock Docker client and resources
+    mock_container = MagicMock()
+    mock_container.name = "ollama-stack-webui"
+    mock_volume = MagicMock()
+    mock_volume.name = "ollama-stack-data"
+    mock_network = MagicMock()
+    mock_network.name = "ollama-stack-network"
+    
+    mock_docker_client.client.containers.list.return_value = [mock_container]
+    mock_docker_client.client.volumes.list.return_value = [mock_volume]
+    mock_docker_client.client.networks.list.return_value = [mock_network]
+    
+    result = stack_manager.find_resources_by_label("ollama-stack.component")
+    
+    assert len(result["containers"]) == 1
+    assert len(result["volumes"]) == 1
+    assert len(result["networks"]) == 1
+    assert result["containers"][0] == mock_container
+    assert result["volumes"][0] == mock_volume
+    assert result["networks"][0] == mock_network
+
+def test_find_resources_by_label_with_value(stack_manager, mock_docker_client):
+    """Tests find_resources_by_label with specific label value."""
+    mock_docker_client.client.containers.list.return_value = []
+    mock_docker_client.client.volumes.list.return_value = []
+    mock_docker_client.client.networks.list.return_value = []
+    
+    result = stack_manager.find_resources_by_label("ollama-stack.component", "webui")
+    
+    # Verify the filter was constructed correctly
+    expected_filter = {"label": "ollama-stack.component=webui"}
+    mock_docker_client.client.containers.list.assert_called_once_with(all=True, filters=expected_filter)
+    mock_docker_client.client.volumes.list.assert_called_once_with(filters=expected_filter)
+    mock_docker_client.client.networks.list.assert_called_once_with(filters=expected_filter)
+
+def test_find_resources_by_label_docker_exception(stack_manager, mock_docker_client):
+    """Tests find_resources_by_label handles Docker exceptions."""
+    # Mock Docker calls to raise exception
+    mock_docker_client.client.containers.list.side_effect = Exception("Docker daemon not running")
+    
+    result = stack_manager.find_resources_by_label("ollama-stack.component")
+    
+    expected = {"containers": [], "volumes": [], "networks": []}
+    assert result == expected
+
+def test_find_resources_by_label_empty_results(stack_manager, mock_docker_client):
+    """Tests find_resources_by_label with no resources found."""
+    mock_docker_client.client.containers.list.return_value = []
+    mock_docker_client.client.volumes.list.return_value = []
+    mock_docker_client.client.networks.list.return_value = []
+    
+    result = stack_manager.find_resources_by_label("ollama-stack.component")
+    
+    expected = {"containers": [], "volumes": [], "networks": []}
+    assert result == expected
+
+def test_cleanup_resources_docker_client_unavailable(stack_manager, mock_docker_client):
+    """Tests cleanup_resources when Docker client is unavailable."""
+    mock_docker_client.client = None
+    
+    result = stack_manager.cleanup_resources()
+    
+    assert result is False
+
+def test_cleanup_resources_successful_cleanup(stack_manager):
+    """Tests cleanup_resources successful resource cleanup."""
+    # Mock stopped container, unused network, no volumes
+    mock_stopped_container = MagicMock()
+    mock_stopped_container.status = "exited"
+    mock_stopped_container.name = "stopped-container"
+    
+    mock_unused_network = MagicMock()
+    mock_unused_network.name = "ollama-stack-network"
+    
+    resources = {
+        "containers": [mock_stopped_container],
+        "volumes": [],
+        "networks": [mock_unused_network]
+    }
+    
+    stack_manager.find_resources_by_label = MagicMock(return_value=resources)
+    
+    result = stack_manager.cleanup_resources()
+    
+    assert result is True
+    mock_stopped_container.remove.assert_called_once_with(force=False)
+    mock_unused_network.remove.assert_called_once()
+
+def test_cleanup_resources_with_volumes(stack_manager):
+    """Tests cleanup_resources with volume removal enabled."""
+    mock_volume = MagicMock()
+    mock_volume.name = "data-volume"
+    
+    resources = {
+        "containers": [],
+        "volumes": [mock_volume],
+        "networks": []
+    }
+    
+    stack_manager.find_resources_by_label = MagicMock(return_value=resources)
+    
+    result = stack_manager.cleanup_resources(remove_volumes=True, force=True)
+    
+    assert result is True
+    mock_volume.remove.assert_called_once_with(force=True)
+
+def test_cleanup_resources_skips_system_networks(stack_manager):
+    """Tests cleanup_resources skips system networks."""
+    mock_bridge_network = MagicMock()
+    mock_bridge_network.name = "bridge"
+    mock_host_network = MagicMock()
+    mock_host_network.name = "host"
+    mock_custom_network = MagicMock()
+    mock_custom_network.name = "ollama-network"
+    
+    resources = {
+        "containers": [],
+        "volumes": [],
+        "networks": [mock_bridge_network, mock_host_network, mock_custom_network]
+    }
+    
+    stack_manager.find_resources_by_label = MagicMock(return_value=resources)
+    
+    result = stack_manager.cleanup_resources()
+    
+    assert result is True
+    # Should only remove custom network, not system networks
+    mock_bridge_network.remove.assert_not_called()
+    mock_host_network.remove.assert_not_called()
+    mock_custom_network.remove.assert_called_once()
+
+def test_cleanup_resources_handles_individual_failures(stack_manager):
+    """Tests cleanup_resources continues when individual resource removal fails."""
+    mock_failing_container = MagicMock()
+    mock_failing_container.status = "exited"
+    mock_failing_container.name = "failing-container"
+    mock_failing_container.remove.side_effect = Exception("Permission denied")
+    
+    mock_success_container = MagicMock()
+    mock_success_container.status = "exited"
+    mock_success_container.name = "success-container"
+    
+    resources = {
+        "containers": [mock_failing_container, mock_success_container],
+        "volumes": [],
+        "networks": []
+    }
+    
+    stack_manager.find_resources_by_label = MagicMock(return_value=resources)
+    
+    result = stack_manager.cleanup_resources()
+    
+    assert result is True
+    mock_failing_container.remove.assert_called_once_with(force=False)
+    mock_success_container.remove.assert_called_once_with(force=False)
+
+def test_cleanup_resources_running_containers_skipped(stack_manager):
+    """Tests cleanup_resources skips running containers."""
+    mock_running_container = MagicMock()
+    mock_running_container.status = "running"
+    mock_running_container.name = "running-container"
+    
+    mock_stopped_container = MagicMock()
+    mock_stopped_container.status = "exited"
+    mock_stopped_container.name = "stopped-container"
+    
+    resources = {
+        "containers": [mock_running_container, mock_stopped_container],
+        "volumes": [],
+        "networks": []
+    }
+    
+    stack_manager.find_resources_by_label = MagicMock(return_value=resources)
+    
+    result = stack_manager.cleanup_resources()
+    
+    assert result is True
+    mock_running_container.remove.assert_not_called()
+    mock_stopped_container.remove.assert_called_once_with(force=False)
+
+def test_cleanup_resources_exception_handling(stack_manager):
+    """Tests cleanup_resources handles exceptions during cleanup."""
+    stack_manager.find_resources_by_label = MagicMock(side_effect=Exception("Docker error"))
+    
+    result = stack_manager.cleanup_resources()
+    
+    assert result is False
+
+def test_cleanup_resources_no_resources_found(stack_manager):
+    """Tests cleanup_resources when no resources are found."""
+    resources = {"containers": [], "volumes": [], "networks": []}
+    stack_manager.find_resources_by_label = MagicMock(return_value=resources)
+    
+    result = stack_manager.cleanup_resources()
+    
+    assert result is True
+
+
+# =============================================================================
+# Phase 5.1 New Methods Tests - Stack Uninstall
+# =============================================================================
+
+@patch('ollama_stack_cli.stack_manager.Path')
+def test_uninstall_stack_complete_uninstall(mock_path, stack_manager, mock_docker_client):
+    """Tests uninstall_stack complete uninstall process."""
+    # Mock stack running and successful stops
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    stack_manager.stop_native_services = MagicMock(return_value=True)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    # Mock services configuration
+    stack_manager.config.services = {'ollama': MagicMock(type='native-api')}
+    
+    # Mock file operations
+    mock_env_file = MagicMock()
+    mock_config_file = MagicMock()
+    mock_env_file.exists.return_value = True
+    mock_config_file.exists.return_value = True
+    
+    mock_path.side_effect = lambda name: mock_env_file if name == ".env" else mock_config_file
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True
+    stack_manager.stop_docker_services.assert_called_once()
+    stack_manager.stop_native_services.assert_called_once_with(['ollama'])
+    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=False, force=False)
+    mock_docker_client.remove_resources.assert_called_once_with(remove_images=True, force=False)
+    mock_env_file.unlink.assert_called_once()
+    mock_config_file.unlink.assert_called_once()
+
+@patch('ollama_stack_cli.stack_manager.Path')
+def test_uninstall_stack_keep_config(mock_path, stack_manager, mock_docker_client):
+    """Tests uninstall_stack with keep_config=True."""
+    # Mock minimal setup
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(keep_config=True)
+    
+    assert result is True
+    # Should not call Path operations when keeping config
+    mock_path.assert_not_called()
+
+@patch('ollama_stack_cli.stack_manager.Path')
+def test_uninstall_stack_remove_volumes(mock_path, stack_manager, mock_docker_client):
+    """Tests uninstall_stack with remove_volumes=True."""
+    # Mock minimal setup
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    # Mock file operations
+    mock_env_file = MagicMock()
+    mock_config_file = MagicMock()
+    mock_env_file.exists.return_value = False
+    mock_config_file.exists.return_value = False
+    
+    mock_path.side_effect = lambda name: mock_env_file if name == ".env" else mock_config_file
+    
+    result = stack_manager.uninstall_stack(remove_volumes=True, force=True)
+    
+    assert result is True
+    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=True, force=True)
+    mock_docker_client.remove_resources.assert_called_once_with(remove_images=True, force=True)
+
+def test_uninstall_stack_stop_services_failure(stack_manager, mock_docker_client):
+    """Tests uninstall_stack continues when stop services fails."""
+    # Mock stack running with stop failures
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=False)
+    stack_manager.stop_native_services = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    # Mock services configuration  
+    stack_manager.config.services = {'ollama': MagicMock(type='native-api')}
+    
+    result = stack_manager.uninstall_stack(keep_config=True)
+    
+    assert result is True  # Should continue despite stop failures
+
+def test_uninstall_stack_cleanup_resources_failure(stack_manager, mock_docker_client):
+    """Tests uninstall_stack continues when resource cleanup fails."""
+    # Mock cleanup failure
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=False)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(keep_config=True)
+    
+    assert result is True  # Should continue despite cleanup failure
+
+def test_uninstall_stack_remove_images_failure(stack_manager, mock_docker_client):
+    """Tests uninstall_stack continues when image removal fails."""
+    # Mock image removal failure
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=False)
+    
+    result = stack_manager.uninstall_stack(keep_config=True)
+    
+    assert result is True  # Should continue despite image removal failure
+
+@patch('ollama_stack_cli.stack_manager.Path')
+def test_uninstall_stack_file_removal_failure(mock_path, stack_manager, mock_docker_client):
+    """Tests uninstall_stack handles file removal failures gracefully."""
+    # Mock minimal setup
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    # Mock file operations with failure
+    mock_env_file = MagicMock()
+    mock_env_file.exists.return_value = True
+    mock_env_file.unlink.side_effect = PermissionError("Permission denied")
+    
+    mock_config_file = MagicMock()
+    mock_config_file.exists.return_value = True
+    
+    mock_path.side_effect = lambda name: mock_env_file if name == ".env" else mock_config_file
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True  # Should succeed despite file removal failure
+
+@patch('ollama_stack_cli.stack_manager.Path')
+def test_uninstall_stack_files_not_exist(mock_path, stack_manager, mock_docker_client):
+    """Tests uninstall_stack when config files don't exist."""
+    # Mock minimal setup
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    # Mock files don't exist
+    mock_env_file = MagicMock()
+    mock_config_file = MagicMock()
+    mock_env_file.exists.return_value = False
+    mock_config_file.exists.return_value = False
+    
+    mock_path.side_effect = lambda name: mock_env_file if name == ".env" else mock_config_file
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True
+    mock_env_file.unlink.assert_not_called()
+    mock_config_file.unlink.assert_not_called()
+
+def test_uninstall_stack_exception_handling(stack_manager):
+    """Tests uninstall_stack handles exceptions gracefully."""
+    # Mock exception during is_stack_running
+    stack_manager.is_stack_running = MagicMock(side_effect=Exception("Docker daemon not running"))
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is False
 
 
 # Edge Cases and Error Handling Tests

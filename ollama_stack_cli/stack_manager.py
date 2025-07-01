@@ -10,6 +10,7 @@ from .ollama_api_client import OllamaApiClient
 from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus, EnvironmentCheck
 from .display import Display
 from typing import Optional, List
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -356,6 +357,328 @@ class StackManager:
             with socket.create_connection((host, port), timeout=timeout):
                 return True
         except (socket.error, socket.timeout, ConnectionRefusedError):
+            return False
+
+    # =============================================================================
+    # Update Orchestration
+    # =============================================================================
+
+    def update_stack(self, services_only: bool = False, extensions_only: bool = False, force_restart: bool = False, called_from_start_restart: bool = False) -> bool:
+        """
+        Orchestrates unified update flow for both services and extensions.
+        
+        This method centralizes the sophisticated update logic including:
+        - Flag validation
+        - State management (running vs stopped stack)
+        - Smart restart handling
+        - Extension framework integration
+        
+        Args:
+            services_only: Only update core stack services
+            extensions_only: Only update enabled extensions
+            force_restart: When True and stack is running, will stop/restart. 
+                          When called from start/restart commands, updates inline without restart.
+            called_from_start_restart: Explicit flag indicating call from start/restart commands
+            
+        Returns:
+            bool: True if update succeeded, False otherwise
+        """
+        # Validate flags
+        if services_only and extensions_only:
+            log.error("Cannot specify both services_only and extensions_only")
+            return False
+            
+        update_core = not extensions_only
+        update_extensions = not services_only
+        
+        try:
+            # Check current stack status
+            stack_running = self.is_stack_running()
+            restart_after_update = False
+            
+            # Handle running stack state
+            if stack_running and not force_restart:
+                log.info("Stack is currently running. Updates require stopping services.")
+                # Command layer should handle user confirmation and call with force_restart=True
+                return False
+            elif stack_running and force_restart:
+                if called_from_start_restart:
+                    # Inline update - don't stop/restart, just pull images
+                    log.info("Performing inline update for running services...")
+                    restart_after_update = False
+                else:
+                    # Direct update call - stop and restart
+                    log.info("Stopping services for update...")
+                    
+                    # Stop both Docker and native services (like stop command does)
+                    docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
+                    native_services = [name for name, conf in self.config.services.items() if conf.type == 'native-api']
+                    
+                    success = True
+                    if docker_services:
+                        if not self.stop_docker_services():
+                            log.error("Failed to stop Docker services")
+                            success = False
+                    
+                    if native_services:
+                        if not self.stop_native_services(native_services):
+                            log.error("Failed to stop native services")
+                            success = False
+                    
+                    if not success:
+                        log.error("Failed to stop services")
+                        return False
+                        
+                    restart_after_update = True
+            
+            # Update core services
+            if update_core:
+                log.info("Updating core stack services...")
+                compose_files = self.get_compose_files()
+                if not self.docker_client.pull_images_with_progress(compose_files):
+                    log.error("Failed to update core services")
+                    return False
+                log.info("Core services updated successfully")
+            
+            # Update extensions
+            if update_extensions:
+                enabled_extensions = self.config.extensions.enabled
+                if enabled_extensions:
+                    log.info(f"Updating {len(enabled_extensions)} enabled extensions...")
+                    for extension_name in enabled_extensions:
+                        log.info(f"Updating extension: {extension_name}")
+                        # TODO: Implement actual extension update logic
+                        log.warning(f"Extension update not yet implemented for: {extension_name}")
+                    log.info("All enabled extensions updated successfully")
+                else:
+                    log.info("No extensions enabled, skipping extension updates")
+            
+            # Restart if needed
+            if restart_after_update:
+                log.info("Restarting stack...")
+                docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
+                if docker_services and not self.start_docker_services(docker_services):
+                    log.error("Failed to restart Docker services after update")
+                    return False
+                
+                native_services = [name for name, conf in self.config.services.items() if conf.type == 'native-api']
+                if native_services and not self.start_native_services(native_services):
+                    log.error("Failed to restart native services after update")
+                    return False
+                    
+                log.info("Stack restarted successfully after update")
+            
+            # Log completion
+            if update_core and update_extensions:
+                log.info("Update completed successfully - core services and extensions are up to date")
+            elif update_core:
+                log.info("Core services update completed successfully")
+            else:
+                log.info("Extension updates completed successfully")
+                
+            return True
+            
+        except Exception as e:
+            log.error(f"Update failed: {e}")
+            return False
+
+    # =============================================================================
+    # Resource Management
+    # =============================================================================
+
+    def find_resources_by_label(self, label_key: str, label_value: Optional[str] = None) -> dict:
+        """
+        Finds all Docker resources (containers, volumes, networks) by label.
+        
+        Args:
+            label_key: The label key to search for (e.g., "ollama-stack.component")
+            label_value: Optional specific label value to match
+            
+        Returns:
+            dict: Dictionary with keys 'containers', 'volumes', 'networks' containing lists of resources
+        """
+        if not self.docker_client.client:
+            log.warning("Docker client not available")
+            return {"containers": [], "volumes": [], "networks": []}
+        
+        filter_dict = {f"label": label_key if label_value is None else f"{label_key}={label_value}"}
+        
+        try:
+            resources = {
+                "containers": [],
+                "volumes": [],
+                "networks": []
+            }
+            
+            # Find containers
+            containers = self.docker_client.client.containers.list(
+                all=True, 
+                filters=filter_dict
+            )
+            resources["containers"] = containers
+            log.debug(f"Found {len(containers)} containers with label {label_key}")
+            
+            # Find volumes
+            volumes = self.docker_client.client.volumes.list(
+                filters=filter_dict
+            )
+            resources["volumes"] = volumes
+            log.debug(f"Found {len(volumes)} volumes with label {label_key}")
+            
+            # Find networks
+            networks = self.docker_client.client.networks.list(
+                filters=filter_dict
+            )
+            resources["networks"] = networks
+            log.debug(f"Found {len(networks)} networks with label {label_key}")
+            
+            return resources
+            
+        except Exception as e:
+            log.error(f"Failed to find resources by label {label_key}: {e}")
+            return {"containers": [], "volumes": [], "networks": []}
+
+    def cleanup_resources(self, remove_volumes: bool = False, force: bool = False) -> bool:
+        """
+        Cleans up orphaned containers, networks, and optionally volumes for the stack.
+        
+        Args:
+            remove_volumes: Whether to also remove volumes (data destruction!)
+            force: Skip confirmation prompts for resource removal
+            
+        Returns:
+            bool: True if cleanup succeeded, False otherwise
+        """
+        if not self.docker_client.client:
+            log.warning("Docker client not available for cleanup")
+            return False
+        
+        try:
+            log.info("Finding stack resources for cleanup...")
+            resources = self.find_resources_by_label("ollama-stack.component")
+            
+            cleaned_count = 0
+            
+            # Clean up stopped containers
+            stopped_containers = [c for c in resources["containers"] if c.status != "running"]
+            if stopped_containers:
+                log.info(f"Removing {len(stopped_containers)} stopped containers...")
+                for container in stopped_containers:
+                    try:
+                        container.remove(force=force)
+                        log.debug(f"Removed container: {container.name}")
+                        cleaned_count += 1
+                    except Exception as e:
+                        log.warning(f"Failed to remove container {container.name}: {e}")
+            
+            # Clean up unused networks (excluding 'bridge', 'host', 'none')
+            unused_networks = [n for n in resources["networks"] if n.name not in ['bridge', 'host', 'none']]
+            if unused_networks:
+                log.info(f"Removing {len(unused_networks)} unused networks...")
+                for network in unused_networks:
+                    try:
+                        network.remove()
+                        log.debug(f"Removed network: {network.name}")
+                        cleaned_count += 1
+                    except Exception as e:
+                        log.warning(f"Failed to remove network {network.name}: {e}")
+            
+            # Clean up volumes if requested (DANGEROUS!)
+            if remove_volumes:
+                volumes = resources["volumes"]
+                if volumes:
+                    log.warning(f"Removing {len(volumes)} volumes - THIS WILL DELETE DATA!")
+                    for volume in volumes:
+                        try:
+                            volume.remove(force=force)
+                            log.debug(f"Removed volume: {volume.name}")
+                            cleaned_count += 1
+                        except Exception as e:
+                            log.warning(f"Failed to remove volume {volume.name}: {e}")
+            
+            if cleaned_count > 0:
+                log.info(f"Cleanup completed - removed {cleaned_count} resources")
+            else:
+                log.info("No resources found for cleanup")
+                
+            return True
+            
+        except Exception as e:
+            log.error(f"Resource cleanup failed: {e}")
+            return False
+
+    def uninstall_stack(self, remove_volumes: bool = False, keep_config: bool = False, force: bool = False) -> bool:
+        """
+        Completely uninstalls the stack including all resources and optionally configuration.
+        
+        Args:
+            remove_volumes: Whether to remove volumes (destroys persistent data!)
+            keep_config: Whether to preserve configuration files
+            force: Skip all confirmation prompts
+            
+        Returns:
+            bool: True if uninstall succeeded, False otherwise
+        """
+        try:
+            log.info("Beginning stack uninstall process...")
+            
+            # Step 1: Stop all services
+            log.info("Stopping all services...")
+            if self.is_stack_running():
+                if not self.stop_docker_services():
+                    log.warning("Failed to stop some Docker services")
+                
+                native_services = [name for name, conf in self.config.services.items() if conf.type == 'native-api']
+                if native_services:
+                    if not self.stop_native_services(native_services):
+                        log.warning("Failed to stop some native services")
+            
+            # Step 2: Remove containers and networks
+            log.info("Removing containers and networks...")
+            if not self.cleanup_resources(remove_volumes=remove_volumes, force=force):
+                log.warning("Failed to cleanup some resources")
+            
+            # Step 3: Remove Docker images
+            log.info("Removing Docker images...")
+            if not self.docker_client.remove_resources(remove_images=True, force=force):
+                log.warning("Failed to remove some Docker images")
+            
+            # Step 4: Clean up configuration files (unless keeping them)
+            if not keep_config:
+                log.info("Removing configuration files...")
+                try:
+                    # Remove .env file if it exists
+                    env_file = Path(".env")
+                    if env_file.exists():
+                        env_file.unlink()
+                        log.debug("Removed .env file")
+                    
+                    # Remove .ollama-stack.json if it exists
+                    config_file = Path(".ollama-stack.json")
+                    if config_file.exists():
+                        config_file.unlink()
+                        log.debug("Removed .ollama-stack.json file")
+                        
+                except Exception as e:
+                    log.warning(f"Failed to remove some configuration files: {e}")
+            else:
+                log.info("Preserving configuration files as requested")
+            
+            # Step 5: Log completion
+            if remove_volumes:
+                log.warning("Stack uninstalled completely including all data volumes")
+            else:
+                log.info("Stack uninstalled successfully (volumes preserved)")
+                
+            if keep_config:
+                log.info("Configuration files preserved for future reinstallation")
+            else:
+                log.info("Configuration files removed - clean uninstall completed")
+                
+            return True
+            
+        except Exception as e:
+            log.error(f"Stack uninstall failed: {e}")
             return False
 
  

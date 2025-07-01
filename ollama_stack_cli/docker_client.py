@@ -397,6 +397,177 @@ class DockerClient:
         except Exception:
             return False
 
+    # =============================================================================
+    # Enhanced Resource Management  
+    # =============================================================================
+
+    def pull_images_with_progress(self, compose_files: Optional[list[str]] = None) -> bool:
+        """
+        Pulls the latest images with enhanced progress display and error handling.
+        
+        Args:
+            compose_files: List of compose files to use
+            
+        Returns:
+            bool: True if pull succeeded, False otherwise
+        """
+        if compose_files is None:
+            compose_files = [self.config.docker_compose_file]
+        
+        base_cmd = ["docker-compose"]
+        for file in compose_files:
+            base_cmd.extend(["-f", file])
+        
+        full_cmd = base_cmd + ["pull"]
+        
+        try:
+            log.info("Pulling latest images...")
+            log.info("Downloading latest Docker images for stack services...")
+            
+            process = subprocess.Popen(
+                full_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                encoding='utf-8',
+            )
+            
+            # Stream output with progress indication
+            for line in iter(process.stdout.readline, ''):
+                line = line.strip()
+                if line:
+                    # Show pull progress for user feedback
+                    if "Pulling" in line or "Downloading" in line or "Downloaded" in line:
+                        log.debug(f"Pull progress: {line}")
+                    elif "Pull complete" in line:
+                        log.info(f"Image pull completed: {line}")
+                    elif "ERROR" in line.upper() or "FAILED" in line.upper():
+                        log.error(f"Pull error: {line}")
+            
+            process.wait()
+            
+            if process.returncode == 0:
+                log.info("All Docker images updated successfully")
+                return True
+            else:
+                log.error("Failed to pull some Docker images")
+                log.error(f"Docker pull failed with exit code {process.returncode}")
+                return False
+                
+        except FileNotFoundError:
+            log.error("docker-compose command not found. Is it installed and in your PATH?")
+            return False
+        except Exception as e:
+            log.error(f"An unexpected error occurred during image pull: {e}")
+            return False
+
+    def remove_resources(self, remove_images: bool = False, force: bool = False) -> bool:
+        """
+        Removes Docker resources for the stack.
+        
+        Args:
+            remove_images: Whether to also remove Docker images
+            force: Force removal without confirmation
+            
+        Returns:
+            bool: True if removal succeeded, False otherwise
+        """
+        if not self.client:
+            log.warning("Docker client not available for resource removal")
+            return False
+        
+        try:
+            success = True
+            
+            # Remove images if requested
+            if remove_images:
+                log.info("Removing Docker images...")
+                try:
+                    # Get images used by our stack
+                    images = self.client.images.list(filters={"label": "ollama-stack.component"})
+                    for image in images:
+                        try:
+                            self.client.images.remove(image.id, force=force)
+                            log.debug(f"Removed image: {image.id}")
+                        except Exception as e:
+                            log.warning(f"Failed to remove image {image.id}: {e}")
+                            success = False
+                            
+                    # Also try to remove by compose file references
+                    log.info("Removing compose-referenced images...")
+                    compose_files = [self.config.docker_compose_file]
+                    base_cmd = ["docker-compose"]
+                    for file in compose_files:
+                        base_cmd.extend(["-f", file])
+                    
+                    rmi_cmd = base_cmd + ["down", "--rmi", "all"]
+                    process = subprocess.run(rmi_cmd, capture_output=True, text=True)
+                    if process.returncode != 0:
+                        log.warning(f"Failed to remove some images via compose: {process.stderr}")
+                        
+                except Exception as e:
+                    log.error(f"Failed to remove Docker images: {e}")
+                    success = False
+                    
+            return success
+            
+        except Exception as e:
+            log.error(f"Resource removal failed: {e}")
+            return False
+
+    def export_compose_config(self, output_file: Optional[str] = None, compose_files: Optional[list[str]] = None) -> bool:
+        """
+        Exports the resolved Docker Compose configuration.
+        
+        Args:
+            output_file: File to write the config to (optional)
+            compose_files: List of compose files to merge
+            
+        Returns:
+            bool: True if export succeeded, False otherwise
+        """
+        if compose_files is None:
+            compose_files = [self.config.docker_compose_file]
+        
+        base_cmd = ["docker-compose"]
+        for file in compose_files:
+            base_cmd.extend(["-f", file])
+        
+        config_cmd = base_cmd + ["config"]
+        
+        try:
+            log.info("Exporting Docker Compose configuration...")
+            
+            process = subprocess.run(
+                config_cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8'
+            )
+            
+            if process.returncode == 0:
+                config_yaml = process.stdout
+                
+                if output_file:
+                    # Write to file
+                    with open(output_file, 'w') as f:
+                        f.write(config_yaml)
+                    log.info(f"Configuration exported to: {output_file}")
+                else:
+                    # Return as string/print to stdout
+                    print(config_yaml)
+                    log.info("Configuration exported to stdout")
+                
+                return True
+            else:
+                log.error(f"Failed to export configuration: {process.stderr}")
+                return False
+                
+        except Exception as e:
+            log.error(f"Configuration export failed: {e}")
+            return False
+
 
 
 

@@ -128,14 +128,12 @@ sequenceDiagram
 
 ## Key Architecture Points
 
-- **Unified Update Logic**: Single implementation handles both direct calls and integration with start/restart
+- **Thin Command Layer**: Handles CLI flags, user confirmation, and context detection
+- **StackManager Orchestration**: Core update logic lives in StackManager.update_stack()
 - **Context-Aware Execution**: Detects if called from start/restart to avoid double-prompting users  
 - **Smart State Management**: Handles running vs stopped stack states intelligently
 - **Platform Detection**: Uses detected platform (Apple/NVIDIA/CPU) for appropriate compose files
 - **Extension Ready**: Framework in place for extension updates when extension manager is available
-- **Error Isolation**: Graceful failure handling with clear user feedback and recovery instructions
-- **Service Delegation**: Updates flow through StackManager → DockerClient → Docker API for consistency
-- **Logging vs Display**: Internal flow uses logging, user interactions use display module
 """
 
 import typer
@@ -164,109 +162,28 @@ def update_services_logic(
     """
     ctx = app_context
     
-    # Determine what to update
-    if services_only and extensions_only:
-        log.error("Cannot specify both --services and --extensions flags")
-        return False
-        
-    update_core = not extensions_only
-    update_extensions = not services_only
+    # Check current stack status
+    stack_running = ctx.stack_manager.is_stack_running()
+    force_restart = False
     
-    try:
-        # Check current stack status
-        stack_running = ctx.stack_manager.is_stack_running()
-        restart_after_update = False
-        
-        # If stack is running, prompt for confirmation to stop (unless called from start/restart)
-        if stack_running:
-            # Check if we're being called from start/restart by looking at call stack
-            import inspect
-            calling_functions = [frame.function for frame in inspect.stack()]
-            called_from_start_restart = any(func in calling_functions for func in ['start_services_logic', 'restart_services_logic'])
-            
-            if called_from_start_restart:
-                # When called from start/restart, don't prompt - just update images inline
-                # and don't restart afterwards (start/restart will handle that)
-                log.info("Updating images for running services...")
-                restart_after_update = False
-            else:
-                # When called directly, prompt for confirmation
-                log.info("Stack is currently running. Updates require stopping services.")
-                if typer.confirm("Stop the stack to proceed with update?"):
-                    log.info("Stopping services...")
-                    # Use the same logic as the stop command
-                    from .stop import stop_services_logic
-                    stop_services_logic(ctx)
-                    restart_after_update = True
-                else:
-                    log.info("Update cancelled")
-                    return False
-        
-        # Update core services
-        if update_core:
-            log.info("Updating core stack services...")
-            log.info("Pulling latest images for core services...")
-            pull_result = ctx.stack_manager.pull_images()
-            
-            if pull_result:
-                log.info("Core services updated successfully")
-            else:
-                log.error("Failed to update core services")
-                return False
-        
-        # Update enabled extensions
-        if update_extensions:
-            enabled_extensions = ctx.config.app_config.extensions.enabled
-            if enabled_extensions:
-                log.info(f"Updating {len(enabled_extensions)} enabled extensions...")
-                extension_failures = []
-                
-                for extension_name in enabled_extensions:
-                    try:
-                        log.info(f"Updating extension: {extension_name}")
-                        log.info(f"Pulling images for {extension_name}...")
-                        # TODO: Implement extension image pulling when extension manager is available
-                        # For now, we'll skip but log that extensions need updating
-                        log.warning(f"Extension update not yet implemented for: {extension_name}")
-                    except Exception as e:
-                        extension_failures.append(f"{extension_name}: {str(e)}")
-                        log.error(f"Failed to update extension {extension_name}: {str(e)}")
-                
-                if extension_failures:
-                    log.warning(f"Some extensions failed to update: {len(extension_failures)}")
-                    for failure in extension_failures:
-                        log.error(f"  - {failure}")
-                else:
-                    log.info("All enabled extensions updated successfully")
-            else:
-                log.info("No extensions enabled, skipping extension updates")
-        
-        # Restart stack if it was running before and we stopped it (not when called from start/restart)
-        if restart_after_update:
-            log.info("Restarting stack...")
-            log.info("Starting services...")
-            from .start import start_services_logic
-            start_result = start_services_logic(ctx)
-            
-            if start_result:
-                log.info("Stack restarted successfully after update")
-            else:
-                log.error("Stack updated but failed to restart. Run 'ollama-stack start' manually.")
-                return False
-        
-        # Summary
-        if update_core and update_extensions:
-            log.info("Update completed successfully - core services and extensions are up to date")
-        elif update_core:
-            log.info("Core services update completed successfully")
-        elif update_extensions:
-            log.info("Extension updates completed successfully")
-            
-        return True
-        
-    except Exception as e:
-        log.error(f"Update failed: {str(e)}")
-        return False
+    # Handle running stack state with CLI-specific logic
+    if stack_running:
+        # When called directly (not from start/restart), prompt for confirmation
+        log.info("Stack is currently running. Updates require stopping services.")
+        if typer.confirm("Stop the stack to proceed with update?"):
+            log.info("Proceeding with update...")
+            force_restart = True
+        else:
+            log.info("Update cancelled")
+            return False
+    
+    # Delegate to StackManager for orchestration
+    return ctx.stack_manager.update_stack(
+        services_only=services_only,
+        extensions_only=extensions_only, 
+        force_restart=force_restart,
+        called_from_start_restart=False  # Always False when called directly
+    )
 
 
 def update(
