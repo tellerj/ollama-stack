@@ -88,14 +88,14 @@ class DockerClient:
         """Starts the services using Docker Compose."""
         if services:
             # Start only specific services
-            self._run_compose_command(["up", "-d"] + services, compose_files)
+            return self._run_compose_command(["up", "-d"] + services, compose_files)
         else:
             # Start all services (backward compatibility)
-            self._run_compose_command(["up", "-d"], compose_files)
+            return self._run_compose_command(["up", "-d"], compose_files)
 
     def stop_services(self, compose_files: Optional[list[str]] = None):
         """Stops the services using Docker Compose."""
-        self._run_compose_command(["down"], compose_files)
+        return self._run_compose_command(["down"], compose_files)
 
     # =============================================================================
     # Container Status and Monitoring
@@ -119,7 +119,7 @@ class DockerClient:
             containers = self.client.containers.list(
                 all=True, filters={"label": "ollama-stack.component"}
             )
-        except docker.errors.APIError as e:
+        except (docker.errors.APIError, ConnectionResetError, ConnectionError) as e:
             log.error("Could not connect to Docker to get container status.", exc_info=True)
             raise
 
@@ -131,9 +131,15 @@ class DockerClient:
         for service_name in service_names:
             container = container_map.get(service_name)
             if container:
-                usage = self._get_resource_usage(container)
-                # Health checking is now handled by StackManager's unified system
-                ports = self._parse_ports(container.ports)
+                try:
+                    usage = self._get_resource_usage(container)
+                    # Health checking is now handled by StackManager's unified system
+                    ports = self._parse_ports(container.ports)
+                except (docker.errors.APIError, ConnectionResetError, ConnectionError) as e:
+                    log.debug(f"Failed to get resource usage for container {service_name}: {e}")
+                    # Use empty resource usage if API fails
+                    usage = ResourceUsage()
+                    ports = {}
                 
                 status = ServiceStatus(
                     name=service_name,
@@ -185,7 +191,7 @@ class DockerClient:
                 cpu_percent=round(cpu_percent, 2),
                 memory_mb=round(memory_mb, 2)
             )
-        except (KeyError, docker.errors.APIError):
+        except (KeyError, docker.errors.APIError, ConnectionResetError, ConnectionError):
             return ResourceUsage()
 
     # =============================================================================

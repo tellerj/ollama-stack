@@ -192,14 +192,29 @@ class StackManager:
         # Check Docker services
         docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
         if docker_services:
-            statuses = self.get_docker_services_status(docker_services)
-            running_docker = [status.name for status in statuses if status.is_running]
+            try:
+                statuses = self.get_docker_services_status(docker_services)
+                running_docker = [status.name for status in statuses if status.is_running]
+            except (ConnectionResetError, ConnectionError) as e:
+                log.debug(f"Docker API connection error while checking service status: {e}")
+                # Fall back to basic Docker client check
+                try:
+                    if self.docker_client.is_stack_running():
+                        # If we can't get detailed status but stack is running, assume all Docker services are running
+                        running_docker = docker_services
+                except Exception:
+                    # If all Docker API calls fail, assume no Docker services are running
+                    log.debug("All Docker API calls failed, assuming no Docker services running")
+                    running_docker = []
         
         # Check native services  
         for service_name, service_config in self.config.services.items():
             if service_config.type == "native-api":
-                if self.is_native_service_running(service_name):
-                    running_native.append(service_name)
+                try:
+                    if self.is_native_service_running(service_name):
+                        running_native.append(service_name)
+                except Exception as e:
+                    log.debug(f"Failed to check native service {service_name}: {e}")
         
         return running_docker, running_native
 
