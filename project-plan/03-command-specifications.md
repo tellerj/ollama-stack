@@ -26,8 +26,9 @@ Before executing any command, the CLI application performs pre-flight checks to 
 - `check`: Verifies environment requirements and Docker setup
 
 ### 2.3. Resource Management Commands 🔄 (Planned)
+- `install`: Initialize fresh stack configuration and prepare environment
 - `update`: Pulls the latest Docker images for the stack and enabled extensions
-- `uninstall`: Decommissions all Docker resources to prepare for tool removal
+- `uninstall`: Clean up all stack resources (containers, networks, images, optionally volumes/config)
 - *(Note: cleanup functionality integrated as `--remove-volumes` flag on uninstall)*
 
 ### 2.4. Backup and Migration Commands 🔄 (Planned)
@@ -135,20 +136,36 @@ Before executing any command, the CLI application performs pre-flight checks to 
     7. Report final status and any next steps needed
 
 ### `uninstall`
-- **Purpose**: Decommission all Docker resources to prepare for tool removal via `pip`.
+- **Purpose**: Clean up all stack resources (containers, networks, images, and optionally volumes/config).
 - **Options**:
-    - `--remove-volumes`: Also remove core and extension Docker volumes (destructive)
-    - `-f`, `--force`: Skip confirmation prompts
-    - `--keep-config`: Preserve `.env` and `.ollama-stack.json` files
+    - `--remove-volumes`: Also remove Docker volumes (destroys models, conversations, databases)
+    - `--remove-config`: Also remove configuration directory (`~/.ollama-stack/`)
+    - `-a`, `--all`: Remove everything (equivalent to `--remove-volumes --remove-config`)
+    - `--force`: Skip all confirmation prompts
 - **Behavior**:
-    1. Display clear warning that this is a destructive operation
-    2. Find all Docker containers, networks, and volumes with `ollama-stack.installation` label
-    3. Show summary of resources to be removed
-    4. Prompt for confirmation unless `--force` is used
-    5. Stop and remove all found containers and networks
-    6. If `--remove-volumes` specified, remove all found volumes with additional confirmation
-    7. If `--keep-config` not specified, offer to remove configuration files
-    8. Display final message instructing user to run `pip uninstall ollama-stack-cli`
+    1. If `--all` specified, enable both `--remove-volumes` and `--remove-config` flags
+    2. Display warning about resource removal (escalated warning for `--remove-volumes` or `--all`)
+    3. Find all Docker containers, networks, and images with stack labels
+    4. Show summary of resources to be removed
+    5. Prompt for confirmation unless `--force` is used
+    6. Stop and remove all found containers and networks
+    7. Remove Docker images for stack and extensions
+    8. If `--remove-volumes` specified, remove all volumes with additional confirmation
+    9. If `--remove-config` specified, remove `~/.ollama-stack/` directory
+    10. Display completion message and note: "To remove CLI tool: `pip uninstall ollama-stack-cli`"
+
+### `install`
+- **Purpose**: Initialize fresh stack configuration and prepare environment for first use.
+- **Options**:
+    - `--force`: Overwrite existing configuration files without prompting
+- **Behavior**:
+    1. Check if configuration directory (`~/.ollama-stack/`) already exists
+    2. If exists and not `--force`, prompt user whether to overwrite or preserve existing config
+    3. Create `~/.ollama-stack/` directory structure
+    4. Generate fresh `.env` file with default values (PROJECT_NAME, WEBUI_SECRET_KEY)
+    5. Create default `.ollama-stack.json` with platform configurations and empty extensions
+    6. Run environment checks (`check` command logic) to validate setup
+    7. Display success message with next steps: "Run `ollama-stack start` to begin"
 
 ---
 
