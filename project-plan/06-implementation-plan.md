@@ -103,7 +103,7 @@ The CLI tool is **functionally complete for core operations** and production-rea
 
 ---
 
-## 🔄 Phase 5: Resource Management Commands (PLANNED)
+## 🔄 Phase 5: Resource Management Commands (PARTIAL)
 
 **Goal:** Implement robust commands for managing stack resources and configuration lifecycle with safety controls.
 
@@ -112,14 +112,14 @@ The CLI tool is **functionally complete for core operations** and production-rea
 
 - **`stack_manager.py`** enhancements:
   - `install_stack()`: Create fresh configuration directory and default files
-  - `update_stack()`: Orchestrate stop → pull → restart workflow
-  - `find_resources_by_label()`: Discover stack-related Docker resources
-  - `cleanup_resources()`: Safe resource removal with confirmation prompts
-  - `uninstall_stack()`: Stack resource cleanup workflow (not CLI removal)
+  - ✅ `update_stack()`: Orchestrate stop → pull → restart workflow *(COMPLETED)*
+  - ✅ `find_resources_by_label()`: Discover stack-related Docker resources *(COMPLETED)*
+  - ✅ `cleanup_resources()`: Safe resource removal with confirmation prompts *(COMPLETED)*
+  - ✅ `uninstall_stack()`: Stack resource cleanup workflow (not CLI removal) *(COMPLETED)*
 
 - **`docker_client.py`** additions:
-  - `pull_images_with_progress()`: Image pulling with progress display
-  - `remove_resources()`: Safe resource removal with volume handling
+  - ✅ `pull_images_with_progress()`: Image pulling with progress display *(COMPLETED)*
+  - ✅ `remove_resources()`: Safe resource removal with volume handling *(COMPLETED)*
   - `export_compose_config()`: Configuration export for backups
 
 ### Phase 5.2: Command Implementation
@@ -128,28 +128,32 @@ The CLI tool is **functionally complete for core operations** and production-rea
   - Use `log.info()` for status updates and completion messages
   - Integrate with existing environment check logic from `check` command
 
-- **`update` Command**:
+- ✅ **`update` Command** *(COMPLETED)*:
   - Call `ctx.stack_manager.update_stack()` with service/extension filtering
   - Use `log.info()` for status updates and `ctx.display.progress()` for image pulling
   - Use `log.warning()` for user confirmation prompts when services are running
+  - **Implementation Complete**: Full Docker image updates, selective updates (--services/--extensions), smart state management
+  - **Testing Complete**: 11 unit tests, 13 stack manager tests, 21 integration tests, comprehensive coverage
 
-- **`uninstall` Command**:
+- ✅ **`uninstall` Command** *(COMPLETED)*:
   - Call `ctx.stack_manager.uninstall_stack()` with appropriate flags
   - Use `log.warning()` and `log.error()` for warnings and confirmations
   - Use `log.info()` for final completion instructions
   - Support `--remove-volumes`, `--remove-config`, `--all`/`-a`, and `--force` options
+  - **Implementation Complete**: Full Docker resource cleanup, volume removal, config removal
+  - **Testing Complete**: 20 unit tests, 20 integration tests, comprehensive coverage
 
 ### Phase 5.3: Testing Requirements
 - **Unit Tests**: Mock Docker operations to test orchestration logic, config file creation/removal
-- **Integration Tests**: Test full install, update, and uninstall workflows against live Docker
-- **Safety Tests**: Verify volume preservation and confirmation prompts
+- ✅ **Integration Tests**: Test full install, update, and uninstall workflows against live Docker *(COMPLETED - update/uninstall)*
+- ✅ **Safety Tests**: Verify volume preservation and confirmation prompts *(COMPLETED - update/uninstall)*
 - **Config Path Tests**: Verify `~/.ollama-stack/` directory handling (fix current directory bug)
 
 **Success Criteria:**
 1. `ollama-stack install` creates fresh configuration and validates environment
-2. `ollama-stack update` successfully updates all stack components
-3. `ollama-stack uninstall` safely removes stack resources with proper confirmations
-4. Volume preservation works correctly without `--remove-volumes` flag
+2. ✅ `ollama-stack update` successfully updates all stack components *(COMPLETED)*
+3. ✅ `ollama-stack uninstall` safely removes stack resources with proper confirmations *(COMPLETED)*
+4. ✅ Volume preservation works correctly without `--remove-volumes` flag *(COMPLETED)*
 5. Configuration directory handling works correctly in `~/.ollama-stack/` (not current directory)
 
 ---
@@ -265,8 +269,10 @@ All phases must meet these standards:
 ## Release Strategy
 
 ### v0.3.0: Resource Management (Next Release)
-- Complete Phase 5 implementation
-- Focus on `update` and `uninstall` commands
+- Near-complete Phase 5 implementation
+- ✅ `update` command complete with selective updates and comprehensive testing
+- ✅ `uninstall` command complete with comprehensive testing
+- Focus on `install` command completion
 - Enhanced Docker resource management
 
 ### v0.4.0: Backup and Migration
