@@ -7,6 +7,7 @@ from .commands.restart import restart
 from .commands.status import status
 from .commands.logs import logs
 from .commands.check import check
+from .commands.install import install
 from .commands.update import update
 from .commands.uninstall import uninstall
 
@@ -21,6 +22,7 @@ app.command()(restart)
 app.command()(status)
 app.command()(logs)
 app.command()(check)
+app.command()(install)
 app.command()(update)
 app.command()(uninstall)
 

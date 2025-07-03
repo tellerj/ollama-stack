@@ -5,9 +5,12 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import docker
+import secrets
+import string
+import typer
 from .docker_client import DockerClient
 from .ollama_api_client import OllamaApiClient
-from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus, EnvironmentCheck
+from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus, EnvironmentCheck, PlatformConfig
 from .display import Display
 from typing import Optional, List
 from pathlib import Path
@@ -106,6 +109,117 @@ class StackManager:
             report.checks.extend(native_checks)
         
         return report
+
+    # =============================================================================
+    # Installation Management
+    # =============================================================================
+
+    def install_stack(self, force: bool = False) -> bool:
+        """
+        Initialize fresh stack configuration and prepare environment for first use.
+        
+        Args:
+            force: Whether to overwrite existing configuration without prompting
+            
+        Returns:
+            bool: True if installation succeeded, False otherwise
+        """
+        from .config import DEFAULT_CONFIG_DIR, DEFAULT_ENV_FILE, DEFAULT_CONFIG_FILE, save_config
+        
+        log.info("Initializing fresh stack configuration...")
+        
+        # Check if configuration directory already exists
+        if DEFAULT_CONFIG_DIR.exists():
+            log.info(f"Configuration directory already exists: {DEFAULT_CONFIG_DIR}")
+            
+            if not force:
+                # Check if there are any existing config files
+                existing_files = []
+                if DEFAULT_CONFIG_FILE.exists():
+                    existing_files.append(".ollama-stack.json")
+                if DEFAULT_ENV_FILE.exists():
+                    existing_files.append(".env")
+                
+                if existing_files:
+                    self.display.panel(
+                        f"Found existing configuration files: {', '.join(existing_files)}\n\n"
+                        f"This will overwrite your current configuration.",
+                        "Configuration Already Exists",
+                        border_style="yellow"
+                    )
+                    
+                    if not typer.confirm("Do you want to overwrite the existing configuration?"):
+                        self.display.error("Installation cancelled by user")
+                        log.info("Installation cancelled - existing configuration preserved")
+                        return False
+        
+        try:
+            # Create the configuration directory
+            DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            log.info(f"Created configuration directory: {DEFAULT_CONFIG_DIR}")
+            
+            # Generate a secure secret key for WebUI
+            secure_key = self._generate_secure_key()
+            
+            # Create a fresh AppConfig with platform-specific configurations
+            app_config = AppConfig()
+            app_config.project_name = "ollama-stack"
+            app_config.webui_secret_key = secure_key
+            
+            # Add platform configurations
+            app_config.platform = {
+                "apple": PlatformConfig(compose_file="docker-compose.apple.yml"),
+                "nvidia": PlatformConfig(compose_file="docker-compose.nvidia.yml"),
+            }
+            
+            # Save the configuration
+            save_config(self.display, app_config, DEFAULT_CONFIG_FILE, DEFAULT_ENV_FILE)
+            log.info("Created default configuration files")
+            
+            # Display success message
+            self.display.success("Configuration files created successfully!")
+            self.display.panel(
+                f"Configuration directory: {DEFAULT_CONFIG_DIR}\n"
+                f"Config file: {DEFAULT_CONFIG_FILE}\n"
+                f"Environment file: {DEFAULT_ENV_FILE}",
+                "Installation Summary",
+                border_style="green"
+            )
+            
+            # Run environment checks to validate the setup
+            log.info("Running environment validation checks...")
+            self.display.print("\n[bold]Validating Environment:[/bold]")
+            
+            check_report = self.run_environment_checks(fix=False)
+            self.display.check_report(check_report)
+            
+            # Check if all critical checks passed
+            failed_checks = [check for check in check_report.checks if not check.passed]
+            if failed_checks:
+                log.warning(f"Some environment checks failed: {len(failed_checks)} issues found")
+                self.display.panel(
+                    "Some environment checks failed. You may need to address these issues before starting the stack.\n"
+                    "Run `ollama-stack check --fix` to attempt automatic fixes.",
+                    "Environment Issues Detected",
+                    border_style="yellow"
+                )
+            else:
+                log.info("All environment checks passed")
+                self.display.success("Environment validation completed - all checks passed!")
+            
+            return True
+            
+        except Exception as e:
+            error_msg = f"Failed to create configuration: {str(e)}"
+            log.error(error_msg, exc_info=True)
+            self.display.error(error_msg)
+            return False
+    
+    def _generate_secure_key(self, length: int = 64) -> str:
+        """Generate a cryptographically secure random key for WebUI authentication."""
+        # Use letters, digits, and some safe symbols
+        alphabet = string.ascii_letters + string.digits + "-_"
+        return ''.join(secrets.choice(alphabet) for _ in range(length))
 
     # =============================================================================
     # Service Management Delegation

@@ -260,4 +260,99 @@ def test_start_command_partial_service_failures_edge_case(MockAppContext, mock_a
     assert result.exit_code == 0
     # Should only start services that aren't running
     mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['mcp_proxy'])
-    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama']) 
+    mock_app_context.stack_manager.start_native_services.assert_called_once_with(['ollama'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_shows_security_warning_with_placeholder_key(MockAppContext, mock_app_context):
+    """Tests that start command shows security warning when using placeholder webui_secret_key."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.get_running_services_summary.return_value = ([], [])
+    mock_app_context.stack_manager.config.services = {'webui': MagicMock(type='docker')}
+    mock_app_context.config.fell_back_to_defaults = False
+    
+    # Set placeholder security key
+    mock_app_context.config.app_config.webui_secret_key = "your-secret-key-here"
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    
+    # Verify security warning panel is displayed
+    mock_app_context.display.panel.assert_called_once_with(
+        "⚠️  Warning: Using default configuration with placeholder security keys\n\n"
+        "📋 Run 'ollama-stack install' to generate a unique, secure configuration",
+        "Security Warning",
+        border_style="yellow"
+    )
+    
+    # Normal start operations should still occur
+    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_no_security_warning_with_secure_key(MockAppContext, mock_app_context):
+    """Tests that start command does not show security warning when using secure webui_secret_key."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.get_running_services_summary.return_value = ([], [])
+    mock_app_context.stack_manager.config.services = {'webui': MagicMock(type='docker')}
+    mock_app_context.config.fell_back_to_defaults = False
+    
+    # Set secure key (not placeholder)
+    mock_app_context.config.app_config.webui_secret_key = "g0erkHL34Mcy0JNLxI_fSh1VOZEEf7uzGIOW_FIkEn6PF4ym8ipyUQi3NC9cfHG5"
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    
+    # Verify security warning panel is NOT displayed
+    mock_app_context.display.panel.assert_not_called()
+    
+    # Normal start operations should still occur
+    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_no_security_warning_without_webui_secret_key_attribute(MockAppContext, mock_app_context):
+    """Tests that start command handles missing webui_secret_key attribute gracefully."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.get_running_services_summary.return_value = ([], [])
+    mock_app_context.stack_manager.config.services = {'webui': MagicMock(type='docker')}
+    mock_app_context.config.fell_back_to_defaults = False
+    
+    # Remove webui_secret_key attribute entirely
+    if hasattr(mock_app_context.config.app_config, 'webui_secret_key'):
+        delattr(mock_app_context.config.app_config, 'webui_secret_key')
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    
+    # Verify security warning panel is NOT displayed
+    mock_app_context.display.panel.assert_not_called()
+    
+    # Normal start operations should still occur
+    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui'])
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_start_command_security_warning_with_config_fallback(MockAppContext, mock_app_context):
+    """Tests that start command shows both config fallback message and security warning when appropriate."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.is_stack_running.return_value = False
+    mock_app_context.stack_manager.get_running_services_summary.return_value = ([], [])
+    mock_app_context.stack_manager.config.services = {'webui': MagicMock(type='docker')}
+    mock_app_context.config.fell_back_to_defaults = True  # Config fallback
+    
+    # Set placeholder security key
+    mock_app_context.config.app_config.webui_secret_key = "your-secret-key-here"
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    
+    # Both config fallback logic and security warning should be triggered
+    mock_app_context.display.panel.assert_called_once_with(
+        "⚠️  Warning: Using default configuration with placeholder security keys\n\n"
+        "📋 Run 'ollama-stack install' to generate a unique, secure configuration",
+        "Security Warning",
+        border_style="yellow"
+    )
+    
+    # Normal start operations should still occur
+    mock_app_context.stack_manager.start_docker_services.assert_called_once_with(['webui']) 

@@ -106,6 +106,16 @@ def start_services_logic(app_context: AppContext, update: bool = False):
     if app_context.config.fell_back_to_defaults:
         log.info("Configuration file appears to be empty or corrupted. Using default settings.")
     
+    # Check if using default configuration with placeholder security keys
+    config = app_context.config.app_config
+    if hasattr(config, 'webui_secret_key') and config.webui_secret_key == "your-secret-key-here":
+        app_context.display.panel(
+            "⚠️  Warning: Using default configuration with placeholder security keys\n\n"
+            "📋 Run 'ollama-stack install' to generate a unique, secure configuration",
+            "Security Warning",
+            border_style="yellow"
+        )
+    
     # Filter services by type - access through stack_manager's config
     services_config = app_context.stack_manager.config.services
     docker_services = [name for name, conf in services_config.items() if conf.type == 'docker']

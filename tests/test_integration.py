@@ -1980,4 +1980,1085 @@ def test_uninstall_complete_system_state_verification():
         assert not is_ollama_native_service_running(), "Native Ollama should be stopped"
     
     # The system should be in a clean state as if the stack was never installed
-    # (except for Docker images which may persist) 
+    # (except for Docker images which may persist)
+
+
+# --- Install Command Integration Tests ---
+
+@pytest.mark.integration
+def test_install_command_fresh_system_creates_config_files():
+    """
+    Verifies that install command creates actual configuration files on filesystem
+    with correct content and structure.
+    
+    Tests the most basic user workflow: fresh install on clean system.
+    """
+    import os
+    import json
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    env_file = os.path.join(config_dir, ".env")
+    
+    # Ensure clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    # Uninstall may succeed or return 1 if nothing to clean - both are fine
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Run install command with force flag to skip prompts
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0, f"Install should succeed, got: {result.stdout}"
+    
+    # Verify directory was actually created on filesystem
+    assert os.path.exists(config_dir), "Config directory should be created"
+    assert os.path.isdir(config_dir), "Config path should be a directory"
+    
+    # Verify config files were actually created
+    assert os.path.exists(config_file), "JSON config file should be created"
+    assert os.path.exists(env_file), "Environment file should be created"
+    
+    # Verify config file has valid JSON content
+    with open(config_file, 'r') as f:
+        config_data = json.load(f)
+    
+    # Verify essential configuration content in JSON file
+    assert "platform" in config_data, "Should have platform configurations"
+    assert "apple" in config_data["platform"], "Should have Apple platform config"
+    assert "nvidia" in config_data["platform"], "Should have NVIDIA platform config"
+    assert "services" in config_data, "Should have services configuration"
+    assert "docker_compose_file" in config_data, "Should have compose file config"
+    assert "extensions" in config_data, "Should have extensions configuration"
+    
+    # Verify platform config details
+    assert config_data["platform"]["apple"]["compose_file"] == "docker-compose.apple.yml"
+    assert config_data["platform"]["nvidia"]["compose_file"] == "docker-compose.nvidia.yml"
+    
+    # Verify environment file exists and contains expected content
+    assert os.path.exists(env_file), "Environment file should be created"
+    assert os.path.getsize(env_file) > 0, "Environment file should not be empty"
+    
+    # Read and verify environment file content
+    with open(env_file, 'r') as f:
+        env_content = f.read()
+    
+    assert "PROJECT_NAME='ollama-stack'" in env_content, "Environment file should contain project name"
+    assert "WEBUI_SECRET_KEY=" in env_content, "Environment file should contain WebUI secret key"
+    
+    # Extract and verify the secret key from env file
+    for line in env_content.strip().split('\n'):
+        if line.startswith("WEBUI_SECRET_KEY="):
+            secret_key = line.split("=", 1)[1]
+            # Remove quotes if present
+            if secret_key.startswith("'") and secret_key.endswith("'"):
+                secret_key = secret_key[1:-1]
+            assert len(secret_key) == 64, f"Secret key should be 64 characters, got {len(secret_key)}"
+            # Verify it's not the placeholder value
+            assert secret_key != "your-secret-key-here", "Should not have placeholder secret key"
+            break
+    else:
+        assert False, "WEBUI_SECRET_KEY not found in environment file"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_command_generates_unique_secure_keys():
+    """
+    Verifies that install command generates cryptographically secure, unique keys
+    for WebUI authentication.
+    
+    Tests actual key generation and uniqueness across multiple installs.
+    """
+    import os
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    env_file = os.path.join(config_dir, ".env")
+    
+    def extract_secret_key(env_file_path):
+        """Extract the secret key from the environment file."""
+        with open(env_file_path, 'r') as f:
+            content = f.read()
+        for line in content.strip().split('\n'):
+            if line.startswith("WEBUI_SECRET_KEY="):
+                key = line.split("=", 1)[1]
+                # Remove quotes if present
+                if key.startswith("'") and key.endswith("'"):
+                    key = key[1:-1]
+                return key
+        raise AssertionError("WEBUI_SECRET_KEY not found in environment file")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # First install
+    result1 = runner.invoke(app, ["install", "--force"])
+    assert result1.exit_code == 0
+    
+    key1 = extract_secret_key(env_file)
+    
+    # Remove and install again
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed"
+    
+    result2 = runner.invoke(app, ["install", "--force"])
+    assert result2.exit_code == 0
+    
+    key2 = extract_secret_key(env_file)
+    
+    # Verify keys are different (cryptographically secure)
+    assert key1 != key2, "Each install should generate unique keys"
+    assert len(key1) == 64, f"Keys should be 64 characters, got {len(key1)}"
+    assert len(key2) == 64, f"Keys should be 64 characters, got {len(key2)}"
+    
+    # Verify keys are not placeholder values
+    assert key1 != "your-secret-key-here", "Should not have placeholder secret key"
+    assert key2 != "your-secret-key-here", "Should not have placeholder secret key"
+    
+    # Verify keys only contain safe characters
+    import string
+    safe_chars = set(string.ascii_letters + string.digits + "-_")
+    assert set(key1).issubset(safe_chars), "Key should only contain safe characters"
+    assert set(key2).issubset(safe_chars), "Key should only contain safe characters"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_command_creates_platform_specific_configurations():
+    """
+    Verifies that install command creates proper platform-specific configurations
+    for Apple Silicon and NVIDIA GPU support.
+    
+    Tests actual configuration content for cross-platform compatibility.
+    """
+    import os
+    import json
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Run install with force flag
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0
+    
+    # Verify platform configurations are created
+    with open(config_file, 'r') as f:
+        config_data = json.load(f)
+    
+    platform_config = config_data.get("platform", {})
+    
+    # Verify Apple platform configuration
+    assert "apple" in platform_config, "Should have Apple platform configuration"
+    apple_config = platform_config["apple"]
+    assert apple_config.get("compose_file") == "docker-compose.apple.yml", \
+        "Apple config should reference correct compose file"
+    
+    # Verify NVIDIA platform configuration
+    assert "nvidia" in platform_config, "Should have NVIDIA platform configuration"
+    nvidia_config = platform_config["nvidia"]
+    assert nvidia_config.get("compose_file") == "docker-compose.nvidia.yml", \
+        "NVIDIA config should reference correct compose file"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_command_runs_environment_validation():
+    """
+    Verifies that install command runs environment checks and provides
+    appropriate feedback about system readiness.
+    
+    Tests integration with environment validation system.
+    """
+    import os
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Run install with force flag
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0
+    
+    output_lower = result.stdout.lower()
+    
+    # Should show environment validation activity
+    assert "validating environment" in output_lower or "environment check" in output_lower, \
+        "Should indicate environment validation is running"
+    
+    # Should check Docker (whether available or not)
+    assert "docker" in output_lower, "Should check Docker daemon status"
+    
+    # Should provide completion feedback
+    assert any(keyword in output_lower for keyword in [
+        "installation summary", "config", "created", "completed"
+    ]), "Should provide installation completion feedback"
+    
+    # If Docker is available, should show more positive results
+    if is_docker_available():
+        # May show success or specific issues, but should not crash
+        assert "error" not in output_lower or "environment issues" in output_lower
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"]) 
+
+
+@pytest.mark.integration
+def test_install_over_existing_configuration_user_confirms():
+    """
+    Verifies install behavior when configuration already exists and user confirms overwrite.
+    
+    Tests actual user interaction flow and file replacement.
+    """
+    import os
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    env_file = os.path.join(config_dir, ".env")
+    
+    def extract_secret_key(env_file_path):
+        """Extract the secret key from the environment file."""
+        with open(env_file_path, 'r') as f:
+            content = f.read()
+        for line in content.strip().split('\n'):
+            if line.startswith("WEBUI_SECRET_KEY="):
+                key = line.split("=", 1)[1]
+                # Remove quotes if present
+                if key.startswith("'") and key.endswith("'"):
+                    key = key[1:-1]
+                return key
+        raise AssertionError("WEBUI_SECRET_KEY not found in environment file")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # First install with force flag
+    result1 = runner.invoke(app, ["install", "--force"])
+    assert result1.exit_code == 0
+    
+    # Get original key from environment file
+    original_key = extract_secret_key(env_file)
+    
+    # Second install with user confirmation (simulate user typing 'y')
+    result2 = runner.invoke(app, ["install"], input="y\n")
+    assert result2.exit_code == 0
+    
+    output_lower = result2.stdout.lower()
+    assert "configuration already exists" in output_lower or "existing configuration" in output_lower, \
+        "Should warn about existing configuration"
+    
+    # Verify new configuration was actually created
+    new_key = extract_secret_key(env_file)
+    
+    # Should have generated new key (overwritten config)
+    assert new_key != original_key, "Should generate new configuration"
+    assert len(new_key) == 64, f"New key should be valid, got length {len(new_key)}"
+    assert new_key != "your-secret-key-here", "Should not have placeholder secret key"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_over_existing_configuration_user_declines():
+    """
+    Verifies install behavior when configuration exists and user declines overwrite.
+    
+    Tests preservation of existing configuration when user chooses not to overwrite.
+    """
+    import os
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    env_file = os.path.join(config_dir, ".env")
+    
+    def extract_secret_key(env_file_path):
+        """Extract the secret key from the environment file."""
+        with open(env_file_path, 'r') as f:
+            content = f.read()
+        for line in content.strip().split('\n'):
+            if line.startswith("WEBUI_SECRET_KEY="):
+                key = line.split("=", 1)[1]
+                # Remove quotes if present
+                if key.startswith("'") and key.endswith("'"):
+                    key = key[1:-1]
+                return key
+        raise AssertionError("WEBUI_SECRET_KEY not found in environment file")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # First install with force flag
+    result1 = runner.invoke(app, ["install", "--force"])
+    assert result1.exit_code == 0
+    
+    # Get original configuration
+    original_key = extract_secret_key(env_file)
+    original_env_modified_time = os.path.getmtime(env_file)
+    original_config_modified_time = os.path.getmtime(config_file)
+    
+    # Second install with user declining (simulate user typing 'n')
+    result2 = runner.invoke(app, ["install"], input="n\n")
+    assert result2.exit_code == 0, "Should exit cleanly when user declines"
+    
+    output_lower = result2.stdout.lower()
+    assert "cancelled" in output_lower or "preserved" in output_lower, \
+        "Should indicate cancellation or preservation"
+    
+    # Verify original configuration is preserved
+    assert os.path.exists(config_file), "Original config file should still exist"
+    assert os.path.exists(env_file), "Original env file should still exist"
+    
+    preserved_key = extract_secret_key(env_file)
+    
+    # Configuration should be unchanged
+    assert preserved_key == original_key, "Original configuration should be preserved"
+    assert os.path.getmtime(env_file) == original_env_modified_time, \
+        "Environment file should not be modified"
+    assert os.path.getmtime(config_file) == original_config_modified_time, \
+        "Config file should not be modified"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_with_force_flag_overwrites_without_prompting():
+    """
+    Verifies that --force flag bypasses user confirmation and overwrites existing config.
+    
+    Tests non-interactive overwrite behavior for automation scenarios.
+    """
+    import os
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    env_file = os.path.join(config_dir, ".env")
+    
+    def extract_secret_key(env_file_path):
+        """Extract the secret key from the environment file."""
+        with open(env_file_path, 'r') as f:
+            content = f.read()
+        for line in content.strip().split('\n'):
+            if line.startswith("WEBUI_SECRET_KEY="):
+                key = line.split("=", 1)[1]
+                # Remove quotes if present
+                if key.startswith("'") and key.endswith("'"):
+                    key = key[1:-1]
+                return key
+        raise AssertionError("WEBUI_SECRET_KEY not found in environment file")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # First install with force flag
+    result1 = runner.invoke(app, ["install", "--force"])
+    assert result1.exit_code == 0
+    
+    # Get original key from environment file
+    original_key = extract_secret_key(env_file)
+    
+    # Install with --force flag again (should not prompt)
+    result2 = runner.invoke(app, ["install", "--force"])
+    assert result2.exit_code == 0
+    
+    # Should NOT contain confirmation prompts in output
+    output_lower = result2.stdout.lower()
+    assert "do you want to overwrite" not in output_lower, \
+        "Should not prompt when using --force flag"
+    
+    # Should show successful completion
+    assert any(keyword in output_lower for keyword in [
+        "created", "completed", "success"
+    ]), "Should show successful completion"
+    
+    # Verify new configuration was created
+    new_key = extract_secret_key(env_file)
+    
+    assert new_key != original_key, "Should generate new configuration with --force"
+    assert len(new_key) == 64, f"New key should be valid, got length {len(new_key)}"
+    assert new_key != "your-secret-key-here", "Should not have placeholder secret key"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_partial_existing_configuration():
+    """
+    Verifies install behavior when only some configuration files exist.
+    
+    Tests handling of incomplete/partial installation scenarios.
+    """
+    import os
+    import json
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    env_file = os.path.join(config_dir, ".env")
+    
+    def extract_secret_key(env_file_path):
+        """Extract the secret key from the environment file."""
+        with open(env_file_path, 'r') as f:
+            content = f.read()
+        for line in content.strip().split('\n'):
+            if line.startswith("WEBUI_SECRET_KEY="):
+                key = line.split("=", 1)[1]
+                # Remove quotes if present
+                if key.startswith("'") and key.endswith("'"):
+                    key = key[1:-1]
+                return key
+        raise AssertionError("WEBUI_SECRET_KEY not found in environment file")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Create directory and only one config file (partial installation)
+    os.makedirs(config_dir, exist_ok=True)
+    with open(config_file, 'w') as f:
+        json.dump({"partial": "config"}, f)
+    
+    # Should prompt because config file exists
+    result = runner.invoke(app, ["install"], input="y\n")
+    assert result.exit_code == 0
+    
+    # Should create both files
+    assert os.path.exists(config_file), "JSON config should exist"
+    assert os.path.exists(env_file), "Environment file should exist"
+    
+    # Verify complete configuration was created in JSON file
+    with open(config_file, 'r') as f:
+        final_config = json.load(f)
+    
+    # Check for proper structure in JSON config (project_name is in .env file)
+    assert "services" in final_config, "Should have services configuration"
+    assert "platform" in final_config, "Should have platform configuration"
+    assert "extensions" in final_config, "Should have extensions configuration"
+    
+    # Verify environment file has correct content
+    with open(env_file, 'r') as f:
+        env_content = f.read()
+    
+    assert "PROJECT_NAME='ollama-stack'" in env_content, "Environment file should contain project name"
+    secret_key = extract_secret_key(env_file)
+    assert len(secret_key) == 64, f"Should have 64-character secret key, got {len(secret_key)}"
+    assert secret_key != "your-secret-key-here", "Should not have placeholder secret key"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_existing_directory_no_config_files():
+    """
+    Verifies install behavior when config directory exists but contains no config files.
+    
+    Tests handling of empty config directory scenarios.
+    """
+    import os
+    import json
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    env_file = os.path.join(config_dir, ".env")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Create empty directory (no config files)
+    os.makedirs(config_dir, exist_ok=True)
+    
+    # Should proceed without prompting (no config files exist) - use force to avoid any edge cases
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0
+    
+    # Should NOT prompt for confirmation
+    output_lower = result.stdout.lower()
+    assert "do you want to overwrite" not in output_lower, \
+        "Should not prompt when no config files exist"
+    
+    # Should create config files
+    assert os.path.exists(config_file), "Should create JSON config"
+    assert os.path.exists(env_file), "Should create environment file"
+    
+    # Verify configuration content in proper locations
+    with open(config_file, 'r') as f:
+        config_data = json.load(f)
+    
+    # Check JSON config structure (project_name is in .env file)
+    assert "services" in config_data, "Should have services configuration"
+    assert "platform" in config_data, "Should have platform configuration"
+    
+    # Verify environment file has project name
+    with open(env_file, 'r') as f:
+        env_content = f.read()
+    
+    assert "PROJECT_NAME='ollama-stack'" in env_content, "Environment file should contain project name"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_command_help_accessibility():
+    """
+    Verifies that install command help is accessible and provides useful information.
+    
+    Tests user discoverability and documentation.
+    """
+    result = runner.invoke(app, ["install", "--help"])
+    assert result.exit_code == 0
+    
+    output_lower = result.stdout.lower()
+    
+    # Should contain key information about the command
+    assert "install" in output_lower, "Should mention install command"
+    assert "configuration" in output_lower or "config" in output_lower, \
+        "Should mention configuration"
+    
+    # Should show available options
+    assert "--force" in result.stdout, "Should show --force option"
+    
+    # Should provide helpful description
+    assert any(keyword in output_lower for keyword in [
+        "initialize", "setup", "create", "prepare"
+    ]), "Should describe what install does"
+
+
+@pytest.mark.integration
+def test_install_enables_other_commands():
+    """
+    Verifies that install command creates configuration that enables other commands to work.
+    
+    Tests end-to-end integration - install should prepare system for stack usage.
+    """
+    import os
+    import shutil
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    
+    # Clean state
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+    
+    # Run install
+    install_result = runner.invoke(app, ["install"])
+    assert install_result.exit_code == 0
+    
+    # Verify other commands can now access configuration
+    
+    # Status command should work (doesn't require Docker)
+    status_result = runner.invoke(app, ["status"])
+    assert status_result.exit_code == 0
+    assert "error" not in status_result.stdout.lower() or \
+           "not running" in status_result.stdout.lower()
+    
+    # Check command should work
+    check_result = runner.invoke(app, ["check"])
+    # Check may succeed or fail depending on environment, but should not crash
+    assert check_result.exit_code in [0, 1]
+    assert "traceback" not in check_result.stdout.lower()
+    
+    # If Docker is available, start command should work
+    if is_docker_available():
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Clean up after start test
+        runner.invoke(app, ["stop"])
+    
+    # Cleanup
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+
+
+@pytest.mark.integration
+def test_install_cross_platform_compatibility():
+    """
+    Verifies that install command works correctly across different platforms.
+    
+    Tests platform-specific behavior and configuration creation.
+    """
+    import os
+    import json
+    import platform
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    env_file = os.path.join(config_dir, ".env")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Run install with force flag
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0
+    
+    # Verify platform-appropriate configuration in JSON file
+    with open(config_file, 'r') as f:
+        config_data = json.load(f)
+    
+    # Should contain platform configurations regardless of current platform
+    platform_config = config_data.get("platform", {})
+    assert "apple" in platform_config, "Should include Apple config on all platforms"
+    assert "nvidia" in platform_config, "Should include NVIDIA config on all platforms"
+    
+    # Verify project name is in environment file (not JSON config)
+    with open(env_file, 'r') as f:
+        env_content = f.read()
+    
+    current_platform = platform.system()
+    assert "PROJECT_NAME='ollama-stack'" in env_content, \
+        f"Should work on {current_platform}"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_filesystem_permissions_verification():
+    """
+    Verifies that install command creates files with appropriate filesystem permissions.
+    
+    Tests actual file permissions and security considerations.
+    """
+    import os
+    import shutil
+    import stat
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    env_file = os.path.join(config_dir, ".env")
+    
+    # Clean state
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+    
+    # Run install
+    result = runner.invoke(app, ["install"])
+    assert result.exit_code == 0
+    
+    # Verify directory permissions
+    dir_stat = os.stat(config_dir)
+    dir_mode = stat.filemode(dir_stat.st_mode)
+    # Should be readable and writable by owner
+    assert dir_stat.st_mode & stat.S_IRUSR, "Directory should be readable by owner"
+    assert dir_stat.st_mode & stat.S_IWUSR, "Directory should be writable by owner"
+    
+    # Verify file permissions
+    config_stat = os.stat(config_file)
+    env_stat = os.stat(env_file)
+    
+    # Files should be readable by owner
+    assert config_stat.st_mode & stat.S_IRUSR, "Config file should be readable"
+    assert env_stat.st_mode & stat.S_IRUSR, "Env file should be readable"
+    assert config_stat.st_mode & stat.S_IWUSR, "Config file should be writable"
+    assert env_stat.st_mode & stat.S_IWUSR, "Env file should be writable"
+    
+    # Cleanup
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+
+
+@pytest.mark.integration
+def test_install_configuration_file_format_validation():
+    """
+    Verifies that install command creates valid, parseable configuration files.
+    
+    Tests actual file format and content validity.
+    """
+    import os
+    import json
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    env_file = os.path.join(config_dir, ".env")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Run install with force flag
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0
+    
+    # Verify JSON config file is valid JSON
+    try:
+        with open(config_file, 'r') as f:
+            config_data = json.load(f)
+    except json.JSONDecodeError as e:
+        assert False, f"Config file should be valid JSON: {e}"
+    
+    # Verify essential fields exist and have correct types in JSON config
+    assert isinstance(config_data.get("services"), dict), \
+        "services should be dictionary"
+    assert isinstance(config_data.get("platform"), dict), \
+        "platform should be dictionary"
+    assert isinstance(config_data.get("extensions"), dict), \
+        "extensions should be dictionary"
+    assert isinstance(config_data.get("docker_compose_file"), str), \
+        "docker_compose_file should be string"
+    
+    # Verify environment file is readable and contains expected content
+    try:
+        with open(env_file, 'r') as f:
+            env_content = f.read()
+        # Should be readable text file
+        assert isinstance(env_content, str), "Environment file should be text"
+        
+        # Extract and validate project name
+        assert "PROJECT_NAME=" in env_content, "Environment file should contain PROJECT_NAME"
+        assert "WEBUI_SECRET_KEY=" in env_content, "Environment file should contain WEBUI_SECRET_KEY"
+        
+        # Validate secret key length
+        for line in env_content.strip().split('\n'):
+            if line.startswith("WEBUI_SECRET_KEY="):
+                key = line.split("=", 1)[1]
+                # Remove quotes if present
+                if key.startswith("'") and key.endswith("'"):
+                    key = key[1:-1]
+                assert len(key) == 64, f"Secret key should be 64 characters, got {len(key)}"
+                break
+        
+    except Exception as e:
+        assert False, f"Environment file should be readable: {e}"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_error_message_quality():
+    """
+    Verifies that install command provides user-friendly error messages.
+    
+    Tests that error messages are helpful and don't expose technical details.
+    """
+    import os
+    import shutil
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    
+    # Clean state
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+    
+    # Test successful install first
+    result = runner.invoke(app, ["install"])
+    assert result.exit_code == 0
+    
+    output_lower = result.stdout.lower()
+    
+    # Should not contain Python technical details
+    assert "traceback" not in output_lower, "Should not show Python tracebacks"
+    assert "exception" not in output_lower, "Should not show exception details"
+    assert "attributeerror" not in output_lower, "Should not show AttributeError"
+    assert "keyerror" not in output_lower, "Should not show KeyError"
+    
+    # Should contain helpful, user-focused messaging
+    assert any(keyword in output_lower for keyword in [
+        "created", "success", "completed", "configuration"
+    ]), "Should provide clear success feedback"
+    
+    # Cleanup
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+
+
+@pytest.mark.integration
+def test_install_idempotent_multiple_runs():
+    """
+    Verifies that running install multiple times with --force is safe and produces consistent results.
+    
+    Tests that repeated install operations don't corrupt configuration or cause errors.
+    """
+    import os
+    import json
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    env_file = os.path.join(config_dir, ".env")
+    
+    def extract_secret_key(env_file_path):
+        """Extract the secret key from the environment file."""
+        with open(env_file_path, 'r') as f:
+            content = f.read()
+        for line in content.strip().split('\n'):
+            if line.startswith("WEBUI_SECRET_KEY="):
+                key = line.split("=", 1)[1]
+                # Remove quotes if present
+                if key.startswith("'") and key.endswith("'"):
+                    key = key[1:-1]
+                return key
+        raise AssertionError("WEBUI_SECRET_KEY not found in environment file")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Multiple install runs
+    for i in range(3):
+        result = runner.invoke(app, ["install", "--force"])
+        assert result.exit_code == 0, f"Install run {i+1} should succeed"
+        
+        # Verify configuration files exist after each run
+        assert os.path.exists(config_file), f"JSON config should exist after run {i+1}"
+        assert os.path.exists(env_file), f"Environment file should exist after run {i+1}"
+        
+        # Verify JSON configuration is valid after each run
+        with open(config_file, 'r') as f:
+            config_data = json.load(f)
+        
+        assert "services" in config_data, f"Services should be configured after run {i+1}"
+        assert "platform" in config_data, f"Platform should be configured after run {i+1}"
+        
+        # Verify environment file content after each run
+        with open(env_file, 'r') as f:
+            env_content = f.read()
+        
+        assert "PROJECT_NAME='ollama-stack'" in env_content, \
+            f"Project name should be correct after run {i+1}"
+        
+        secret_key = extract_secret_key(env_file)
+        assert len(secret_key) == 64, \
+            f"Secret key should be valid after run {i+1}, got {len(secret_key)}"
+        assert secret_key != "your-secret-key-here", \
+            f"Should not have placeholder secret key after run {i+1}"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_preserves_existing_non_config_files():
+    """
+    Verifies that install command preserves other files in config directory.
+    
+    Tests that install only affects its own config files and doesn't remove user data.
+    """
+    import os
+    import json
+    import shutil
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    user_file = os.path.join(config_dir, "user-notes.txt")
+    
+    # Clean state
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+    
+    # Create directory with user file
+    os.makedirs(config_dir, exist_ok=True)
+    with open(user_file, 'w') as f:
+        f.write("User's important notes")
+    
+    # Run install with force
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0
+    
+    # Verify user file is preserved
+    assert os.path.exists(user_file), "User files should be preserved"
+    with open(user_file, 'r') as f:
+        content = f.read()
+    assert content == "User's important notes", "User file content should be unchanged"
+    
+    # Verify config was created
+    assert os.path.exists(config_file), "Config should be created"
+    
+    # Cleanup
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+
+
+@pytest.mark.integration
+def test_install_command_exit_codes():
+    """
+    Verifies that install command returns appropriate exit codes for different scenarios.
+    
+    Tests exit code behavior for automation and scripting scenarios.
+    """
+    import os
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Fresh install should return 0
+    result_fresh = runner.invoke(app, ["install", "--force"])
+    assert result_fresh.exit_code == 0, "Fresh install should return exit code 0"
+    
+    # Install over existing with user declining should return 0 (clean exit, no error)
+    result_decline = runner.invoke(app, ["install"], input="n\n")
+    assert result_decline.exit_code == 0, "User declining should return exit code 0 (clean exit)"
+    
+    # Install with --force should return 0
+    result_force = runner.invoke(app, ["install", "--force"])
+    assert result_force.exit_code == 0, "Force install should return exit code 0"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+def test_install_command_output_format_consistency():
+    """
+    Verifies that install command output is consistent and well-formatted.
+    
+    Tests user experience and output quality.
+    """
+    import os
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    
+    # Clean state using uninstall command
+    cleanup_result = runner.invoke(app, ["uninstall", "--all"])
+    assert cleanup_result.exit_code in [0, 1], "Cleanup should succeed or indicate nothing to clean"
+    
+    # Run fresh install with force flag to ensure successful completion
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0
+    
+    output = result.stdout
+    
+    # Should show configuration paths
+    assert ".ollama-stack" in output, "Should show config directory path"
+    
+    # Should show some indication of success or completion
+    assert any(keyword in output.lower() for keyword in [
+        "created", "installation", "configuration", "success", "complete", "initialized"
+    ]), "Should show installation progress or completion"
+    
+    # Should show platform detection
+    assert any(keyword in output.lower() for keyword in [
+        "platform", "apple", "silicon", "detected"
+    ]), "Should show platform detection"
+    
+    # Should not have excessive blank lines or formatting issues
+    lines = output.split('\n')
+    empty_line_count = sum(1 for line in lines if line.strip() == '')
+    total_lines = len(lines)
+    
+    # Should not be more than 50% empty lines (reasonable formatting)
+    if total_lines > 0:
+        empty_ratio = empty_line_count / total_lines
+        assert empty_ratio < 0.5, "Should not have excessive empty lines"
+    
+    # Should not contain Python technical details in normal output
+    output_lower = output.lower()
+    assert "traceback" not in output_lower, "Should not show Python tracebacks"
+    assert "exception" not in output_lower, "Should not show exception details"
+    
+    # Cleanup using uninstall command
+    runner.invoke(app, ["uninstall", "--all"])
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_install_integration_with_stack_workflow():
+    """
+    Verifies complete workflow: install -> start -> stop -> uninstall.
+    
+    Tests end-to-end integration of install command with full stack lifecycle.
+    """
+    import os
+    import shutil
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    
+    # Clean state
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+    
+    # 1. Install
+    install_result = runner.invoke(app, ["install"])
+    assert install_result.exit_code == 0, "Install should succeed"
+    assert os.path.exists(config_dir), "Config directory should be created"
+    
+    # 2. Start stack
+    start_result = runner.invoke(app, ["start"])
+    assert start_result.exit_code == 0, "Start should succeed after install"
+    
+    # Verify services are running
+    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    running_services = get_actual_running_services()
+    assert running_services == expected_components, "Services should be running after start"
+    
+    # 3. Stop stack
+    stop_result = runner.invoke(app, ["stop"])
+    assert stop_result.exit_code == 0, "Stop should succeed"
+    assert get_actual_running_services() == set(), "Services should be stopped"
+    
+    # 4. Uninstall
+    uninstall_result = runner.invoke(app, ["uninstall", "--all"])
+    assert uninstall_result.exit_code == 0, "Uninstall should succeed"
+    assert not os.path.exists(config_dir), "Config directory should be removed"
+    
+    # System should be clean
+    assert get_actual_running_services() == set(), "No services should remain"
+
+
+@pytest.mark.integration
+def test_install_without_docker_daemon():
+    """
+    Verifies install command behavior when Docker daemon is not running.
+    
+    Tests that install can complete successfully even without Docker,
+    since install focuses on configuration setup.
+    """
+    import os
+    import json
+    import shutil
+    
+    if is_docker_available():
+        pytest.skip("Docker is available - testing scenario when Docker is unavailable")
+    
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    config_file = os.path.join(config_dir, ".ollama-stack.json")
+    
+    # Clean state
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)
+    
+    # Install should succeed even without Docker
+    result = runner.invoke(app, ["install"])
+    assert result.exit_code == 0, "Install should succeed without Docker"
+    
+    # Configuration should still be created
+    assert os.path.exists(config_dir), "Config directory should be created"
+    assert os.path.exists(config_file), "Config file should be created"
+    
+    # Verify configuration content
+    with open(config_file, 'r') as f:
+        config_data = json.load(f)
+    
+    assert config_data.get("project_name") == "ollama-stack", "Config should be valid"
+    assert "webui_secret_key" in config_data, "Should have secret key"
+    
+    # Environment checks may show Docker issues, but install should complete
+    output_lower = result.stdout.lower()
+    if "docker" in output_lower:
+        # May show Docker-related warnings but should not fail completely
+        assert any(keyword in output_lower for keyword in [
+            "completed", "created", "summary"
+        ]), "Should complete successfully despite Docker issues"
+    
+    # Cleanup
+    if os.path.exists(config_dir):
+        shutil.rmtree(config_dir)

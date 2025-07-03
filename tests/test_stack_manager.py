@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 
 from ollama_stack_cli.stack_manager import StackManager
-from ollama_stack_cli.schemas import AppConfig, PlatformConfig, ServiceStatus, StackStatus, CheckReport, ResourceUsage, ServiceConfig, ExtensionsConfig
+from ollama_stack_cli.schemas import AppConfig, PlatformConfig, ServiceStatus, StackStatus, CheckReport, EnvironmentCheck, ResourceUsage, ServiceConfig, ExtensionsConfig
 
 # Fixtures
 
@@ -1890,4 +1890,838 @@ def test_get_docker_services_status_applies_health_checks(mock_health_check, sta
     mcp_status = next(s for s in statuses if s.name == 'mcp_proxy')
     
     assert webui_status.health == 'healthy'
-    assert mcp_status.health == 'unhealthy'  # Not running, so set to unhealthy 
+    assert mcp_status.health == 'unhealthy'  # Not running, so set to unhealthy
+
+
+# =============================================================================
+# Install Stack Management Tests
+# =============================================================================
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE') 
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_basic_success(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests basic install_stack functionality when no existing config."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[
+        EnvironmentCheck(name="Docker Daemon Running", passed=True),
+        EnvironmentCheck(name="Port 11434 Available", passed=True)
+    ])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack(force=False)
+    
+    assert result is True
+    mock_config_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+    mock_save_config.assert_called_once()
+    stack_manager.run_environment_checks.assert_called_once_with(fix=False)
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_directory_exists_force_true(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when directory exists but force=True."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = True
+    mock_env_file.exists.return_value = True
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[
+        EnvironmentCheck(name="Docker Daemon Running", passed=True)
+    ])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack(force=True)
+    
+    assert result is True
+    # Should not prompt for confirmation when force=True
+    mock_confirm.assert_not_called()
+    mock_save_config.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_directory_exists_user_confirms(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when directory exists and user confirms overwrite."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = True
+    mock_env_file.exists.return_value = True
+    mock_config_dir.mkdir = MagicMock()
+    mock_confirm.return_value = True  # User confirms
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[
+        EnvironmentCheck(name="Docker Daemon Running", passed=True)
+    ])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack(force=False)
+    
+    assert result is True
+    mock_confirm.assert_called_once()
+    mock_save_config.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_directory_exists_user_declines(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when directory exists and user declines overwrite."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = True
+    mock_env_file.exists.return_value = True
+    mock_confirm.return_value = False  # User declines
+    
+    result = stack_manager.install_stack(force=False)
+    
+    assert result is False
+    mock_confirm.assert_called_once()
+    mock_save_config.assert_not_called()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+def test_install_stack_directory_creation_failure(mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack handles directory creation failure."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir.side_effect = PermissionError("Permission denied")
+    
+    result = stack_manager.install_stack()
+    
+    assert result is False
+    mock_save_config.assert_not_called()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_config_save_failure(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack handles config save failure."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    mock_save_config.side_effect = IOError("Cannot write file")
+    
+    result = stack_manager.install_stack()
+    
+    assert result is False
+    mock_save_config.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_environment_checks_all_pass(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when all environment checks pass."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock all checks passing
+    mock_check_report = CheckReport(checks=[
+        EnvironmentCheck(name="Docker Daemon Running", passed=True),
+        EnvironmentCheck(name="Port 11434 Available", passed=True),
+        EnvironmentCheck(name="Port 8080 Available", passed=True)
+    ])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    stack_manager.display.success.assert_any_call("Environment validation completed - all checks passed!")
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_environment_checks_some_fail(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when some environment checks fail."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock some checks failing
+    mock_check_report = CheckReport(checks=[
+        EnvironmentCheck(name="Docker Daemon Running", passed=True),
+        EnvironmentCheck(name="Port 11434 Available", passed=False, details="Port in use")
+    ])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True  # Should still succeed even with failed checks
+    stack_manager.display.panel.assert_any_call(
+        "Some environment checks failed. You may need to address these issues before starting the stack.\n"
+        "Run `ollama-stack check --fix` to attempt automatic fixes.",
+        "Environment Issues Detected",
+        border_style="yellow"
+    )
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_creates_proper_config(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack creates proper AppConfig with platform configurations."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    # Verify save_config was called with proper arguments
+    mock_save_config.assert_called_once()
+    call_args = mock_save_config.call_args[0]
+    app_config = call_args[1]  # Second argument should be the AppConfig
+    
+    # Verify config properties
+    assert app_config.project_name == "ollama-stack"
+    assert app_config.webui_secret_key is not None
+    assert len(app_config.webui_secret_key) == 64  # Generated secure key
+    assert "apple" in app_config.platform
+    assert "nvidia" in app_config.platform
+    assert app_config.platform["apple"].compose_file == "docker-compose.apple.yml"
+    assert app_config.platform["nvidia"].compose_file == "docker-compose.nvidia.yml"
+
+
+def test_generate_secure_key(stack_manager):
+    """Tests the _generate_secure_key method."""
+    key1 = stack_manager._generate_secure_key()
+    key2 = stack_manager._generate_secure_key()
+    
+    # Keys should be different
+    assert key1 != key2
+    
+    # Keys should be expected length
+    assert len(key1) == 64
+    assert len(key2) == 64
+    
+    # Keys should only contain safe characters
+    import string
+    safe_chars = string.ascii_letters + string.digits + "-_"
+    assert all(c in safe_chars for c in key1)
+    assert all(c in safe_chars for c in key2)
+    
+    # Test custom length
+    short_key = stack_manager._generate_secure_key(length=16)
+    assert len(short_key) == 16
+
+
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_directory_exists_no_config_files(mock_config_file, mock_env_file, mock_config_dir, stack_manager):
+    """Tests install_stack when directory exists but no config files exist."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = False
+    mock_env_file.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    with patch('ollama_stack_cli.config.save_config') as mock_save_config:
+        result = stack_manager.install_stack(force=False)
+    
+    assert result is True
+    # Should not prompt for confirmation if no config files exist
+    mock_save_config.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_directory_exists_partial_config_files(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, stack_manager):
+    """Tests install_stack when directory exists with only some config files."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = True  # JSON exists
+    mock_env_file.exists.return_value = False    # .env doesn't exist
+    mock_config_dir.mkdir = MagicMock()
+    mock_confirm.return_value = True
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    with patch('ollama_stack_cli.config.save_config') as mock_save_config:
+        result = stack_manager.install_stack(force=False)
+    
+    assert result is True
+    # Should prompt for confirmation since at least one config file exists
+    mock_confirm.assert_called_once()
+    mock_save_config.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_displays_installation_summary(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack displays installation summary."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    # Verify summary panel was displayed
+    stack_manager.display.panel.assert_any_call(
+        f"Configuration directory: {mock_config_dir}\n"
+        f"Config file: {mock_config_file}\n"
+        f"Environment file: {mock_env_file}",
+        "Installation Summary",
+        border_style="green"
+    )
+
+# =============================================================================
+# Install Stack Management Tests - Additional Coverage
+# =============================================================================
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_environment_checks_exception(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack handles exceptions during environment checks."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock save_config succeeding but environment checks failing with exception
+    stack_manager.run_environment_checks = MagicMock(side_effect=Exception("Docker daemon not responding"))
+    
+    result = stack_manager.install_stack()
+    
+    assert result is False
+    mock_save_config.assert_called_once()  # Should still save config
+    stack_manager.run_environment_checks.assert_called_once_with(fix=False)
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_keyboard_interrupt_during_confirmation(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack handles KeyboardInterrupt during user confirmation."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = True
+    mock_env_file.exists.return_value = True
+    
+    # Mock KeyboardInterrupt during confirmation
+    mock_confirm.side_effect = KeyboardInterrupt("User cancelled")
+    
+    # The KeyboardInterrupt should propagate and not be caught by install_stack
+    # since it's a legitimate user cancellation that should bubble up
+    with pytest.raises(KeyboardInterrupt):
+        stack_manager.install_stack(force=False)
+    
+    mock_save_config.assert_not_called()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_generic_exception(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack handles unexpected exceptions gracefully."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock unexpected exception during save_config (inside try/catch block)
+    mock_save_config.side_effect = OSError("Filesystem error")
+    
+    result = stack_manager.install_stack()
+    
+    assert result is False
+    mock_save_config.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_confirmation_message_content(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack displays the correct confirmation message."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = True
+    mock_env_file.exists.return_value = True
+    mock_confirm.return_value = False  # User declines
+    
+    result = stack_manager.install_stack(force=False)
+    
+    assert result is False
+    # Verify the confirmation panel was displayed with correct content
+    stack_manager.display.panel.assert_called_with(
+        "Found existing configuration files: .ollama-stack.json, .env\n\n"
+        "This will overwrite your current configuration.",
+        "Configuration Already Exists",
+        border_style="yellow"
+    )
+    # Verify confirmation prompt
+    mock_confirm.assert_called_once_with("Do you want to overwrite the existing configuration?")
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_only_json_file_exists(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when only .ollama-stack.json exists."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = True   # Only JSON exists
+    mock_env_file.exists.return_value = False     # .env doesn't exist
+    mock_confirm.return_value = True
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack(force=False)
+    
+    assert result is True
+    # Should display only the JSON file in the message (check among all panel calls)
+    stack_manager.display.panel.assert_any_call(
+        "Found existing configuration files: .ollama-stack.json\n\n"
+        "This will overwrite your current configuration.",
+        "Configuration Already Exists",
+        border_style="yellow"
+    )
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_only_env_file_exists(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when only .env file exists."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = False  # JSON doesn't exist
+    mock_env_file.exists.return_value = True      # Only .env exists
+    mock_confirm.return_value = True
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack(force=False)
+    
+    assert result is True
+    # Should display only the .env file in the message (check among all panel calls)
+    stack_manager.display.panel.assert_any_call(
+        "Found existing configuration files: .env\n\n"
+        "This will overwrite your current configuration.",
+        "Configuration Already Exists",
+        border_style="yellow"
+    )
+
+
+def test_generate_secure_key_different_lengths(stack_manager):
+    """Tests _generate_secure_key with various lengths."""
+    # Test various lengths
+    for length in [1, 8, 16, 32, 64, 128, 256]:
+        key = stack_manager._generate_secure_key(length=length)
+        assert len(key) == length
+        
+        # Verify character set
+        import string
+        safe_chars = string.ascii_letters + string.digits + "-_"
+        assert all(c in safe_chars for c in key)
+
+
+def test_generate_secure_key_randomness(stack_manager):
+    """Tests _generate_secure_key produces different results."""
+    keys = [stack_manager._generate_secure_key() for _ in range(10)]
+    
+    # All keys should be different
+    assert len(set(keys)) == 10
+    
+    # All keys should be the right length
+    assert all(len(key) == 64 for key in keys)
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_detailed_config_verification(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack creates AppConfig with all expected properties."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    mock_save_config.assert_called_once()
+    
+    # Get the AppConfig that was passed to save_config
+    call_args = mock_save_config.call_args[0]
+    app_config = call_args[1]
+    
+    # Verify all required properties
+    assert app_config.project_name == "ollama-stack"
+    assert app_config.webui_secret_key is not None
+    assert isinstance(app_config.webui_secret_key, str)
+    assert len(app_config.webui_secret_key) == 64
+    
+    # Verify platform configurations
+    assert isinstance(app_config.platform, dict)
+    assert "apple" in app_config.platform
+    assert "nvidia" in app_config.platform
+    
+    apple_config = app_config.platform["apple"]
+    nvidia_config = app_config.platform["nvidia"]
+    
+    assert apple_config.compose_file == "docker-compose.apple.yml"
+    assert nvidia_config.compose_file == "docker-compose.nvidia.yml"
+    
+    # Verify the arguments passed to save_config
+    assert call_args[0] == stack_manager.display  # First arg should be display
+    assert call_args[2] == mock_config_file       # Third arg should be config file path
+    assert call_args[3] == mock_env_file          # Fourth arg should be env file path
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_display_calls_verification(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack makes all expected display calls."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks with some failures
+    mock_check_report = CheckReport(checks=[
+        EnvironmentCheck(name="Docker Running", passed=True),
+        EnvironmentCheck(name="Port 8080", passed=False, details="Port in use")
+    ])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    
+    # Verify success message for config creation
+    stack_manager.display.success.assert_any_call("Configuration files created successfully!")
+    
+    # Verify installation summary panel
+    stack_manager.display.panel.assert_any_call(
+        f"Configuration directory: {mock_config_dir}\n"
+        f"Config file: {mock_config_file}\n"
+        f"Environment file: {mock_env_file}",
+        "Installation Summary",
+        border_style="green"
+    )
+    
+    # Verify validation heading
+    stack_manager.display.print.assert_any_call("\n[bold]Validating Environment:[/bold]")
+    
+    # Verify check report display
+    stack_manager.display.check_report.assert_called_once_with(mock_check_report)
+    
+    # Verify environment issues panel (since we have failing checks)
+    stack_manager.display.panel.assert_any_call(
+        "Some environment checks failed. You may need to address these issues before starting the stack.\n"
+        "Run `ollama-stack check --fix` to attempt automatic fixes.",
+        "Environment Issues Detected",
+        border_style="yellow"
+    )
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_environment_checks_all_pass_display(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack display calls when all environment checks pass."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock all environment checks passing
+    mock_check_report = CheckReport(checks=[
+        EnvironmentCheck(name="Docker Running", passed=True),
+        EnvironmentCheck(name="Port 8080", passed=True),
+        EnvironmentCheck(name="Port 11434", passed=True)
+    ])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    
+    # Should display all-passed success message
+    stack_manager.display.success.assert_any_call("Environment validation completed - all checks passed!")
+    
+    # Should NOT display the issues panel - check by verifying no calls with environment issues content
+    panel_calls = stack_manager.display.panel.call_args_list
+    environment_issues_calls = [call for call in panel_calls 
+                               if len(call[0]) > 1 and "Environment Issues Detected" in call[0][1]]
+    assert len(environment_issues_calls) == 0
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_secure_key_in_config(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack includes the generated secure key in config."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock the secure key generation
+    with patch.object(stack_manager, '_generate_secure_key', return_value='test_secure_key_123') as mock_gen_key:
+        # Mock environment checks
+        mock_check_report = CheckReport(checks=[])
+        stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+        
+        result = stack_manager.install_stack()
+    
+    assert result is True
+    mock_gen_key.assert_called_once()
+    mock_save_config.assert_called_once()
+    
+    # Verify the secure key was set in the config
+    call_args = mock_save_config.call_args[0]
+    app_config = call_args[1]
+    assert app_config.webui_secret_key == 'test_secure_key_123'
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_empty_environment_checks(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when environment checks return empty list."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock empty environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    
+    # Should show all-passed message even with empty checks
+    stack_manager.display.success.assert_any_call("Environment validation completed - all checks passed!")
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_mkdir_parameters(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack calls mkdir with correct parameters."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    # Verify mkdir was called with correct parameters
+    mock_config_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_appconfig_instantiation_exception(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack handles AppConfig instantiation exceptions."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock AppConfig to raise exception during instantiation
+    with patch('ollama_stack_cli.stack_manager.AppConfig', side_effect=Exception("Config creation failed")):
+        result = stack_manager.install_stack()
+    
+    assert result is False
+    mock_save_config.assert_not_called()
+
+
+@patch('ollama_stack_cli.config.save_config')  
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_directory_exists_but_mkdir_fails(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack when directory exists check succeeds but mkdir fails."""
+    mock_config_dir.exists.return_value = True
+    mock_config_file.exists.return_value = False  # No existing files
+    mock_env_file.exists.return_value = False
+    
+    # mkdir fails even though directory "exists"
+    mock_config_dir.mkdir.side_effect = OSError("Permission denied")
+    
+    result = stack_manager.install_stack()
+    
+    assert result is False
+    mock_save_config.assert_not_called()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_secure_key_generation_exception(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests install_stack handles secure key generation exceptions."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock secure key generation to fail
+    with patch.object(stack_manager, '_generate_secure_key', side_effect=Exception("Random number generator failed")):
+        result = stack_manager.install_stack()
+    
+    assert result is False
+    mock_save_config.assert_not_called()
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_platform_config_assignment(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack correctly assigns platform configurations."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    mock_save_config.assert_called_once()
+    
+    # Get the AppConfig and verify platform assignment
+    call_args = mock_save_config.call_args[0]
+    app_config = call_args[1]
+    
+    # Verify the platform dictionary structure
+    assert isinstance(app_config.platform, dict)
+    assert len(app_config.platform) == 2
+    
+    # Verify both platforms are PlatformConfig instances with correct compose files
+    from ollama_stack_cli.schemas import PlatformConfig
+    assert isinstance(app_config.platform["apple"], PlatformConfig)
+    assert isinstance(app_config.platform["nvidia"], PlatformConfig)
+
+
+def test_generate_secure_key_character_set_validation(stack_manager):
+    """Tests _generate_secure_key uses only safe characters."""
+    import string
+    
+    # Generate multiple keys to test character set consistency
+    keys = [stack_manager._generate_secure_key(length=100) for _ in range(5)]
+    
+    safe_chars = set(string.ascii_letters + string.digits + "-_")
+    
+    for key in keys:
+        key_chars = set(key)
+        # All characters in key should be in safe_chars set
+        assert key_chars.issubset(safe_chars)
+        
+        # Should contain a mix of different character types for security
+        # (though this is probabilistic, with length 100 it's very likely)
+        assert len(key_chars) > 10  # Should have variety of characters
+
+
+def test_generate_secure_key_zero_length(stack_manager):
+    """Tests _generate_secure_key with zero length."""
+    key = stack_manager._generate_secure_key(length=0)
+    assert key == ""
+    assert len(key) == 0
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+@patch('typer.confirm')
+def test_install_stack_file_existence_check_order(mock_confirm, mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack checks file existence in correct order for message."""
+    mock_config_dir.exists.return_value = True
+    mock_confirm.return_value = True
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    # Test when both files exist - should list in expected order
+    mock_config_file.exists.return_value = True
+    mock_env_file.exists.return_value = True
+    
+    result = stack_manager.install_stack(force=False)
+    
+    assert result is True
+    # Verify the message lists files in the expected order (.ollama-stack.json, .env)
+    stack_manager.display.panel.assert_any_call(
+        "Found existing configuration files: .ollama-stack.json, .env\n\n"
+        "This will overwrite your current configuration.",
+        "Configuration Already Exists",
+        border_style="yellow"
+    )
+
+
+@patch('ollama_stack_cli.config.save_config')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('ollama_stack_cli.config.DEFAULT_ENV_FILE')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE')
+def test_install_stack_save_config_call_arguments(mock_config_file, mock_env_file, mock_config_dir, mock_save_config, stack_manager):
+    """Tests that install_stack calls save_config with correct arguments in correct order."""
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    # Mock environment checks
+    mock_check_report = CheckReport(checks=[])
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.install_stack()
+    
+    assert result is True
+    mock_save_config.assert_called_once()
+    
+    # Verify the call arguments are in correct order
+    call_args = mock_save_config.call_args[0]
+    assert len(call_args) == 4
+    assert call_args[0] == stack_manager.display    # First: display object
+    # Second: app_config (tested elsewhere)
+    assert call_args[2] == mock_config_file         # Third: config file path  
+    assert call_args[3] == mock_env_file            # Fourth: env file path
+
+# ... existing code ...
