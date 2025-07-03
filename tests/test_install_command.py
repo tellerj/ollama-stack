@@ -110,24 +110,41 @@ def test_install_command_no_args(MockAppContext, mock_app_context):
 def test_install_command_success_display_messages(MockAppContext, mock_app_context):
     """Test that successful installation displays correct messages."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_check_report = MagicMock()
+    mock_check_report.checks = []
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': mock_check_report,
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
     assert result.exit_code == 0
-    mock_app_context.display.success.assert_called_once_with("Installation completed successfully!")
-    mock_app_context.display.panel.assert_called_once_with(
-        "Run `ollama-stack start` to begin using the stack",
-        "Next Steps",
-        border_style="green"
-    )
+    mock_app_context.display.success.assert_any_call("Installation completed successfully!")
+    # Check that Next Steps panel is called
+    next_steps_calls = [call for call in mock_app_context.display.panel.call_args_list 
+                       if len(call[0]) >= 2 and call[0][1] == "Next Steps"]
+    assert len(next_steps_calls) == 1
 
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_install_command_success_logging(MockAppContext, mock_app_context):
     """Test that successful installation logs appropriate messages."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_check_report = MagicMock()
+    mock_check_report.checks = []
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': mock_check_report,
+        'failed_checks': []
+    }
     
     with patch('ollama_stack_cli.commands.install.log') as mock_log:
         result = runner.invoke(app, ["install"])
@@ -157,19 +174,25 @@ def test_install_command_success_return_value(MockAppContext, mock_app_context):
 def test_install_command_stack_manager_failure(MockAppContext, mock_app_context):
     """Test install command when stack manager returns False."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = False
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': False,
+        'error': 'Configuration creation failed'
+    }
     
     result = runner.invoke(app, ["install"])
     
     assert result.exit_code == 0  # Command doesn't exit with error code
-    mock_app_context.display.error.assert_called_once_with("Installation failed - check logs for details")
+    mock_app_context.display.error.assert_called_once_with("Configuration creation failed")
 
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_install_command_failure_logging(MockAppContext, mock_app_context):
     """Test that failed installation logs error messages."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = False
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': False,
+        'error': 'Configuration creation failed'
+    }
     
     with patch('ollama_stack_cli.commands.install.log') as mock_log:
         result = runner.invoke(app, ["install"])

@@ -114,7 +114,7 @@ class StackManager:
     # Installation Management
     # =============================================================================
 
-    def install_stack(self, force: bool = False) -> bool:
+    def install_stack(self, force: bool = False) -> dict:
         """
         Initialize fresh stack configuration and prepare environment for first use.
         
@@ -122,7 +122,7 @@ class StackManager:
             force: Whether to overwrite existing configuration without prompting
             
         Returns:
-            bool: True if installation succeeded, False otherwise
+            dict: Dictionary with installation results including success status, paths, and check results
         """
         from .config import DEFAULT_CONFIG_DIR, DEFAULT_ENV_FILE, DEFAULT_CONFIG_FILE, save_config
         
@@ -151,7 +151,10 @@ class StackManager:
                     if not typer.confirm("Do you want to overwrite the existing configuration?"):
                         self.display.error("Installation cancelled by user")
                         log.info("Installation cancelled - existing configuration preserved")
-                        return False
+                        return {
+                            'success': False,
+                            'error': "Installation cancelled by user"
+                        }
         
         try:
             # Create the configuration directory
@@ -176,44 +179,40 @@ class StackManager:
             save_config(self.display, app_config, DEFAULT_CONFIG_FILE, DEFAULT_ENV_FILE)
             log.info("Created default configuration files")
             
-            # Display success message
-            self.display.success("Configuration files created successfully!")
-            self.display.panel(
-                f"Configuration directory: {DEFAULT_CONFIG_DIR}\n"
-                f"Config file: {DEFAULT_CONFIG_FILE}\n"
-                f"Environment file: {DEFAULT_ENV_FILE}",
-                "Installation Summary",
-                border_style="green"
-            )
+            # Log success message
+            log.info("Configuration files created successfully!")
             
             # Run environment checks to validate the setup
             log.info("Running environment validation checks...")
-            self.display.print("\n[bold]Validating Environment:[/bold]")
+            log.info("Validating Environment...")
             
             check_report = self.run_environment_checks(fix=False)
-            self.display.check_report(check_report)
             
             # Check if all critical checks passed
             failed_checks = [check for check in check_report.checks if not check.passed]
             if failed_checks:
                 log.warning(f"Some environment checks failed: {len(failed_checks)} issues found")
-                self.display.panel(
-                    "Some environment checks failed. You may need to address these issues before starting the stack.\n"
-                    "Run `ollama-stack check --fix` to attempt automatic fixes.",
-                    "Environment Issues Detected",
-                    border_style="yellow"
-                )
             else:
                 log.info("All environment checks passed")
-                self.display.success("Environment validation completed - all checks passed!")
+                log.info("Environment validation completed - all checks passed!")
             
-            return True
+            # Return installation results for command layer to display
+            return {
+                'success': True,
+                'config_dir': DEFAULT_CONFIG_DIR,
+                'config_file': DEFAULT_CONFIG_FILE,
+                'env_file': DEFAULT_ENV_FILE,
+                'check_report': check_report,
+                'failed_checks': failed_checks
+            }
             
         except Exception as e:
             error_msg = f"Failed to create configuration: {str(e)}"
             log.error(error_msg, exc_info=True)
-            self.display.error(error_msg)
-            return False
+            return {
+                'success': False,
+                'error': error_msg
+            }
     
     def _generate_secure_key(self, length: int = 64) -> str:
         """Generate a cryptographically secure random key for WebUI authentication."""

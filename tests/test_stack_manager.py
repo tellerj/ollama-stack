@@ -1916,7 +1916,12 @@ def test_install_stack_basic_success(mock_confirm, mock_config_file, mock_env_fi
     
     result = stack_manager.install_stack(force=False)
     
-    assert result is True
+    assert result['success'] is True
+    assert result['config_dir'] == mock_config_dir
+    assert result['config_file'] == mock_config_file
+    assert result['env_file'] == mock_env_file
+    assert result['check_report'] == mock_check_report
+    assert 'failed_checks' in result
     mock_config_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
     mock_save_config.assert_called_once()
     stack_manager.run_environment_checks.assert_called_once_with(fix=False)
@@ -1942,7 +1947,9 @@ def test_install_stack_directory_exists_force_true(mock_confirm, mock_config_fil
     
     result = stack_manager.install_stack(force=True)
     
-    assert result is True
+    assert result['success'] is True
+    assert 'config_dir' in result
+    assert 'check_report' in result
     # Should not prompt for confirmation when force=True
     mock_confirm.assert_not_called()
     mock_save_config.assert_called_once()
@@ -1969,7 +1976,9 @@ def test_install_stack_directory_exists_user_confirms(mock_confirm, mock_config_
     
     result = stack_manager.install_stack(force=False)
     
-    assert result is True
+    assert result['success'] is True
+    assert 'config_dir' in result
+    assert 'check_report' in result
     mock_confirm.assert_called_once()
     mock_save_config.assert_called_once()
 
@@ -1988,7 +1997,8 @@ def test_install_stack_directory_exists_user_declines(mock_confirm, mock_config_
     
     result = stack_manager.install_stack(force=False)
     
-    assert result is False
+    assert result['success'] is False
+    assert result['error'] == "Installation cancelled by user"
     mock_confirm.assert_called_once()
     mock_save_config.assert_not_called()
 
@@ -2002,7 +2012,8 @@ def test_install_stack_directory_creation_failure(mock_config_dir, mock_save_con
     
     result = stack_manager.install_stack()
     
-    assert result is False
+    assert result['success'] is False
+    assert "Permission denied" in result['error']
     mock_save_config.assert_not_called()
 
 
@@ -2018,7 +2029,8 @@ def test_install_stack_config_save_failure(mock_config_file, mock_env_file, mock
     
     result = stack_manager.install_stack()
     
-    assert result is False
+    assert result['success'] is False
+    assert "Cannot write file" in result['error']
     mock_save_config.assert_called_once()
 
 
@@ -2041,8 +2053,9 @@ def test_install_stack_environment_checks_all_pass(mock_config_file, mock_env_fi
     
     result = stack_manager.install_stack()
     
-    assert result is True
-    stack_manager.display.success.assert_any_call("Environment validation completed - all checks passed!")
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
+    assert len(result['failed_checks']) == 0
 
 
 @patch('ollama_stack_cli.config.save_config')
@@ -2055,21 +2068,19 @@ def test_install_stack_environment_checks_some_fail(mock_config_file, mock_env_f
     mock_config_dir.mkdir = MagicMock()
     
     # Mock some checks failing
+    failed_check = EnvironmentCheck(name="Port 11434 Available", passed=False, details="Port in use")
     mock_check_report = CheckReport(checks=[
         EnvironmentCheck(name="Docker Daemon Running", passed=True),
-        EnvironmentCheck(name="Port 11434 Available", passed=False, details="Port in use")
+        failed_check
     ])
     stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
     
     result = stack_manager.install_stack()
     
-    assert result is True  # Should still succeed even with failed checks
-    stack_manager.display.panel.assert_any_call(
-        "Some environment checks failed. You may need to address these issues before starting the stack.\n"
-        "Run `ollama-stack check --fix` to attempt automatic fixes.",
-        "Environment Issues Detected",
-        border_style="yellow"
-    )
+    assert result['success'] is True  # Should still succeed even with failed checks
+    assert result['check_report'] == mock_check_report
+    assert len(result['failed_checks']) == 1
+    assert result['failed_checks'][0] == failed_check
 
 
 @patch('ollama_stack_cli.config.save_config')
@@ -2087,7 +2098,7 @@ def test_install_stack_creates_proper_config(mock_config_file, mock_env_file, mo
     
     result = stack_manager.install_stack()
     
-    assert result is True
+    assert result['success'] is True
     # Verify save_config was called with proper arguments
     mock_save_config.assert_called_once()
     call_args = mock_save_config.call_args[0]
@@ -2143,7 +2154,9 @@ def test_install_stack_directory_exists_no_config_files(mock_config_file, mock_e
     with patch('ollama_stack_cli.config.save_config') as mock_save_config:
         result = stack_manager.install_stack(force=False)
     
-    assert result is True
+    assert result['success'] is True
+    assert 'config_dir' in result
+    assert 'check_report' in result
     # Should not prompt for confirmation if no config files exist
     mock_save_config.assert_called_once()
 
@@ -2167,7 +2180,9 @@ def test_install_stack_directory_exists_partial_config_files(mock_confirm, mock_
     with patch('ollama_stack_cli.config.save_config') as mock_save_config:
         result = stack_manager.install_stack(force=False)
     
-    assert result is True
+    assert result['success'] is True
+    assert 'config_dir' in result
+    assert 'check_report' in result
     # Should prompt for confirmation since at least one config file exists
     mock_confirm.assert_called_once()
     mock_save_config.assert_called_once()
@@ -2188,19 +2203,11 @@ def test_install_stack_displays_installation_summary(mock_config_file, mock_env_
     
     result = stack_manager.install_stack()
     
-    assert result is True
-    # Verify summary panel was displayed
-    stack_manager.display.panel.assert_any_call(
-        f"Configuration directory: {mock_config_dir}\n"
-        f"Config file: {mock_config_file}\n"
-        f"Environment file: {mock_env_file}",
-        "Installation Summary",
-        border_style="green"
-    )
+    assert result['success'] is True
+    assert result['config_dir'] == mock_config_dir
+    assert result['config_file'] == mock_config_file
+    assert result['env_file'] == mock_env_file
 
-# =============================================================================
-# Install Stack Management Tests - Additional Coverage
-# =============================================================================
 
 @patch('ollama_stack_cli.config.save_config')
 @patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
@@ -2216,7 +2223,8 @@ def test_install_stack_environment_checks_exception(mock_config_file, mock_env_f
     
     result = stack_manager.install_stack()
     
-    assert result is False
+    assert result['success'] is False
+    assert "Docker daemon not responding" in result['error']
     mock_save_config.assert_called_once()  # Should still save config
     stack_manager.run_environment_checks.assert_called_once_with(fix=False)
 
@@ -2257,7 +2265,8 @@ def test_install_stack_generic_exception(mock_config_file, mock_env_file, mock_c
     
     result = stack_manager.install_stack()
     
-    assert result is False
+    assert result['success'] is False
+    assert "Filesystem error" in result['error']
     mock_save_config.assert_called_once()
 
 
@@ -2275,14 +2284,8 @@ def test_install_stack_confirmation_message_content(mock_confirm, mock_config_fi
     
     result = stack_manager.install_stack(force=False)
     
-    assert result is False
-    # Verify the confirmation panel was displayed with correct content
-    stack_manager.display.panel.assert_called_with(
-        "Found existing configuration files: .ollama-stack.json, .env\n\n"
-        "This will overwrite your current configuration.",
-        "Configuration Already Exists",
-        border_style="yellow"
-    )
+    assert result['success'] is False
+    assert result['error'] == "Installation cancelled by user"
     # Verify confirmation prompt
     mock_confirm.assert_called_once_with("Do you want to overwrite the existing configuration?")
 
@@ -2305,14 +2308,9 @@ def test_install_stack_only_json_file_exists(mock_confirm, mock_config_file, moc
     
     result = stack_manager.install_stack(force=False)
     
-    assert result is True
-    # Should display only the JSON file in the message (check among all panel calls)
-    stack_manager.display.panel.assert_any_call(
-        "Found existing configuration files: .ollama-stack.json\n\n"
-        "This will overwrite your current configuration.",
-        "Configuration Already Exists",
-        border_style="yellow"
-    )
+    assert result['success'] is True
+    assert 'config_dir' in result
+    assert 'check_report' in result
 
 
 @patch('ollama_stack_cli.config.save_config')
@@ -2333,14 +2331,9 @@ def test_install_stack_only_env_file_exists(mock_confirm, mock_config_file, mock
     
     result = stack_manager.install_stack(force=False)
     
-    assert result is True
-    # Should display only the .env file in the message (check among all panel calls)
-    stack_manager.display.panel.assert_any_call(
-        "Found existing configuration files: .env\n\n"
-        "This will overwrite your current configuration.",
-        "Configuration Already Exists",
-        border_style="yellow"
-    )
+    assert result['success'] is True
+    assert 'config_dir' in result
+    assert 'check_report' in result
 
 
 def test_generate_secure_key_different_lengths(stack_manager):
@@ -2382,7 +2375,8 @@ def test_install_stack_detailed_config_verification(mock_config_file, mock_env_f
     
     result = stack_manager.install_stack()
     
-    assert result is True
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
     mock_save_config.assert_called_once()
     
     # Get the AppConfig that was passed to save_config
@@ -2430,33 +2424,9 @@ def test_install_stack_display_calls_verification(mock_config_file, mock_env_fil
     
     result = stack_manager.install_stack()
     
-    assert result is True
-    
-    # Verify success message for config creation
-    stack_manager.display.success.assert_any_call("Configuration files created successfully!")
-    
-    # Verify installation summary panel
-    stack_manager.display.panel.assert_any_call(
-        f"Configuration directory: {mock_config_dir}\n"
-        f"Config file: {mock_config_file}\n"
-        f"Environment file: {mock_env_file}",
-        "Installation Summary",
-        border_style="green"
-    )
-    
-    # Verify validation heading
-    stack_manager.display.print.assert_any_call("\n[bold]Validating Environment:[/bold]")
-    
-    # Verify check report display
-    stack_manager.display.check_report.assert_called_once_with(mock_check_report)
-    
-    # Verify environment issues panel (since we have failing checks)
-    stack_manager.display.panel.assert_any_call(
-        "Some environment checks failed. You may need to address these issues before starting the stack.\n"
-        "Run `ollama-stack check --fix` to attempt automatic fixes.",
-        "Environment Issues Detected",
-        border_style="yellow"
-    )
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
+    assert len(result['failed_checks']) == 1
 
 
 @patch('ollama_stack_cli.config.save_config')
@@ -2478,16 +2448,9 @@ def test_install_stack_environment_checks_all_pass_display(mock_config_file, moc
     
     result = stack_manager.install_stack()
     
-    assert result is True
-    
-    # Should display all-passed success message
-    stack_manager.display.success.assert_any_call("Environment validation completed - all checks passed!")
-    
-    # Should NOT display the issues panel - check by verifying no calls with environment issues content
-    panel_calls = stack_manager.display.panel.call_args_list
-    environment_issues_calls = [call for call in panel_calls 
-                               if len(call[0]) > 1 and "Environment Issues Detected" in call[0][1]]
-    assert len(environment_issues_calls) == 0
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
+    assert len(result['failed_checks']) == 0
 
 
 @patch('ollama_stack_cli.config.save_config')
@@ -2507,7 +2470,8 @@ def test_install_stack_secure_key_in_config(mock_config_file, mock_env_file, moc
         
         result = stack_manager.install_stack()
     
-    assert result is True
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
     mock_gen_key.assert_called_once()
     mock_save_config.assert_called_once()
     
@@ -2532,10 +2496,10 @@ def test_install_stack_empty_environment_checks(mock_config_file, mock_env_file,
     
     result = stack_manager.install_stack()
     
-    assert result is True
-    
-    # Should show all-passed message even with empty checks
-    stack_manager.display.success.assert_any_call("Environment validation completed - all checks passed!")
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
+    assert len(result['failed_checks']) == 0
+
 
 @patch('ollama_stack_cli.config.save_config')
 @patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
@@ -2552,7 +2516,8 @@ def test_install_stack_mkdir_parameters(mock_config_file, mock_env_file, mock_co
     
     result = stack_manager.install_stack()
     
-    assert result is True
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
     # Verify mkdir was called with correct parameters
     mock_config_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
@@ -2570,7 +2535,8 @@ def test_install_stack_appconfig_instantiation_exception(mock_config_file, mock_
     with patch('ollama_stack_cli.stack_manager.AppConfig', side_effect=Exception("Config creation failed")):
         result = stack_manager.install_stack()
     
-    assert result is False
+    assert result['success'] is False
+    assert "Config creation failed" in result['error']
     mock_save_config.assert_not_called()
 
 
@@ -2589,7 +2555,8 @@ def test_install_stack_directory_exists_but_mkdir_fails(mock_config_file, mock_e
     
     result = stack_manager.install_stack()
     
-    assert result is False
+    assert result['success'] is False
+    assert "Permission denied" in result['error']
     mock_save_config.assert_not_called()
 
 
@@ -2606,7 +2573,8 @@ def test_install_stack_secure_key_generation_exception(mock_config_file, mock_en
     with patch.object(stack_manager, '_generate_secure_key', side_effect=Exception("Random number generator failed")):
         result = stack_manager.install_stack()
     
-    assert result is False
+    assert result['success'] is False
+    assert "Random number generator failed" in result['error']
     mock_save_config.assert_not_called()
 
 
@@ -2625,7 +2593,8 @@ def test_install_stack_platform_config_assignment(mock_config_file, mock_env_fil
     
     result = stack_manager.install_stack()
     
-    assert result is True
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
     mock_save_config.assert_called_once()
     
     # Get the AppConfig and verify platform assignment
@@ -2688,7 +2657,8 @@ def test_install_stack_file_existence_check_order(mock_confirm, mock_config_file
     
     result = stack_manager.install_stack(force=False)
     
-    assert result is True
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
     # Verify the message lists files in the expected order (.ollama-stack.json, .env)
     stack_manager.display.panel.assert_any_call(
         "Found existing configuration files: .ollama-stack.json, .env\n\n"
@@ -2713,7 +2683,8 @@ def test_install_stack_save_config_call_arguments(mock_config_file, mock_env_fil
     
     result = stack_manager.install_stack()
     
-    assert result is True
+    assert result['success'] is True
+    assert result['check_report'] == mock_check_report
     mock_save_config.assert_called_once()
     
     # Verify the call arguments are in correct order

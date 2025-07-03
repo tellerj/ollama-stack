@@ -95,8 +95,8 @@ def watch_status(app_context: AppContext, extensions_only: bool = False, json_ou
             
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            app_context.display.info(f"Stack Status - {timestamp} (refresh every {interval}s)")
-            app_context.display.info("Press Ctrl+C to stop monitoring")
+            app_context.log.info(f"Stack Status - {timestamp} (refresh every {interval}s)")
+            app_context.log.info("Press Ctrl+C to stop monitoring")
             print()
             
             # Get and display current status
@@ -112,7 +112,7 @@ def watch_status(app_context: AppContext, extensions_only: bool = False, json_ou
             
     except KeyboardInterrupt:
         log.info("Status monitoring stopped by user")
-        app_context.display.info("\nStatus monitoring stopped.")
+        app_context.log.info("\nStatus monitoring stopped.")
 
 
 def status(
