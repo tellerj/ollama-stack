@@ -8,6 +8,7 @@ from .commands.status import status
 from .commands.logs import logs
 from .commands.check import check
 from .commands.update import update
+from .commands.uninstall import uninstall
 
 app = typer.Typer(
     help="A CLI for managing the Ollama Stack.",
@@ -21,6 +22,7 @@ app.command()(status)
 app.command()(logs)
 app.command()(check)
 app.command()(update)
+app.command()(uninstall)
 
 @app.callback()
 def main(

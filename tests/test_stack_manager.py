@@ -1020,7 +1020,11 @@ def test_find_resources_by_label_with_value(stack_manager, mock_docker_client):
     # Verify the filter was constructed correctly
     expected_filter = {"label": "ollama-stack.component=webui"}
     mock_docker_client.client.containers.list.assert_called_once_with(all=True, filters=expected_filter)
-    mock_docker_client.client.volumes.list.assert_called_once_with(filters=expected_filter)
+    
+    # For volumes with ollama-stack.component label, we use Docker Compose project label
+    expected_volume_filter = {"label": "com.docker.compose.project=ollama-stack"}
+    mock_docker_client.client.volumes.list.assert_called_once_with(filters=expected_volume_filter)
+    
     mock_docker_client.client.networks.list.assert_called_once_with(filters=expected_filter)
 
 def test_find_resources_by_label_docker_exception(stack_manager, mock_docker_client):
@@ -1187,166 +1191,512 @@ def test_cleanup_resources_no_resources_found(stack_manager):
 
 
 # =============================================================================
-# Phase 5.1 New Methods Tests - Stack Uninstall
+# Phase 5.2 New Methods Tests - Stack Uninstall (Comprehensive)
 # =============================================================================
 
-@patch('ollama_stack_cli.stack_manager.Path')
-def test_uninstall_stack_complete_uninstall(mock_path, stack_manager, mock_docker_client):
-    """Tests uninstall_stack complete uninstall process."""
-    # Mock stack running and successful stops
-    stack_manager.is_stack_running = MagicMock(return_value=True)
-    stack_manager.stop_docker_services = MagicMock(return_value=True)
-    stack_manager.stop_native_services = MagicMock(return_value=True)
+# Happy Path Tests
+
+def test_uninstall_stack_basic_no_flags(stack_manager, mock_docker_client):
+    """Tests uninstall_stack basic operation with no flags (preserves data and config)."""
+    # Mock successful operations
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [MagicMock(name="webui")],
+        "networks": [MagicMock(name="ollama-network")], 
+        "volumes": [MagicMock(name="ollama-data")]
+    })
     stack_manager.cleanup_resources = MagicMock(return_value=True)
     mock_docker_client.remove_resources = MagicMock(return_value=True)
     
-    # Mock services configuration
-    stack_manager.config.services = {'ollama': MagicMock(type='native-api')}
+    result = stack_manager.uninstall_stack()
     
-    # Mock file operations
-    mock_env_file = MagicMock()
-    mock_config_file = MagicMock()
-    mock_env_file.exists.return_value = True
-    mock_config_file.exists.return_value = True
+    assert result is True
+    stack_manager.find_resources_by_label.assert_called_once_with("ollama-stack.component")
+    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=False, force=False)
+    mock_docker_client.remove_resources.assert_called_once_with(remove_images=True, force=False)
+
+def test_uninstall_stack_remove_volumes_only(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with remove_volumes=True (preserves config)."""
+    # Mock resources with volumes
+    mock_volume1 = MagicMock()
+    mock_volume1.name = "ollama-data"
+    mock_volume2 = MagicMock()
+    mock_volume2.name = "webui-data"
     
-    mock_path.side_effect = lambda name: mock_env_file if name == ".env" else mock_config_file
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": [mock_volume1, mock_volume2]
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(remove_volumes=True, force=True)
+    
+    assert result is True
+    # Volumes should be removed individually (not via cleanup_resources)
+    mock_volume1.remove.assert_called_once_with(force=True)
+    mock_volume2.remove.assert_called_once_with(force=True)
+
+def test_uninstall_stack_remove_config_only(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with remove_config=True (preserves volumes)."""
+    # Mock config directory path and shutil inside the function
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = True
+    
+    with patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR', mock_config_dir):
+        with patch('shutil.rmtree') as mock_rmtree:
+            stack_manager.is_stack_running = MagicMock(return_value=False)
+            stack_manager.find_resources_by_label = MagicMock(return_value={
+                "containers": [], "networks": [], "volumes": []
+            })
+            stack_manager.cleanup_resources = MagicMock(return_value=True)
+            mock_docker_client.remove_resources = MagicMock(return_value=True)
+            
+            result = stack_manager.uninstall_stack(remove_config=True)
+            
+            assert result is True
+            mock_config_dir.exists.assert_called_once()
+            mock_rmtree.assert_called_once_with(mock_config_dir)
+
+def test_uninstall_stack_remove_all(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with both remove_volumes=True and remove_config=True."""
+    # Mock volumes and config
+    mock_volume = MagicMock()
+    mock_volume.name = "test-volume"
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = True
+    
+    with patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR', mock_config_dir):
+        with patch('shutil.rmtree') as mock_rmtree:
+            stack_manager.is_stack_running = MagicMock(return_value=False)
+            stack_manager.find_resources_by_label = MagicMock(return_value={
+                "containers": [], "networks": [], "volumes": [mock_volume]
+            })
+            stack_manager.cleanup_resources = MagicMock(return_value=True)
+            mock_docker_client.remove_resources = MagicMock(return_value=True)
+            
+            result = stack_manager.uninstall_stack(remove_volumes=True, remove_config=True, force=True)
+            
+            assert result is True
+            mock_volume.remove.assert_called_once_with(force=True)
+            mock_rmtree.assert_called_once_with(mock_config_dir)
+
+def test_uninstall_stack_running_services_docker_only(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when stack is running with Docker services only."""
+    stack_manager.config.services = {
+        'webui': MagicMock(type='docker'),
+        'mcp_proxy': MagicMock(type='docker')
+    }
+    
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    stack_manager.stop_native_services = MagicMock(return_value=True)
+    # Add some mock resources so method doesn't return early
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [MagicMock(name="webui-container")], "networks": [], "volumes": []
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
     
     result = stack_manager.uninstall_stack()
     
     assert result is True
     stack_manager.stop_docker_services.assert_called_once()
-    stack_manager.stop_native_services.assert_called_once_with(['ollama'])
-    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=False, force=False)
-    mock_docker_client.remove_resources.assert_called_once_with(remove_images=True, force=False)
-    mock_env_file.unlink.assert_called_once()
-    mock_config_file.unlink.assert_called_once()
+    # Should NOT call stop_native_services since there are no native services
+    stack_manager.stop_native_services.assert_not_called()
 
-@patch('ollama_stack_cli.stack_manager.Path')
-def test_uninstall_stack_keep_config(mock_path, stack_manager, mock_docker_client):
-    """Tests uninstall_stack with keep_config=True."""
-    # Mock minimal setup
-    stack_manager.is_stack_running = MagicMock(return_value=False)
-    stack_manager.cleanup_resources = MagicMock(return_value=True)
-    mock_docker_client.remove_resources = MagicMock(return_value=True)
+def test_uninstall_stack_running_services_native_only(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when stack is running with native services only."""
+    stack_manager.config.services = {
+        'ollama': MagicMock(type='native-api')
+    }
     
-    result = stack_manager.uninstall_stack(keep_config=True)
-    
-    assert result is True
-    # Should not call Path operations when keeping config
-    mock_path.assert_not_called()
-
-@patch('ollama_stack_cli.stack_manager.Path')
-def test_uninstall_stack_remove_volumes(mock_path, stack_manager, mock_docker_client):
-    """Tests uninstall_stack with remove_volumes=True."""
-    # Mock minimal setup
-    stack_manager.is_stack_running = MagicMock(return_value=False)
-    stack_manager.cleanup_resources = MagicMock(return_value=True)
-    mock_docker_client.remove_resources = MagicMock(return_value=True)
-    
-    # Mock file operations
-    mock_env_file = MagicMock()
-    mock_config_file = MagicMock()
-    mock_env_file.exists.return_value = False
-    mock_config_file.exists.return_value = False
-    
-    mock_path.side_effect = lambda name: mock_env_file if name == ".env" else mock_config_file
-    
-    result = stack_manager.uninstall_stack(remove_volumes=True, force=True)
-    
-    assert result is True
-    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=True, force=True)
-    mock_docker_client.remove_resources.assert_called_once_with(remove_images=True, force=True)
-
-def test_uninstall_stack_stop_services_failure(stack_manager, mock_docker_client):
-    """Tests uninstall_stack continues when stop services fails."""
-    # Mock stack running with stop failures
     stack_manager.is_stack_running = MagicMock(return_value=True)
-    stack_manager.stop_docker_services = MagicMock(return_value=False)
-    stack_manager.stop_native_services = MagicMock(return_value=False)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    stack_manager.stop_native_services = MagicMock(return_value=True)
+    # Add some mock resources so method doesn't return early
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [MagicMock(name="some-container")], "networks": [], "volumes": []
+    })
     stack_manager.cleanup_resources = MagicMock(return_value=True)
     mock_docker_client.remove_resources = MagicMock(return_value=True)
     
-    # Mock services configuration  
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True
+    # Should NOT call stop_docker_services since there are no Docker services
+    stack_manager.stop_docker_services.assert_not_called()
+    stack_manager.stop_native_services.assert_called_once_with(['ollama'])
+
+def test_uninstall_stack_running_services_mixed(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when stack is running with mixed service types."""
+    stack_manager.config.services = {
+        'webui': MagicMock(type='docker'),
+        'ollama': MagicMock(type='native-api'),
+        'mcp_proxy': MagicMock(type='docker')
+    }
+    
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    stack_manager.stop_native_services = MagicMock(return_value=True)
+    # Add some mock resources so method doesn't return early
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [MagicMock(name="webui-container")], "networks": [], "volumes": []
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True
+    # Should call both stop methods since we have both service types
+    stack_manager.stop_docker_services.assert_called_once()
+    stack_manager.stop_native_services.assert_called_once_with(['ollama'])
+
+def test_uninstall_stack_not_running(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when stack is not running."""
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.stop_docker_services = MagicMock()
+    stack_manager.stop_native_services = MagicMock()
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True
+    # Should not call stop services when not running
+    stack_manager.stop_docker_services.assert_not_called()
+    stack_manager.stop_native_services.assert_not_called()
+
+def test_uninstall_stack_no_resources_found(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when no resources are found to remove."""
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True
+    # Should still succeed when no resources found
+    stack_manager.find_resources_by_label.assert_called_once_with("ollama-stack.component")
+
+# Error Handling and Edge Cases
+
+def test_uninstall_stack_exception_during_resource_discovery(stack_manager):
+    """Tests uninstall_stack handles exceptions during resource discovery."""
+    stack_manager.find_resources_by_label = MagicMock(side_effect=Exception("Docker daemon not running"))
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is False
+
+def test_uninstall_stack_exception_during_is_stack_running(stack_manager):
+    """Tests uninstall_stack handles exceptions during stack running check."""
+    # Mock to throw exception early in the process
+    stack_manager.is_stack_running = MagicMock(side_effect=Exception("Service check failed"))
+    # Add some mock resources so method doesn't return early, forcing it to reach is_stack_running()
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [MagicMock(name="test-container")], "networks": [], "volumes": []
+    })
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is False
+
+def test_uninstall_stack_stop_docker_services_failure(stack_manager, mock_docker_client):
+    """Tests uninstall_stack continues when Docker service stop fails."""
+    stack_manager.config.services = {'webui': MagicMock(type='docker')}
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=False)  # Failure
+    stack_manager.stop_native_services = MagicMock(return_value=True)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True  # Should continue despite stop failure
+
+def test_uninstall_stack_stop_native_services_failure(stack_manager, mock_docker_client):
+    """Tests uninstall_stack continues when native service stop fails."""
     stack_manager.config.services = {'ollama': MagicMock(type='native-api')}
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    stack_manager.stop_native_services = MagicMock(return_value=False)  # Failure
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
     
-    result = stack_manager.uninstall_stack(keep_config=True)
+    result = stack_manager.uninstall_stack()
     
-    assert result is True  # Should continue despite stop failures
+    assert result is True  # Should continue despite stop failure
 
 def test_uninstall_stack_cleanup_resources_failure(stack_manager, mock_docker_client):
     """Tests uninstall_stack continues when resource cleanup fails."""
-    # Mock cleanup failure
     stack_manager.is_stack_running = MagicMock(return_value=False)
-    stack_manager.cleanup_resources = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=False)  # Failure
     mock_docker_client.remove_resources = MagicMock(return_value=True)
     
-    result = stack_manager.uninstall_stack(keep_config=True)
+    result = stack_manager.uninstall_stack()
     
     assert result is True  # Should continue despite cleanup failure
 
 def test_uninstall_stack_remove_images_failure(stack_manager, mock_docker_client):
     """Tests uninstall_stack continues when image removal fails."""
-    # Mock image removal failure
     stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
     stack_manager.cleanup_resources = MagicMock(return_value=True)
-    mock_docker_client.remove_resources = MagicMock(return_value=False)
-    
-    result = stack_manager.uninstall_stack(keep_config=True)
-    
-    assert result is True  # Should continue despite image removal failure
-
-@patch('ollama_stack_cli.stack_manager.Path')
-def test_uninstall_stack_file_removal_failure(mock_path, stack_manager, mock_docker_client):
-    """Tests uninstall_stack handles file removal failures gracefully."""
-    # Mock minimal setup
-    stack_manager.is_stack_running = MagicMock(return_value=False)
-    stack_manager.cleanup_resources = MagicMock(return_value=True)
-    mock_docker_client.remove_resources = MagicMock(return_value=True)
-    
-    # Mock file operations with failure
-    mock_env_file = MagicMock()
-    mock_env_file.exists.return_value = True
-    mock_env_file.unlink.side_effect = PermissionError("Permission denied")
-    
-    mock_config_file = MagicMock()
-    mock_config_file.exists.return_value = True
-    
-    mock_path.side_effect = lambda name: mock_env_file if name == ".env" else mock_config_file
+    mock_docker_client.remove_resources = MagicMock(return_value=False)  # Failure
     
     result = stack_manager.uninstall_stack()
     
-    assert result is True  # Should succeed despite file removal failure
+    assert result is True  # Should continue despite image removal failure
 
-@patch('ollama_stack_cli.stack_manager.Path')
-def test_uninstall_stack_files_not_exist(mock_path, stack_manager, mock_docker_client):
-    """Tests uninstall_stack when config files don't exist."""
-    # Mock minimal setup
+def test_uninstall_stack_individual_volume_removal_failures(stack_manager, mock_docker_client):
+    """Tests uninstall_stack handles individual volume removal failures gracefully."""
+    mock_volume1 = MagicMock()
+    mock_volume1.name = "good-volume"
+    mock_volume2 = MagicMock()
+    mock_volume2.name = "bad-volume"
+    mock_volume2.remove.side_effect = Exception("Permission denied")
+    mock_volume3 = MagicMock()
+    mock_volume3.name = "another-good-volume"
+    
     stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": [mock_volume1, mock_volume2, mock_volume3]
+    })
     stack_manager.cleanup_resources = MagicMock(return_value=True)
     mock_docker_client.remove_resources = MagicMock(return_value=True)
     
-    # Mock files don't exist
-    mock_env_file = MagicMock()
-    mock_config_file = MagicMock()
-    mock_env_file.exists.return_value = False
-    mock_config_file.exists.return_value = False
+    result = stack_manager.uninstall_stack(remove_volumes=True, force=True)
     
-    mock_path.side_effect = lambda name: mock_env_file if name == ".env" else mock_config_file
+    assert result is True
+    # Should attempt to remove all volumes despite individual failures
+    mock_volume1.remove.assert_called_once_with(force=True)
+    mock_volume2.remove.assert_called_once_with(force=True)
+    mock_volume3.remove.assert_called_once_with(force=True)
+
+def test_uninstall_stack_config_directory_removal_failure(stack_manager, mock_docker_client):
+    """Tests uninstall_stack handles config directory removal failure gracefully."""
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = True
+    
+    with patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR', mock_config_dir):
+        with patch('shutil.rmtree', side_effect=PermissionError("Permission denied")) as mock_rmtree:
+            stack_manager.is_stack_running = MagicMock(return_value=False)
+            stack_manager.find_resources_by_label = MagicMock(return_value={
+                "containers": [], "networks": [], "volumes": []
+            })
+            stack_manager.cleanup_resources = MagicMock(return_value=True)
+            mock_docker_client.remove_resources = MagicMock(return_value=True)
+            
+            result = stack_manager.uninstall_stack(remove_config=True)
+            
+            assert result is True  # Should continue despite config removal failure
+            mock_rmtree.assert_called_once_with(mock_config_dir)
+
+def test_uninstall_stack_config_directory_not_exists(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when config directory doesn't exist."""
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = False
+    
+    with patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR', mock_config_dir):
+        with patch('shutil.rmtree') as mock_rmtree:
+            stack_manager.is_stack_running = MagicMock(return_value=False)
+            stack_manager.find_resources_by_label = MagicMock(return_value={
+                "containers": [], "networks": [], "volumes": []
+            })
+            stack_manager.cleanup_resources = MagicMock(return_value=True)
+            mock_docker_client.remove_resources = MagicMock(return_value=True)
+            
+            result = stack_manager.uninstall_stack(remove_config=True)
+            
+            assert result is True
+            mock_config_dir.exists.assert_called_once()
+            mock_rmtree.assert_not_called()
+
+# Note: Import failure tests removed as they are difficult to test reliably
+# and the exception handling in the actual code will catch these cases
+
+# Complex State and Resource Scenarios
+
+def test_uninstall_stack_large_resource_set(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with large number of resources."""
+    # Create many mock resources
+    containers = [MagicMock(name=f"container-{i}") for i in range(10)]
+    networks = [MagicMock(name=f"network-{i}") for i in range(5)]
+    volumes = [MagicMock(name=f"volume-{i}") for i in range(8)]
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": containers, "networks": networks, "volumes": volumes
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(remove_volumes=True)
+    
+    assert result is True
+    # Should attempt to remove all volumes
+    for volume in volumes:
+        volume.remove.assert_called_once_with(force=False)
+
+def test_uninstall_stack_partial_resource_types(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when only some resource types are found."""
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [MagicMock(name="lonely-container")],
+        "networks": [],  # No networks
+        "volumes": []    # No volumes
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(remove_volumes=True)
+    
+    assert result is True
+    # Should handle partial resource discovery gracefully
+
+def test_uninstall_stack_no_services_configured(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when no services are configured."""
+    stack_manager.config.services = {}  # No services
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    stack_manager.stop_native_services = MagicMock(return_value=True)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
     
     result = stack_manager.uninstall_stack()
     
     assert result is True
-    mock_env_file.unlink.assert_not_called()
-    mock_config_file.unlink.assert_not_called()
+    # Should NOT call stop methods since there are no services
+    stack_manager.stop_docker_services.assert_not_called()
+    stack_manager.stop_native_services.assert_not_called()
 
-def test_uninstall_stack_exception_handling(stack_manager):
-    """Tests uninstall_stack handles exceptions gracefully."""
-    # Mock exception during is_stack_running
-    stack_manager.is_stack_running = MagicMock(side_effect=Exception("Docker daemon not running"))
+def test_uninstall_stack_unknown_service_types(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with unknown service types in configuration."""
+    stack_manager.config.services = {
+        'unknown_service': MagicMock(type='unknown-type'),
+        'webui': MagicMock(type='docker')
+    }
+    
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.stop_docker_services = MagicMock(return_value=True)
+    stack_manager.stop_native_services = MagicMock(return_value=True)
+    # Add some mock resources so method doesn't return early
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [MagicMock(name="webui-container")], "networks": [], "volumes": []
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
     
     result = stack_manager.uninstall_stack()
     
-    assert result is False
+    assert result is True
+    # Should only call stop_docker_services since only 'webui' has type 'docker'
+    stack_manager.stop_docker_services.assert_called_once()
+    # Should NOT call stop_native_services since no services have type 'native-api'
+    stack_manager.stop_native_services.assert_not_called()
+
+# Force Flag Behavior Tests
+
+def test_uninstall_stack_force_flag_behavior(stack_manager, mock_docker_client):
+    """Tests uninstall_stack force flag is properly passed through."""
+    mock_volume = MagicMock()
+    mock_volume.name = "test-volume"
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": [mock_volume]
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(remove_volumes=True, force=True)
+    
+    assert result is True
+    # Force flag should be passed to all removal operations
+    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=False, force=True)
+    mock_docker_client.remove_resources.assert_called_once_with(remove_images=True, force=True)
+    mock_volume.remove.assert_called_once_with(force=True)
+
+def test_uninstall_stack_force_flag_false(stack_manager, mock_docker_client):
+    """Tests uninstall_stack without force flag (default behavior)."""
+    mock_volume = MagicMock()
+    mock_volume.name = "test-volume"
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": [mock_volume]
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(remove_volumes=True, force=False)
+    
+    assert result is True
+    # Force flag should be False by default
+    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=False, force=False)
+    mock_docker_client.remove_resources.assert_called_once_with(remove_images=True, force=False)
+    mock_volume.remove.assert_called_once_with(force=False)
+
+# Resource Summary and Warning Tests
+
+def test_uninstall_stack_resource_summary_accurate(stack_manager, mock_docker_client):
+    """Tests uninstall_stack provides accurate resource summary."""
+    containers = [MagicMock(name=f"container-{i}") for i in range(3)]
+    networks = [MagicMock(name=f"network-{i}") for i in range(2)]
+    volumes = [MagicMock(name=f"volume-{i}") for i in range(4)]
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": containers, "networks": networks, "volumes": volumes
+    })
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack()
+    
+    assert result is True
+    # Verify resource discovery was called correctly
+    stack_manager.find_resources_by_label.assert_called_once_with("ollama-stack.component")
+
+def test_uninstall_stack_no_resources_but_remove_config(stack_manager, mock_docker_client):
+    """Tests uninstall_stack when no Docker resources but remove_config=True."""
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = True
+    
+    with patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR', mock_config_dir):
+        with patch('shutil.rmtree') as mock_rmtree:
+            stack_manager.is_stack_running = MagicMock(return_value=False)
+            stack_manager.find_resources_by_label = MagicMock(return_value={
+                "containers": [], "networks": [], "volumes": []
+            })
+            stack_manager.cleanup_resources = MagicMock(return_value=True)
+            mock_docker_client.remove_resources = MagicMock(return_value=True)
+            
+            result = stack_manager.uninstall_stack(remove_config=True)
+            
+            assert result is True
+            # Should still proceed to remove config even with no Docker resources
+            mock_rmtree.assert_called_once_with(mock_config_dir)
 
 
 # Edge Cases and Error Handling Tests

@@ -37,7 +37,7 @@ class TestCommandRegistration:
         assert result.exit_code == 0
         help_text = result.stdout
 
-        expected_commands = ["start", "stop", "restart", "status", "logs", "check", "update"]
+        expected_commands = ["start", "stop", "restart", "status", "logs", "check", "update", "uninstall"]
         for command in expected_commands:
             assert command in help_text
     
@@ -49,7 +49,7 @@ class TestCommandRegistration:
         
         # Count command occurrences in the Commands section
         commands_section = help_text.split("Commands:")[1] if "Commands:" in help_text else help_text
-        expected_commands = ["start", "stop", "restart", "status", "logs", "check", "update"]
+        expected_commands = ["start", "stop", "restart", "status", "logs", "check", "update", "uninstall"]
         
         for command in expected_commands:
             assert command in commands_section
@@ -165,10 +165,12 @@ class TestBasicCommandRouting:
         mock_context.stack_manager.is_stack_running.return_value = False
         mock_context.stack_manager.pull_images.return_value = True
         mock_context.config.app_config.extensions.enabled = []
+        # For uninstall command
+        mock_context.stack_manager.uninstall_stack.return_value = True
         MockAppContext.return_value = mock_context
         
         # Test that each command can be invoked (not testing detailed logic)
-        commands = ["start", "stop", "restart", "status", "logs", "check", "update"]
+        commands = ["start", "stop", "restart", "status", "logs", "check", "update", "uninstall"]
         for command in commands:
             result = runner.invoke(app, [command])
             assert result.exit_code == 0, f"Command '{command}' failed with exit code {result.exit_code}"

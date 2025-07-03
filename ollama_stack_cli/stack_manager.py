@@ -533,12 +533,18 @@ class StackManager:
             resources["containers"] = containers
             log.debug(f"Found {len(containers)} containers with label {label_key}")
             
-            # Find volumes
-            volumes = self.docker_client.client.volumes.list(
-                filters=filter_dict
-            )
+            # Find volumes - use Docker Compose project label for volumes since that's how they're actually labeled
+            if label_key == "ollama-stack.component":
+                # For stack resources, look for Docker Compose volumes
+                volume_filters = {"label": "com.docker.compose.project=ollama-stack"}
+                volumes = self.docker_client.client.volumes.list(filters=volume_filters)
+                log.debug(f"Found {len(volumes)} volumes with Docker Compose project label")
+            else:
+                # For other use cases, use the provided label
+                volumes = self.docker_client.client.volumes.list(filters=filter_dict)
+                log.debug(f"Found {len(volumes)} volumes with label {label_key}")
+            
             resources["volumes"] = volumes
-            log.debug(f"Found {len(volumes)} volumes with label {label_key}")
             
             # Find networks
             networks = self.docker_client.client.networks.list(
@@ -622,74 +628,128 @@ class StackManager:
             log.error(f"Resource cleanup failed: {e}")
             return False
 
-    def uninstall_stack(self, remove_volumes: bool = False, keep_config: bool = False, force: bool = False) -> bool:
+    def uninstall_stack(self, remove_volumes: bool = False, remove_config: bool = False, force: bool = False) -> bool:
         """
-        Completely uninstalls the stack including all resources and optionally configuration.
+        Clean up all stack resources (containers, networks, images, and optionally volumes/config).
         
         Args:
-            remove_volumes: Whether to remove volumes (destroys persistent data!)
-            keep_config: Whether to preserve configuration files
+            remove_volumes: Whether to remove volumes (destroys models, conversations, databases!)
+            remove_config: Whether to remove configuration directory (~/.ollama-stack/)
             force: Skip all confirmation prompts
             
         Returns:
             bool: True if uninstall succeeded, False otherwise
         """
         try:
-            log.info("Beginning stack uninstall process...")
+            # Step 1: Display warnings based on destructive operations
+            if remove_volumes and remove_config:
+                log.warning("⚠️  DESTRUCTIVE OPERATION: This will remove ALL stack data and configuration!")
+                log.warning("   • All AI models will be deleted (cannot be recovered)")
+                log.warning("   • All chat conversations will be deleted (cannot be recovered)")
+                log.warning("   • All configuration will be deleted")
+            elif remove_volumes:
+                log.warning("⚠️  DESTRUCTIVE OPERATION: This will remove all stack data!")
+                log.warning("   • All AI models will be deleted (cannot be recovered)")
+                log.warning("   • All chat conversations will be deleted (cannot be recovered)")
+            else:
+                log.info("Removing stack resources (preserving data volumes and configuration)")
             
-            # Step 1: Stop all services
-            log.info("Stopping all services...")
+            # Step 2: Find all Docker resources for summary
+            log.info("Discovering stack resources...")
+            resources = self.find_resources_by_label("ollama-stack.component")
+            
+            # Step 3: Display summary of what will be removed
+            total_resources = len(resources["containers"]) + len(resources["networks"]) 
+            if remove_volumes:
+                total_resources += len(resources["volumes"])
+            
+            log.info(f"Found {len(resources['containers'])} containers, {len(resources['networks'])} networks, {len(resources['volumes'])} volumes")
+            
+            if total_resources == 0 and not remove_config:
+                log.info("No stack resources found to remove")
+                return True
+            
+            # Step 4: Confirmation prompt (unless --force)
+            if not force:
+                if remove_volumes:
+                    log.warning("🛑 DATA LOSS WARNING: Proceeding will permanently delete all models and conversations!")
+                
+                # TODO: Add actual user confirmation prompt here
+                # For now, we'll proceed as this is the basic implementation
+                log.info("Proceeding with resource removal...")
+            
+            # Step 5: Stop all services
+            log.info("Stopping all running services...")
             if self.is_stack_running():
-                if not self.stop_docker_services():
+                docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
+                native_services = [name for name, conf in self.config.services.items() if conf.type == 'native-api']
+                
+                if docker_services and not self.stop_docker_services():
                     log.warning("Failed to stop some Docker services")
                 
-                native_services = [name for name, conf in self.config.services.items() if conf.type == 'native-api']
-                if native_services:
-                    if not self.stop_native_services(native_services):
-                        log.warning("Failed to stop some native services")
+                if native_services and not self.stop_native_services(native_services):
+                    log.warning("Failed to stop some native services")
             
-            # Step 2: Remove containers and networks
+            # Step 6: Remove containers and networks 
             log.info("Removing containers and networks...")
-            if not self.cleanup_resources(remove_volumes=remove_volumes, force=force):
-                log.warning("Failed to cleanup some resources")
+            if not self.cleanup_resources(remove_volumes=False, force=force):
+                log.warning("Failed to cleanup some containers/networks")
             
-            # Step 3: Remove Docker images
+            # Step 7: Remove Docker images
             log.info("Removing Docker images...")
             if not self.docker_client.remove_resources(remove_images=True, force=force):
                 log.warning("Failed to remove some Docker images")
             
-            # Step 4: Clean up configuration files (unless keeping them)
-            if not keep_config:
-                log.info("Removing configuration files...")
+            # Step 8: Remove volumes if requested (with additional confirmation)
+            if remove_volumes:
+                if not force:
+                    log.warning("🚨 FINAL WARNING: About to delete all data volumes!")
+                    # TODO: Add additional confirmation prompt
+                
+                log.warning("Removing data volumes - THIS WILL DELETE ALL DATA!")
+                volumes = resources["volumes"]
+                removed_volumes = 0
+                for volume in volumes:
+                    try:
+                        volume.remove(force=force)
+                        log.debug(f"Removed volume: {volume.name}")
+                        removed_volumes += 1
+                    except Exception as e:
+                        log.warning(f"Failed to remove volume {volume.name}: {e}")
+                
+                if removed_volumes > 0:
+                    log.warning(f"Removed {removed_volumes} data volumes")
+            
+            # Step 9: Remove configuration directory if requested
+            if remove_config:
+                log.info("Removing configuration directory...")
                 try:
-                    # Remove .env file if it exists
-                    env_file = Path(".env")
-                    if env_file.exists():
-                        env_file.unlink()
-                        log.debug("Removed .env file")
+                    from .config import DEFAULT_CONFIG_DIR
                     
-                    # Remove .ollama-stack.json if it exists
-                    config_file = Path(".ollama-stack.json")
-                    if config_file.exists():
-                        config_file.unlink()
-                        log.debug("Removed .ollama-stack.json file")
+                    if DEFAULT_CONFIG_DIR.exists():
+                        import shutil
+                        shutil.rmtree(DEFAULT_CONFIG_DIR)
+                        log.debug(f"Removed configuration directory: {DEFAULT_CONFIG_DIR}")
+                    else:
+                        log.debug("Configuration directory not found")
                         
                 except Exception as e:
-                    log.warning(f"Failed to remove some configuration files: {e}")
-            else:
-                log.info("Preserving configuration files as requested")
+                    log.warning(f"Failed to remove configuration directory: {e}")
             
-            # Step 5: Log completion
-            if remove_volumes:
-                log.warning("Stack uninstalled completely including all data volumes")
+            # Step 10: Display completion message
+            log.info("Stack uninstall completed successfully")
+            
+            if remove_volumes and remove_config:
+                log.info("All stack resources, data, and configuration have been removed")
+            elif remove_volumes:
+                log.info("All stack resources and data have been removed (configuration preserved)")
+            elif remove_config:
+                log.info("All stack resources and configuration have been removed (data volumes preserved)")
             else:
-                log.info("Stack uninstalled successfully (volumes preserved)")
-                
-            if keep_config:
-                log.info("Configuration files preserved for future reinstallation")
-            else:
-                log.info("Configuration files removed - clean uninstall completed")
-                
+                log.info("All stack resources have been removed (data and configuration preserved)")
+            
+            log.info("To remove the CLI tool itself, run: pip uninstall ollama-stack-cli")
+            
             return True
             
         except Exception as e:
