@@ -19,11 +19,17 @@ cd ollama-stack
 ./install-ollama-stack.sh             # macOS/Linux
 .\install-ollama-stack.ps1            # Windows
 # If Windows blocks execution: powershell -ExecutionPolicy Bypass -File install-ollama-stack.ps1
+
+# Initialize configuration
+ollama-stack install
 ```
 
 ## Quick Start
 
 ```bash
+# Initialize configuration (first time only)
+ollama-stack install
+
 # Start the stack
 ollama-stack start
 
@@ -35,6 +41,72 @@ ollama-stack stop
 ```
 
 Access the web interface at `http://localhost:8080`
+
+## Commands
+
+### Setup and Configuration
+
+```bash
+# Create fresh configuration with secure keys
+ollama-stack install
+
+# Validate environment and configuration
+ollama-stack check
+
+# Force reinstall without prompts
+ollama-stack install --force
+```
+
+### Stack Management
+
+```bash
+# Start all services
+ollama-stack start
+
+# Stop all services
+ollama-stack stop
+
+# Restart all services
+ollama-stack restart
+
+# Check service status
+ollama-stack status
+
+# View service logs
+ollama-stack logs [service_name]
+```
+
+### Updates and Maintenance
+
+```bash
+# Update all stack components
+ollama-stack update
+
+# Update only core services
+ollama-stack update --services-only
+
+# Update only extensions
+ollama-stack update --extensions-only
+
+# Update with progress details
+ollama-stack update --verbose
+```
+
+### Cleanup and Removal
+
+```bash
+# Remove stack containers and networks
+ollama-stack uninstall
+
+# Remove everything including volumes (data loss!)
+ollama-stack uninstall --remove-volumes
+
+# Remove configuration files
+ollama-stack uninstall --remove-config
+
+# Complete removal (containers, volumes, config)
+ollama-stack uninstall --all
+```
 
 ## What You Get
 

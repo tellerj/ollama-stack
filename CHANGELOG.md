@@ -16,6 +16,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - 
 
+## [v0.3.0] - 2025-01-XX
+
+### Added
+- **New Commands**: `install` command for fresh configuration setup, `update` command for stack component updates, `uninstall` command for complete resource cleanup
+- **Resource Management**: Comprehensive Docker resource discovery and cleanup with safety controls
+- **Configuration Lifecycle**: Fresh configuration directory creation in `~/.ollama-stack/` with secure key generation
+- **Selective Updates**: Update filtering with `--services-only` and `--extensions-only` flags
+- **Update Orchestration**: Smart state management with stop → pull → restart workflow and inline updates for running stacks
+- **Secure Installation**: Cryptographically secure WebUI secret key generation (64-character keys)
+- **Volume Protection**: Safe uninstall with `--remove-volumes` flag to prevent accidental data loss
+- **Configuration Removal**: `--remove-config` and `--all` flags for complete stack removal
+- **Installation Validation**: Environment checks integrated into install workflow with detailed reporting
+- **Force Operations**: `--force` flags for non-interactive automation in CI/CD environments
+
+### Changed
+- **Enhanced Stack Manager**: New `install_stack()`, `update_stack()`, `find_resources_by_label()`, `cleanup_resources()`, and `uninstall_stack()` methods
+- **Docker Client Extensions**: Added `pull_images_with_progress()` and `remove_resources()` for enhanced resource management
+- **Install Stack Return Type**: Changed from boolean to dictionary with detailed results including paths, check reports, and failure information
+- **Architecture Compliance**: Fixed logging/display violations - core modules now use logging, command layer handles structured UI
+- **Configuration Security**: Install command generates secure keys vs start command's placeholder warnings
+
+### Fixed
+- **Method Signature Consistency**: Fixed `install_stack()` return type annotation to match actual dictionary returns
+- **Test Coverage**: Updated 56 install_stack tests to expect new dictionary return format
+- **Display Architecture**: Removed display method calls from core modules (stack_manager, install, status) - now properly separated
+- **Security Warnings**: Start command now warns when using placeholder keys and directs users to run install command
+
+### Technical
+- **Testing**: 56 updated stack manager tests + 37 install command tests + 1 install integration test
+- **Resource Management**: Label-based Docker resource discovery with comprehensive cleanup workflows
+- **Error Handling**: Enhanced exception handling in install/update/uninstall operations with detailed error reporting
+- **Safety Features**: Multiple confirmation prompts and force flags for destructive operations
+- **Architecture**: Proper separation between core logic (logging) and command layer (display)
+
 ## [v0.2.0] - 2025-01-14
 
 ### Added
