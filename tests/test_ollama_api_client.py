@@ -665,3 +665,491 @@ def test_run_environment_checks_with_fix_parameter(mock_which, api_client):
     assert len(checks) == 1
     check = checks[0]
     assert check.passed is True 
+
+# =============================================================================
+# Enhanced stop_service Tests - Additional Edge Cases for Robustness
+# =============================================================================
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', side_effect=[True, False])  # Running, then stopped
+@patch('subprocess.run')
+@patch('os.uname')
+def test_stop_service_multiple_launchd_services(mock_uname, mock_subprocess, mock_is_running, mock_which, api_client):
+    """Tests stop_service with multiple ollama launchd services found."""
+    mock_uname.return_value.sysname = 'Darwin'
+    
+    # Mock launchctl list output with multiple ollama services
+    launchctl_output = """PID	Status	Label
+-	0	com.github.ollama.ShipIt
+123	0	com.electron.ollama.agent
+456	0	com.ollama.server
+-	0	unrelated.service"""
+    
+    mock_subprocess.side_effect = [
+        MagicMock(returncode=0, stdout=launchctl_output),  # launchctl list
+        MagicMock(returncode=0),  # stop com.github.ollama.ShipIt  
+        MagicMock(returncode=0),  # stop com.electron.ollama.agent
+        MagicMock(returncode=0),  # stop com.ollama.server
+    ]
+    
+    result = api_client.stop_service()
+    assert result is True
+    
+    # Verify all expected calls were made
+    assert mock_subprocess.call_count == 4
+    
+    # Check launchctl list call
+    assert mock_subprocess.call_args_list[0][0][0] == ["launchctl", "list"]
+    
+    # Check the three stop calls for ollama services
+    stop_calls = [call[0][0] for call in mock_subprocess.call_args_list[1:]]
+    expected_stops = [
+        ["launchctl", "stop", "com.github.ollama.ShipIt"],
+        ["launchctl", "stop", "com.electron.ollama.agent"], 
+        ["launchctl", "stop", "com.ollama.server"]
+    ]
+    assert stop_calls == expected_stops
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', side_effect=[True, True, False])  # Running, still running after launchctl, stopped after pkill
+@patch('subprocess.run')
+@patch('os.uname')
+def test_stop_service_launchctl_stops_but_process_still_running(mock_uname, mock_subprocess, mock_is_running, mock_which, api_client):
+    """Tests stop_service when launchctl stops services but process is still running."""
+    mock_uname.return_value.sysname = 'Darwin'
+    
+    mock_subprocess.side_effect = [
+        MagicMock(returncode=0, stdout="123\t0\tcom.ollama.service\n"),  # launchctl list
+        MagicMock(returncode=0),  # launchctl stop succeeds
+        MagicMock(returncode=0),  # pkill also runs and succeeds
+    ]
+    
+    result = api_client.stop_service()
+    assert result is True  # Should succeed after pkill stops the service
+    
+    # Verify both launchctl and pkill were called
+    assert mock_subprocess.call_count == 3
+    assert mock_subprocess.call_args_list[0][0][0] == ["launchctl", "list"]
+    assert mock_subprocess.call_args_list[1][0][0] == ["launchctl", "stop", "com.ollama.service"]
+    assert mock_subprocess.call_args_list[2][0][0] == ["pkill", "-f", "ollama serve"]
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', side_effect=[True, False])  # Running, then stopped
+@patch('subprocess.run')
+@patch('os.uname')
+def test_stop_service_launchctl_malformed_output(mock_uname, mock_subprocess, mock_is_running, mock_which, api_client):
+    """Tests stop_service when launchctl list returns malformed output."""
+    mock_uname.return_value.sysname = 'Darwin'
+    
+    # Malformed output with inconsistent columns - the implementation tries to parse lines that contain 'ollama'
+    malformed_output = """incomplete line
+123	ollama_incomplete
+too	many	parts	here	com.ollama.service	extra
+normal line with ollama"""
+    
+    mock_subprocess.side_effect = [
+        MagicMock(returncode=0, stdout=malformed_output),  # launchctl list
+        MagicMock(returncode=0),  # launchctl stop for "with" (from "normal line with ollama")
+        MagicMock(returncode=1),  # pkill fails but service is stopped
+    ]
+    
+    result = api_client.stop_service()
+    assert result is True
+    
+    # Should handle malformed output gracefully and fall back to pkill
+    assert mock_subprocess.call_count == 3  # launchctl list, launchctl stop (partial), pkill
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', side_effect=[True, False])  # Running, then stopped after launchctl
+@patch('subprocess.run')
+@patch('os.uname')
+def test_stop_service_launchctl_individual_stop_failures(mock_uname, mock_subprocess, mock_is_running, mock_which, api_client):
+    """Tests stop_service when some launchctl stop commands fail."""
+    mock_uname.return_value.sysname = 'Darwin'
+    
+    launchctl_output = "123\t0\tcom.ollama.service1\n456\t0\tcom.ollama.service2\n"
+    
+    mock_subprocess.side_effect = [
+        MagicMock(returncode=0, stdout=launchctl_output),  # launchctl list
+        MagicMock(returncode=0),  # first stop succeeds
+        MagicMock(returncode=1),  # second stop fails
+        # No pkill needed since service stops after launchctl
+    ]
+    
+    result = api_client.stop_service()
+    assert result is True
+    
+    # Should stop after launchctl succeeds (service is stopped after second is_service_running call)
+    assert mock_subprocess.call_count == 3  # list + 2 stops, no pkill needed
+
+@patch('shutil.which')
+def test_run_environment_checks_which_exception(mock_which, api_client):
+    """Tests run_environment_checks when shutil.which raises an exception."""
+    mock_which.side_effect = OSError("Permission denied")
+    
+    # The method should handle the exception gracefully
+    checks = api_client.run_environment_checks()
+    
+    assert len(checks) == 1
+    check = checks[0]
+    assert check.name == "Ollama Installation (Native)"
+    assert check.passed is False
+    assert "command not found" in check.details
+
+# =============================================================================
+# Enhanced get_status Tests - Additional Edge Cases
+# =============================================================================
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch('subprocess.run')
+@patch('urllib.request.urlopen')
+def test_get_status_ollama_ps_with_whitespace_and_tabs(mock_urlopen, mock_subprocess, mock_which, api_client):
+    """Tests get_status with ollama ps output containing various whitespace."""
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+    
+    # Output with mixed whitespace and empty lines
+    mock_subprocess.return_value.returncode = 0
+    mock_subprocess.return_value.stdout = "NAME\t\tID\t\t\n\nmodel1\t123\t\n  \t\nmodel2\t456\t\n\n"
+    
+    status = api_client.get_status()
+    
+    assert status.is_running is True
+    assert status.health == "healthy"
+    assert status.status == "Running (2 models)"  # Should correctly count despite whitespace
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch('subprocess.run')
+@patch('urllib.request.urlopen')
+def test_get_status_ollama_ps_with_very_long_output(mock_urlopen, mock_subprocess, mock_which, api_client):
+    """Tests get_status with ollama ps output containing many models."""
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+    
+    # Generate output with many models
+    header = "NAME\tID\t\n"
+    models = "\n".join([f"model{i}\t{i}abc\t" for i in range(25)])
+    mock_subprocess.return_value.returncode = 0
+    mock_subprocess.return_value.stdout = header + models + "\n"
+    
+    status = api_client.get_status()
+    
+    assert status.is_running is True
+    assert status.health == "healthy"
+    assert status.status == "Running (25 models)"
+
+# =============================================================================
+# Enhanced get_logs Tests - Additional Edge Cases  
+# =============================================================================
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', return_value=True)
+@patch('os.uname')
+@patch('subprocess.run')
+def test_get_logs_linux_systemd_with_special_characters(mock_subprocess, mock_uname, mock_is_running, mock_which, api_client):
+    """Tests get_logs on Linux with systemd output containing special characters."""
+    mock_uname.return_value.sysname = "Linux"
+    
+    # Systemd output with unicode and special characters
+    mock_subprocess.return_value.returncode = 0
+    mock_subprocess.return_value.stdout = "log with émojis 🚀\nline with symbols: @#$%\nUnicode: ñàáâãäå\n"
+    
+    logs = list(api_client.get_logs())
+    
+    assert logs == ["log with émojis 🚀", "line with symbols: @#$%", "Unicode: ñàáâãäå"]
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', return_value=True)
+@patch('os.uname')
+@patch('pathlib.Path.exists', return_value=True)
+@patch('builtins.open', mock_open(read_data="line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n"))
+def test_get_logs_darwin_with_large_tail_number(mock_exists, mock_uname, mock_is_running, mock_which, api_client):
+    """Tests get_logs with tail parameter larger than available lines."""
+    mock_uname.return_value.sysname = "Darwin"
+    
+    logs = list(api_client.get_logs(tail=50))  # Request more lines than available
+    
+    # Should return all available lines
+    expected_lines = [f"line{i}" for i in range(1, 11)]
+    assert logs == expected_lines
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', return_value=True)
+@patch('os.uname')
+@patch('pathlib.Path.exists', return_value=True)
+@patch('subprocess.Popen')
+def test_get_logs_follow_with_binary_data_handling(mock_popen, mock_exists, mock_uname, mock_is_running, mock_which, api_client):
+    """Tests get_logs follow mode handling mixed text and binary-like data."""
+    mock_uname.return_value.sysname = "Darwin"
+    
+    # Simulate mixed content including some lines that might have encoding issues
+    mock_process = MagicMock()
+    mock_process.stdout = iter(["normal log line\n", "line with null\x00char\n", "another normal line\n"])
+    mock_popen.return_value = mock_process
+    
+    logs = list(api_client.get_logs(follow=True))
+    
+    # Should handle all lines gracefully
+    assert len(logs) == 3
+    assert "normal log line" in logs
+    assert "another normal line" in logs
+
+# =============================================================================
+# Enhanced is_service_running Tests - Additional Edge Cases
+# =============================================================================
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch('subprocess.run')
+@patch('urllib.request.urlopen')
+def test_is_service_running_api_returns_different_status_codes(mock_urlopen, mock_subprocess, mock_which, api_client):
+    """Tests is_service_running with various HTTP status codes."""
+    # pgrep fails
+    mock_subprocess.return_value.returncode = 1
+    
+    # Test different status codes
+    test_cases = [
+        (200, True),   # Success
+        (201, True),   # Created  
+        (299, True),   # Edge of 2xx range
+        (300, False),  # Redirection
+        (404, False),  # Not found
+        (500, False),  # Server error
+    ]
+    
+    for status_code, expected in test_cases:
+        mock_response = MagicMock()
+        mock_response.status = status_code
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+        
+        result = api_client.is_service_running()
+        assert result == expected, f"Status {status_code} should return {expected}"
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch('subprocess.run')
+@patch('urllib.request.urlopen')
+def test_is_service_running_pgrep_with_multiple_processes(mock_urlopen, mock_subprocess, mock_which, api_client):
+    """Tests is_service_running when pgrep finds multiple ollama processes."""
+    # Simulate pgrep finding multiple processes (still returns 0)
+    mock_subprocess.return_value.returncode = 0
+    mock_subprocess.return_value.stdout = "1234\n5678\n9012\n"  # Multiple PIDs
+    
+    result = api_client.is_service_running()
+    assert result is True
+    
+    # Should not need to check API since pgrep succeeded
+    mock_urlopen.assert_not_called()
+
+# =============================================================================
+# Additional Environment Checks Edge Cases
+# =============================================================================
+
+@patch('shutil.which')
+def test_run_environment_checks_which_exception(mock_which, api_client):
+    """Tests run_environment_checks when shutil.which raises an exception."""
+    mock_which.side_effect = OSError("Permission denied")
+    
+    # The method should handle the exception gracefully
+    checks = api_client.run_environment_checks()
+    
+    assert len(checks) == 1
+    check = checks[0]
+    assert check.name == "Ollama Installation (Native)"
+    assert check.passed is False
+    assert "command not found" in check.details
+
+# =============================================================================
+# Enhanced get_status Tests - Additional Edge Cases
+# =============================================================================
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch('subprocess.run')
+@patch('urllib.request.urlopen')
+def test_get_status_ollama_ps_with_whitespace_and_tabs(mock_urlopen, mock_subprocess, mock_which, api_client):
+    """Tests get_status with ollama ps output containing various whitespace."""
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+    
+    # Output with mixed whitespace and empty lines
+    mock_subprocess.return_value.returncode = 0
+    mock_subprocess.return_value.stdout = "NAME\t\tID\t\t\n\nmodel1\t123\t\n  \t\nmodel2\t456\t\n\n"
+    
+    status = api_client.get_status()
+    
+    assert status.is_running is True
+    assert status.health == "healthy"
+    assert status.status == "Running (2 models)"  # Should correctly count despite whitespace
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch('subprocess.run')
+@patch('urllib.request.urlopen')
+def test_get_status_ollama_ps_with_very_long_output(mock_urlopen, mock_subprocess, mock_which, api_client):
+    """Tests get_status with ollama ps output containing many models."""
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+    
+    # Generate output with many models
+    header = "NAME\tID\t\n"
+    models = "\n".join([f"model{i}\t{i}abc\t" for i in range(25)])
+    mock_subprocess.return_value.returncode = 0
+    mock_subprocess.return_value.stdout = header + models + "\n"
+    
+    status = api_client.get_status()
+    
+    assert status.is_running is True
+    assert status.health == "healthy"
+    assert status.status == "Running (25 models)"
+
+# =============================================================================
+# Enhanced get_logs Tests - Additional Edge Cases  
+# =============================================================================
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', return_value=True)
+@patch('os.uname')
+@patch('subprocess.run')
+def test_get_logs_linux_systemd_with_special_characters(mock_subprocess, mock_uname, mock_is_running, mock_which, api_client):
+    """Tests get_logs on Linux with systemd output containing special characters."""
+    mock_uname.return_value.sysname = "Linux"
+    
+    # Systemd output with unicode and special characters
+    mock_subprocess.return_value.returncode = 0
+    mock_subprocess.return_value.stdout = "log with émojis 🚀\nline with symbols: @#$%\nUnicode: ñàáâãäå\n"
+    
+    logs = list(api_client.get_logs())
+    
+    assert logs == ["log with émojis 🚀", "line with symbols: @#$%", "Unicode: ñàáâãäå"]
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', return_value=True)
+@patch('os.uname')
+@patch('pathlib.Path.exists', return_value=True)
+@patch('builtins.open', mock_open(read_data="line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n"))
+def test_get_logs_darwin_with_large_tail_number(mock_exists, mock_uname, mock_is_running, mock_which, api_client):
+    """Tests get_logs with tail parameter larger than available lines."""
+    mock_uname.return_value.sysname = "Darwin"
+    
+    logs = list(api_client.get_logs(tail=50))  # Request more lines than available
+    
+    # Should return all available lines
+    expected_lines = [f"line{i}" for i in range(1, 11)]
+    assert logs == expected_lines
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', return_value=True)
+@patch('os.uname')
+@patch('pathlib.Path.exists', return_value=True)
+@patch('subprocess.Popen')
+def test_get_logs_follow_with_binary_data_handling(mock_popen, mock_exists, mock_uname, mock_is_running, mock_which, api_client):
+    """Tests get_logs follow mode handling mixed text and binary-like data."""
+    mock_uname.return_value.sysname = "Darwin"
+    
+    # Simulate mixed content including some lines that might have encoding issues
+    mock_process = MagicMock()
+    mock_process.stdout = iter(["normal log line\n", "line with null\x00char\n", "another normal line\n"])
+    mock_popen.return_value = mock_process
+    
+    logs = list(api_client.get_logs(follow=True))
+    
+    # Should handle all lines gracefully
+    assert len(logs) == 3
+    assert "normal log line" in logs
+    assert "another normal line" in logs
+
+# =============================================================================
+# Enhanced is_service_running Tests - Additional Edge Cases
+# =============================================================================
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch('subprocess.run')
+@patch('urllib.request.urlopen')
+def test_is_service_running_api_returns_different_status_codes(mock_urlopen, mock_subprocess, mock_which, api_client):
+    """Tests is_service_running with various HTTP status codes."""
+    # pgrep fails
+    mock_subprocess.return_value.returncode = 1
+    
+    # Test different status codes
+    test_cases = [
+        (200, True),   # Success
+        (201, True),   # Created  
+        (299, True),   # Edge of 2xx range
+        (300, False),  # Redirection
+        (404, False),  # Not found
+        (500, False),  # Server error
+    ]
+    
+    for status_code, expected in test_cases:
+        mock_response = MagicMock()
+        mock_response.status = status_code
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+        
+        result = api_client.is_service_running()
+        assert result == expected, f"Status {status_code} should return {expected}"
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch('subprocess.run')
+@patch('urllib.request.urlopen')
+def test_is_service_running_pgrep_with_multiple_processes(mock_urlopen, mock_subprocess, mock_which, api_client):
+    """Tests is_service_running when pgrep finds multiple ollama processes."""
+    # Simulate pgrep finding multiple processes (still returns 0)
+    mock_subprocess.return_value.returncode = 0
+    mock_subprocess.return_value.stdout = "1234\n5678\n9012\n"  # Multiple PIDs
+    
+    result = api_client.is_service_running()
+    assert result is True
+    
+    # Should not need to check API since pgrep succeeded
+    mock_urlopen.assert_not_called()
+
+# =============================================================================
+# Additional Environment Checks Edge Cases
+# =============================================================================
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', return_value=True)
+@patch('subprocess.run')
+@patch('os.uname')
+def test_stop_service_launchctl_list_empty_output(mock_uname, mock_subprocess, mock_is_running, mock_which, api_client):
+    """Tests stop_service when launchctl list returns empty output."""
+    mock_uname.return_value.sysname = 'Darwin'
+    
+    mock_subprocess.side_effect = [
+        MagicMock(returncode=0, stdout=""),  # Empty launchctl list
+        MagicMock(returncode=1),  # pkill fails but service is stopped
+    ]
+    
+    # Mock the third call to is_service_running to return False (service stopped)
+    api_client.is_service_running = MagicMock(side_effect=[True, False])
+    
+    result = api_client.stop_service()
+    assert result is True
+    
+    # Should skip launchctl stop and go directly to pkill
+    assert mock_subprocess.call_count == 2
+    assert mock_subprocess.call_args_list[0][0][0] == ["launchctl", "list"]
+    assert mock_subprocess.call_args_list[1][0][0] == ["pkill", "-f", "ollama serve"]
+
+@patch('shutil.which', return_value='/usr/local/bin/ollama')
+@patch.object(OllamaApiClient, 'is_service_running', return_value=True)
+@patch('subprocess.run')
+@patch('os.uname')
+def test_stop_service_launchctl_timeout_during_stop(mock_uname, mock_subprocess, mock_is_running, mock_which, api_client):
+    """Tests stop_service when launchctl stop command times out."""
+    mock_uname.return_value.sysname = 'Darwin'
+    
+    mock_subprocess.side_effect = [
+        MagicMock(returncode=0, stdout="123\t0\tcom.ollama.service\n"),  # launchctl list
+        subprocess.TimeoutExpired('launchctl', 5),  # launchctl stop times out
+        MagicMock(returncode=0),  # pkill succeeds
+    ]
+    
+    # Service stops after pkill
+    api_client.is_service_running = MagicMock(side_effect=[True, False])
+    
+    result = api_client.stop_service()
+    assert result is True
+    
+    assert mock_subprocess.call_count == 3 

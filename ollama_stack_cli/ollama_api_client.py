@@ -397,7 +397,13 @@ class OllamaApiClient:
         checks = []
         
         # Check Ollama installation
-        if shutil.which("ollama"):
+        try:
+            ollama_available = shutil.which("ollama")
+        except (OSError, IOError):
+            # Handle permission errors or other OS-level issues
+            ollama_available = None
+        
+        if ollama_available:
             log.debug("Ollama is installed and available in PATH")
             checks.append(EnvironmentCheck(
                 name="Ollama Installation (Native)",

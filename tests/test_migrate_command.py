@@ -4,6 +4,7 @@ Unit tests for the migrate command.
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
+import typer
 
 from ollama_stack_cli.commands.migrate import migrate_stack_logic, migrate
 from ollama_stack_cli.context import AppContext
@@ -67,7 +68,7 @@ class TestMigrateCommand:
         panel_call = mock_app_context.display.panel.call_args
         panel_content = panel_call[0][0]
         assert "Migration Plan (Dry Run)" in panel_content
-        assert "0.2.0 → 0.3.0" in panel_content
+        assert "From: 0.2.0 → To: 0.3.0" in panel_content
     
     def test_migrate_stack_logic_version_specific_migration_030(self, mock_app_context):
         """Test migrate with version-specific migration for 0.3.0."""
@@ -196,7 +197,7 @@ class TestMigrateCommand:
         success_panel = panel_calls[-1]  # Last call should be success panel
         panel_content = success_panel[0][0]
         assert "Migration Completed Successfully" in panel_content
-        assert "0.2.0 → 0.3.0" in panel_content
+        assert "From: 0.2.0 → To: 0.3.0" in panel_content
         assert "ollama-stack start" in panel_content
     
     def test_migrate_stack_logic_migration_failure(self, mock_app_context):
@@ -269,10 +270,10 @@ class TestMigrateCommand:
         mock_ctx = Mock()
         mock_ctx.obj = Mock(spec=AppContext)
         
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(typer.Exit) as exc_info:
             migrate(mock_ctx)
         
-        assert exc_info.value.code == 1
+        assert exc_info.value.exit_code == 1
         mock_logic.assert_called_once()
     
     @patch('ollama_stack_cli.commands.migrate.migrate_stack_logic')

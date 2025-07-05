@@ -1254,9 +1254,9 @@ def test_import_configuration_corrupted_env_file(tmp_path: Path, mock_display: M
     source_dir.mkdir(parents=True)
     (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": "test.yml"}')
     
-    # Write binary content to .env file
+    # Write invalid UTF-8 content to .env file that will cause UnicodeDecodeError
     with open(source_dir / ".env", "wb") as f:
-        f.write(b"\x00\x01\x02\x03")  # Binary data
+        f.write(b'\xff\xfe\x00\x00test')  # Invalid UTF-8
     
     dest_config = tmp_path / "dest" / ".ollama-stack.json"
     dest_env = tmp_path / "dest" / ".env"

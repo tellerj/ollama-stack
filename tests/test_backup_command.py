@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 import tempfile
 import datetime
+import typer
 
 from ollama_stack_cli.commands.backup import backup_stack_logic, backup
 from ollama_stack_cli.context import AppContext
@@ -65,10 +66,10 @@ class TestBackupCommand:
         assert result is True
         mock_app_context.stack_manager.create_backup.assert_called_once()
         
-        # Check the backup directory path
+        # Check the backup directory path (resolve both paths to handle macOS symlinks)
         call_args = mock_app_context.stack_manager.create_backup.call_args
         backup_dir = call_args[1]['backup_dir']
-        assert str(backup_dir) == custom_path
+        assert Path(backup_dir).resolve() == Path(custom_path).resolve()
     
     def test_backup_stack_logic_selective_backup(self, mock_app_context):
         """Test backup with selective options."""
@@ -213,10 +214,10 @@ class TestBackupCommand:
         mock_ctx = Mock()
         mock_ctx.obj = Mock(spec=AppContext)
         
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(typer.Exit) as exc_info:
             backup(mock_ctx)
         
-        assert exc_info.value.code == 1
+        assert exc_info.value.exit_code == 1
         mock_logic.assert_called_once()
     
     @patch('ollama_stack_cli.commands.backup.backup_stack_logic')
