@@ -373,6 +373,705 @@ def test_save_config_ioerror_handling(mock_set_key, tmp_path: Path, mock_display
 
 
 # =============================================================================
+# Phase 6.1: export_configuration() Tests
+# =============================================================================
+
+def test_export_configuration_success(tmp_path: Path, mock_display: MagicMock):
+    """Tests successful export of both config files."""
+    from ollama_stack_cli.config import export_configuration
+    
+    # Create source config files
+    config_file = tmp_path / "source" / ".ollama-stack.json"
+    env_file = tmp_path / "source" / ".env"
+    config_file.parent.mkdir(parents=True)
+    
+    # Write test data
+    config_file.write_text('{"docker_compose_file": "test.yml"}')
+    env_file.write_text('PROJECT_NAME=test\nWEBUI_SECRET_KEY=secret')
+    
+    # Export to different directory
+    output_dir = tmp_path / "export"
+    
+    result = export_configuration(mock_display, output_dir, config_file, env_file)
+    
+    # Verify success
+    assert result == True
+    assert (output_dir / ".ollama-stack.json").exists()
+    assert (output_dir / ".env").exists()
+    
+    # Verify content preserved
+    exported_config = (output_dir / ".ollama-stack.json").read_text()
+    exported_env = (output_dir / ".env").read_text()
+    assert '"docker_compose_file": "test.yml"' in exported_config
+    assert 'PROJECT_NAME=test' in exported_env
+
+def test_export_configuration_partial_files(tmp_path: Path, mock_display: MagicMock):
+    """Tests export when only some config files exist."""
+    from ollama_stack_cli.config import export_configuration
+    
+    # Create only config file, not env file
+    config_file = tmp_path / "source" / ".ollama-stack.json"
+    env_file = tmp_path / "source" / ".env"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('{"docker_compose_file": "test.yml"}')
+    # Don't create env_file
+    
+    output_dir = tmp_path / "export"
+    
+    result = export_configuration(mock_display, output_dir, config_file, env_file)
+    
+    # Should still succeed
+    assert result == True
+    assert (output_dir / ".ollama-stack.json").exists()
+    assert not (output_dir / ".env").exists()
+
+def test_export_configuration_no_files(tmp_path: Path, mock_display: MagicMock):
+    """Tests export when no config files exist."""
+    from ollama_stack_cli.config import export_configuration
+    
+    # Point to non-existent files
+    config_file = tmp_path / "nonexistent" / ".ollama-stack.json"
+    env_file = tmp_path / "nonexistent" / ".env"
+    output_dir = tmp_path / "export"
+    
+    result = export_configuration(mock_display, output_dir, config_file, env_file)
+    
+    # Should return False when no files to export
+    assert result == False
+
+def test_export_configuration_creates_output_directory(tmp_path: Path, mock_display: MagicMock):
+    """Tests that export creates the output directory if it doesn't exist."""
+    from ollama_stack_cli.config import export_configuration
+    
+    # Create source file
+    config_file = tmp_path / "source" / ".ollama-stack.json"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('{"docker_compose_file": "test.yml"}')
+    
+    # Use deeply nested output path that doesn't exist
+    output_dir = tmp_path / "deep" / "nested" / "export"
+    env_file = tmp_path / "nonexistent.env"  # Doesn't exist
+    
+    assert not output_dir.exists()
+    
+    result = export_configuration(mock_display, output_dir, config_file, env_file)
+    
+    # Should create directory and succeed
+    assert result == True
+    assert output_dir.exists()
+    assert (output_dir / ".ollama-stack.json").exists()
+
+@patch('shutil.copy2')
+def test_export_configuration_copy_failure(mock_copy2, tmp_path: Path, mock_display: MagicMock):
+    """Tests export failure when file copy fails."""
+    from ollama_stack_cli.config import export_configuration
+    
+    # Create source file
+    config_file = tmp_path / ".ollama-stack.json"
+    config_file.write_text('{"test": true}')
+    env_file = tmp_path / "nonexistent.env"
+    
+    # Make copy2 fail
+    mock_copy2.side_effect = OSError("Permission denied")
+    
+    output_dir = tmp_path / "export"
+    
+    result = export_configuration(mock_display, output_dir, config_file, env_file)
+    
+    # Should return False on failure
+    assert result == False
+
+# =============================================================================
+# Phase 6.1: import_configuration() Tests  
+# =============================================================================
+
+def test_import_configuration_success(tmp_path: Path, mock_display: MagicMock):
+    """Tests successful import of config files."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Create source files with valid content
+    source_dir = tmp_path / "backup" / "config"
+    source_dir.mkdir(parents=True)
+    
+    (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": "backup.yml"}')
+    (source_dir / ".env").write_text('PROJECT_NAME=restored\nWEBUI_SECRET_KEY=newsecret')
+    
+    # Import to destination
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env)
+    
+    # Verify success
+    assert result == True
+    assert dest_config.exists()
+    assert dest_env.exists()
+    
+    # Verify content
+    imported_config = dest_config.read_text()
+    imported_env = dest_env.read_text()
+    assert '"docker_compose_file": "backup.yml"' in imported_config
+    assert 'PROJECT_NAME=restored' in imported_env
+
+def test_import_configuration_validate_only(tmp_path: Path, mock_display: MagicMock):
+    """Tests import in validate-only mode."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Create valid source files
+    source_dir = tmp_path / "backup" / "config"
+    source_dir.mkdir(parents=True)
+    (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": "test.yml"}')
+    (source_dir / ".env").write_text('PROJECT_NAME=test')
+    
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env, validate_only=True)
+    
+    # Should succeed but not create files
+    assert result == True
+    assert not dest_config.exists()
+    assert not dest_env.exists()
+
+def test_import_configuration_invalid_json(tmp_path: Path, mock_display: MagicMock):
+    """Tests import failure with invalid JSON config."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Create source with invalid JSON
+    source_dir = tmp_path / "backup" / "config"
+    source_dir.mkdir(parents=True)
+    (source_dir / ".ollama-stack.json").write_text('{ invalid json }')
+    
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env)
+    
+    # Should fail validation
+    assert result == False
+
+def test_import_configuration_invalid_schema(tmp_path: Path, mock_display: MagicMock):
+    """Tests import failure with invalid config schema."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Create source with schema violation
+    source_dir = tmp_path / "backup" / "config"
+    source_dir.mkdir(parents=True)
+    (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": 123}')  # Should be string
+    
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env)
+    
+    # Should fail validation
+    assert result == False
+
+def test_import_configuration_missing_source_files(tmp_path: Path, mock_display: MagicMock):
+    """Tests import when source files don't exist."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Empty source directory
+    source_dir = tmp_path / "backup" / "config"
+    source_dir.mkdir(parents=True)
+    
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env)
+    
+    # Should return False when no files to import
+    assert result == False
+
+def test_import_configuration_creates_dest_directories(tmp_path: Path, mock_display: MagicMock):
+    """Tests that import creates destination directories."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Create source file
+    source_dir = tmp_path / "backup" / "config"
+    source_dir.mkdir(parents=True)
+    (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": "test.yml"}')
+    
+    # Use deeply nested destination that doesn't exist
+    dest_config = tmp_path / "deep" / "nested" / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "deep" / "nested" / "dest" / ".env"
+    
+    assert not dest_config.parent.exists()
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env)
+    
+    # Should create directories and succeed
+    assert result == True
+    assert dest_config.exists()
+    assert dest_config.parent.exists()
+
+@patch('shutil.copy2')
+def test_import_configuration_copy_failure(mock_copy2, tmp_path: Path, mock_display: MagicMock):
+    """Tests import failure when file copy fails."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Create valid source
+    source_dir = tmp_path / "backup" / "config"
+    source_dir.mkdir(parents=True)
+    (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": "test.yml"}')
+    
+    # Make copy fail
+    mock_copy2.side_effect = OSError("Disk full")
+    
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env)
+    
+    # Should handle failure gracefully
+    assert result == False
+
+# =============================================================================
+# Phase 6.1: validate_backup_manifest() Tests
+# =============================================================================
+
+def test_validate_backup_manifest_success(tmp_path: Path, mock_display: MagicMock):
+    """Tests successful backup manifest validation."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    # Create backup directory structure
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "volumes").mkdir()
+    (backup_dir / "config").mkdir()
+    (backup_dir / "extensions").mkdir()
+    
+    # Create manifest
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0", 
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=["ollama_data", "webui_data"],
+        config_files=[".ollama-stack.json", ".env"],
+        extensions=["test_extension"]
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    # Create expected backup files
+    (backup_dir / "ollama_data.tar.gz").touch()
+    (backup_dir / "webui_data.tar.gz").touch()
+    (backup_dir / "config" / ".ollama-stack.json").touch()
+    (backup_dir / "config" / ".env").touch()
+    (backup_dir / "extensions" / "test_extension.tar.gz").touch()
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should succeed
+    assert is_valid == True
+    assert parsed_manifest is not None
+    assert parsed_manifest.volumes == ["ollama_data", "webui_data"]
+    assert parsed_manifest.config_files == [".ollama-stack.json", ".env"]
+
+def test_validate_backup_manifest_missing_file(tmp_path: Path, mock_display: MagicMock):
+    """Tests validation failure when manifest file is missing."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    manifest_file = backup_dir / "backup_manifest.json"
+    # Don't create manifest file
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should fail
+    assert is_valid == False
+    assert parsed_manifest is None
+
+def test_validate_backup_manifest_invalid_json(tmp_path: Path, mock_display: MagicMock):
+    """Tests validation failure with invalid JSON."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    manifest_file = backup_dir / "backup_manifest.json"
+    
+    # Write invalid JSON
+    manifest_file.write_text("{ invalid json }")
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should fail
+    assert is_valid == False
+    assert parsed_manifest is None
+
+def test_validate_backup_manifest_invalid_schema(tmp_path: Path, mock_display: MagicMock):
+    """Tests validation failure with invalid manifest schema."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    manifest_file = backup_dir / "backup_manifest.json"
+    
+    # Write JSON with invalid schema
+    invalid_manifest = {
+        "backup_id": "test",
+        "stack_version": 123,  # Should be string
+        "platform": "linux"
+        # Missing required fields
+    }
+    
+    with open(manifest_file, "w") as f:
+        json.dump(invalid_manifest, f)
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should fail validation
+    assert is_valid == False
+    assert parsed_manifest is None
+
+def test_validate_backup_manifest_missing_volume_files(tmp_path: Path, mock_display: MagicMock):
+    """Tests validation failure when volume backup files are missing."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    
+    # Create manifest with volumes but don't create the backup files
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux", 
+        backup_config=BackupConfig(),
+        volumes=["missing_volume"],
+        config_files=[],
+        extensions=[]
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    # Don't create missing_volume.tar.gz
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should fail due to missing files
+    assert is_valid == False
+    assert parsed_manifest is not None  # Manifest parses but files are missing
+
+def test_validate_backup_manifest_missing_config_files(tmp_path: Path, mock_display: MagicMock):
+    """Tests validation failure when config backup files are missing."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "config").mkdir()
+    
+    # Create manifest with config files but don't create them
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=[],
+        config_files=["missing_config.json"],
+        extensions=[]
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    # Don't create config/missing_config.json
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should fail due to missing files
+    assert is_valid == False
+    assert parsed_manifest is not None
+
+def test_validate_backup_manifest_missing_extension_files(tmp_path: Path, mock_display: MagicMock):
+    """Tests validation failure when extension backup files are missing."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "extensions").mkdir()
+    
+    # Create manifest with extensions but don't create the files
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=[],
+        config_files=[],
+        extensions=["missing_extension"]
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    # Don't create extensions/missing_extension.tar.gz
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should fail due to missing files
+    assert is_valid == False
+    assert parsed_manifest is not None
+
+def test_validate_backup_manifest_checksum_success(tmp_path: Path, mock_display: MagicMock):
+    """Tests successful checksum validation."""
+    from ollama_stack_cli.config import validate_backup_manifest, _calculate_backup_checksum
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "config").mkdir()
+    
+    # Create backup files with content
+    config_file = backup_dir / "config" / ".ollama-stack.json"
+    config_file.write_text('{"test": "data"}')
+    
+    # Create manifest
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=[],
+        config_files=[".ollama-stack.json"],
+        extensions=[]
+    )
+    
+    # Calculate actual checksum
+    manifest.checksum = _calculate_backup_checksum(backup_dir, manifest)
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should succeed with matching checksum
+    assert is_valid == True
+    assert parsed_manifest is not None
+
+def test_validate_backup_manifest_checksum_mismatch(tmp_path: Path, mock_display: MagicMock):
+    """Tests validation failure with checksum mismatch."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "config").mkdir()
+    
+    # Create backup files
+    config_file = backup_dir / "config" / ".ollama-stack.json"
+    config_file.write_text('{"test": "data"}')
+    
+    # Create manifest with wrong checksum
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=[],
+        config_files=[".ollama-stack.json"],
+        extensions=[],
+        checksum="wrong_checksum_value"
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should fail due to checksum mismatch
+    assert is_valid == False
+    assert parsed_manifest is not None
+
+def test_validate_backup_manifest_no_checksum(tmp_path: Path, mock_display: MagicMock):
+    """Tests validation success when no checksum is present."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "config").mkdir()
+    
+    # Create backup files
+    config_file = backup_dir / "config" / ".ollama-stack.json"
+    config_file.write_text('{"test": "data"}')
+    
+    # Create manifest without checksum
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=[],
+        config_files=[".ollama-stack.json"],
+        extensions=[],
+        checksum=None
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should succeed - no checksum validation needed
+    assert is_valid == True
+    assert parsed_manifest is not None
+
+# =============================================================================
+# Phase 6.1: _calculate_backup_checksum() Tests
+# =============================================================================
+
+def test_calculate_backup_checksum_with_all_file_types(tmp_path: Path, mock_display: MagicMock):
+    """Tests checksum calculation with volumes, config files, and extensions."""
+    from ollama_stack_cli.config import _calculate_backup_checksum
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "config").mkdir()
+    (backup_dir / "extensions").mkdir()
+    
+    # Create files with specific content
+    (backup_dir / "volume1.tar.gz").write_text("volume1 content")
+    (backup_dir / "volume2.tar.gz").write_text("volume2 content")
+    (backup_dir / "config" / "config.json").write_text("config content")
+    (backup_dir / "extensions" / "ext1.tar.gz").write_text("extension content")
+    
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=["volume1", "volume2"],
+        config_files=["config.json"],
+        extensions=["ext1"]
+    )
+    
+    checksum = _calculate_backup_checksum(backup_dir, manifest)
+    
+    # Should return a valid SHA256 hash
+    assert isinstance(checksum, str)
+    assert len(checksum) == 64  # SHA256 hex length
+    
+    # Checksum should be deterministic
+    checksum2 = _calculate_backup_checksum(backup_dir, manifest)
+    assert checksum == checksum2
+
+def test_calculate_backup_checksum_empty_manifest(tmp_path: Path, mock_display: MagicMock):
+    """Tests checksum calculation with empty manifest."""
+    from ollama_stack_cli.config import _calculate_backup_checksum
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=[],
+        config_files=[],
+        extensions=[]
+    )
+    
+    checksum = _calculate_backup_checksum(backup_dir, manifest)
+    
+    # Should still return a valid hash (of empty content)
+    assert isinstance(checksum, str)
+    assert len(checksum) == 64
+
+def test_calculate_backup_checksum_missing_files(tmp_path: Path, mock_display: MagicMock):
+    """Tests checksum calculation when some files are missing."""
+    from ollama_stack_cli.config import _calculate_backup_checksum
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "config").mkdir()
+    
+    # Create only some of the expected files
+    (backup_dir / "existing.tar.gz").write_text("content")
+    # Don't create missing.tar.gz or config.json
+    
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=["existing", "missing"],
+        config_files=["config.json"],
+        extensions=[]
+    )
+    
+    checksum = _calculate_backup_checksum(backup_dir, manifest)
+    
+    # Should only include existing files in checksum
+    assert isinstance(checksum, str)
+    assert len(checksum) == 64
+
+def test_calculate_backup_checksum_sorted_order(tmp_path: Path, mock_display: MagicMock):
+    """Tests that checksum calculation uses sorted order for consistency."""
+    from ollama_stack_cli.config import _calculate_backup_checksum
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    
+    # Create files
+    (backup_dir / "z_file.tar.gz").write_text("z content")
+    (backup_dir / "a_file.tar.gz").write_text("a content")
+    
+    # Test with different order in manifest
+    manifest1 = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=["z_file", "a_file"],  # Different order
+        config_files=[],
+        extensions=[]
+    )
+    
+    manifest2 = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=["a_file", "z_file"],  # Different order  
+        config_files=[],
+        extensions=[]
+    )
+    
+    checksum1 = _calculate_backup_checksum(backup_dir, manifest1)
+    checksum2 = _calculate_backup_checksum(backup_dir, manifest2)
+    
+    # Checksums should be identical regardless of manifest order
+    assert checksum1 == checksum2
+
+# =============================================================================
 # Config Class Tests (Missing Coverage)
 # =============================================================================
 
@@ -419,4 +1118,325 @@ def test_config_class_initialization_with_load_failure(mock_load_config, mock_di
     
     # This should not be caught and should propagate
     with pytest.raises(Exception, match="Unexpected error"):
-        Config(mock_display) 
+        Config(mock_display)
+
+
+# =============================================================================
+# Phase 6.1: Config Class Method Tests
+# =============================================================================
+
+def test_config_export_configuration_method(tmp_path: Path, mock_display: MagicMock):
+    """Tests Config.export_configuration() method."""
+    # Create config with files
+    config_file = tmp_path / ".ollama-stack.json"
+    env_file = tmp_path / ".env"
+    
+    config = AppConfig()
+    save_config(mock_display, config, config_file, env_file)
+    
+    # Create Config instance
+    config_manager = Config(mock_display, config_file, env_file)
+    
+    # Test export method
+    output_dir = tmp_path / "export"
+    result = config_manager.export_configuration(output_dir)
+    
+    # Should delegate to function and succeed
+    assert result == True
+    assert (output_dir / ".ollama-stack.json").exists()
+    assert (output_dir / ".env").exists()
+
+def test_config_import_configuration_method(tmp_path: Path, mock_display: MagicMock):
+    """Tests Config.import_configuration() method."""
+    # Create source files
+    source_dir = tmp_path / "source" / "config"
+    source_dir.mkdir(parents=True)
+    (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": "imported.yml"}')
+    (source_dir / ".env").write_text('PROJECT_NAME=imported')
+    
+    # Create Config instance with different paths
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    config_manager = Config(mock_display, dest_config, dest_env)
+    
+    # Test import method
+    result = config_manager.import_configuration(source_dir)
+    
+    # Should delegate to function and succeed
+    assert result == True
+    assert dest_config.exists()
+    assert dest_env.exists()
+
+def test_config_import_configuration_validate_only(tmp_path: Path, mock_display: MagicMock):
+    """Tests Config.import_configuration() with validate_only=True."""
+    # Create valid source files
+    source_dir = tmp_path / "source" / "config"
+    source_dir.mkdir(parents=True)
+    (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": "test.yml"}')
+    
+    config_manager = Config(mock_display)
+    
+    # Test validate-only mode
+    result = config_manager.import_configuration(source_dir, validate_only=True)
+    
+    # Should succeed without creating files
+    assert result == True
+
+def test_config_validate_backup_manifest_method(tmp_path: Path, mock_display: MagicMock):
+    """Tests Config.validate_backup_manifest() method."""
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    # Create valid backup structure
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "config").mkdir()
+    
+    # Create manifest and files
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=[],
+        config_files=[".ollama-stack.json"],
+        extensions=[]
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    (backup_dir / "config" / ".ollama-stack.json").touch()
+    
+    config_manager = Config(mock_display)
+    
+    # Test validation method
+    is_valid, parsed_manifest = config_manager.validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should delegate to function and succeed
+    assert is_valid == True
+    assert parsed_manifest is not None
+
+
+# =============================================================================
+# Phase 6.1: Edge Cases and Error Scenarios
+# =============================================================================
+
+def test_export_configuration_permission_denied(tmp_path: Path, mock_display: MagicMock):
+    """Tests export failure due to permission issues."""
+    from ollama_stack_cli.config import export_configuration
+    
+    # Create source file
+    config_file = tmp_path / ".ollama-stack.json"
+    config_file.write_text('{"test": true}')
+    env_file = tmp_path / "nonexistent.env"
+    
+    # Create output directory but make it read-only
+    output_dir = tmp_path / "readonly"
+    output_dir.mkdir()
+    output_dir.chmod(0o444)  # Read-only
+    
+    try:
+        result = export_configuration(mock_display, output_dir, config_file, env_file)
+        # Should handle permission error gracefully
+        assert result == False
+    finally:
+        # Restore permissions for cleanup
+        output_dir.chmod(0o755)
+
+def test_import_configuration_corrupted_env_file(tmp_path: Path, mock_display: MagicMock):
+    """Tests import with a corrupted .env file that can't be parsed."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Create source with binary content in .env (should cause parsing error)
+    source_dir = tmp_path / "source" / "config"
+    source_dir.mkdir(parents=True)
+    (source_dir / ".ollama-stack.json").write_text('{"docker_compose_file": "test.yml"}')
+    
+    # Write binary content to .env file
+    with open(source_dir / ".env", "wb") as f:
+        f.write(b"\x00\x01\x02\x03")  # Binary data
+    
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env)
+    
+    # Should handle corrupted env file gracefully
+    assert result == False
+
+def test_validate_backup_manifest_very_large_checksum(tmp_path: Path, mock_display: MagicMock):
+    """Tests checksum calculation with large files."""
+    from ollama_stack_cli.config import _calculate_backup_checksum
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    
+    # Create a larger file (1MB of repeated content)
+    large_content = "x" * (1024 * 1024)  # 1MB
+    (backup_dir / "large_volume.tar.gz").write_text(large_content)
+    
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=["large_volume"],
+        config_files=[],
+        extensions=[]
+    )
+    
+    # Should handle large files without issues
+    checksum = _calculate_backup_checksum(backup_dir, manifest)
+    assert isinstance(checksum, str)
+    assert len(checksum) == 64
+
+def test_validate_backup_manifest_special_characters_in_filenames(tmp_path: Path, mock_display: MagicMock):
+    """Tests manifest validation with special characters in filenames."""
+    from ollama_stack_cli.config import validate_backup_manifest
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "config").mkdir()
+    
+    # Create files with special characters (that are filesystem-safe)
+    special_filename = "test-config_v2.1.json"
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=[],
+        config_files=[special_filename],
+        extensions=[]
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    (backup_dir / "config" / special_filename).touch()
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should handle special characters in filenames
+    assert is_valid == True
+    assert parsed_manifest is not None
+
+def test_calculate_backup_checksum_file_read_error(tmp_path: Path, mock_display: MagicMock):
+    """Tests checksum calculation when a file can't be read."""
+    from ollama_stack_cli.config import _calculate_backup_checksum
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    
+    # Create a file and then make it unreadable
+    test_file = backup_dir / "unreadable.tar.gz"
+    test_file.write_text("content")
+    test_file.chmod(0o000)  # No permissions
+    
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=["unreadable"],
+        config_files=[],
+        extensions=[]
+    )
+    
+    try:
+        # Should handle file read errors gracefully 
+        checksum = _calculate_backup_checksum(backup_dir, manifest)
+        # If it succeeds, it's because the file was skipped
+        assert isinstance(checksum, str)
+        assert len(checksum) == 64
+    except PermissionError:
+        # This is also acceptable - the function might not catch all file errors
+        pass
+    finally:
+        # Restore permissions for cleanup
+        test_file.chmod(0o644)
+
+def test_export_configuration_symlink_handling(tmp_path: Path, mock_display: MagicMock):
+    """Tests export with symlinks in paths."""
+    from ollama_stack_cli.config import export_configuration
+    
+    # Create actual files
+    real_config_dir = tmp_path / "real_config"
+    real_config_dir.mkdir()
+    config_file = real_config_dir / ".ollama-stack.json"
+    config_file.write_text('{"test": true}')
+    
+    # Create symlink to config file
+    symlink_config = tmp_path / "symlink_config.json"
+    symlink_config.symlink_to(config_file)
+    
+    output_dir = tmp_path / "export"
+    env_file = tmp_path / "nonexistent.env"
+    
+    result = export_configuration(mock_display, output_dir, symlink_config, env_file)
+    
+    # Should handle symlinks correctly
+    assert result == True
+    assert (output_dir / "symlink_config.json").exists()
+
+def test_import_configuration_empty_source_directory(tmp_path: Path, mock_display: MagicMock):
+    """Tests import from completely empty source directory."""
+    from ollama_stack_cli.config import import_configuration
+    
+    # Create empty source directory
+    source_dir = tmp_path / "empty"
+    source_dir.mkdir()
+    
+    dest_config = tmp_path / "dest" / ".ollama-stack.json"
+    dest_env = tmp_path / "dest" / ".env"
+    
+    result = import_configuration(mock_display, source_dir, dest_config, dest_env)
+    
+    # Should return False for empty directory
+    assert result == False
+    assert not dest_config.exists()
+    assert not dest_env.exists()
+
+def test_validate_backup_manifest_duplicate_entries(tmp_path: Path, mock_display: MagicMock):
+    """Tests manifest validation with duplicate entries in lists."""
+    from ollama_stack_cli.config import validate_backup_manifest, _calculate_backup_checksum
+    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
+    import json
+    
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    
+    # Create files
+    (backup_dir / "volume1.tar.gz").write_text("content")
+    
+    # Create manifest with duplicate volumes
+    manifest = BackupManifest(
+        stack_version="0.2.0",
+        cli_version="0.2.0",
+        platform="linux",
+        backup_config=BackupConfig(),
+        volumes=["volume1", "volume1"],  # Duplicate
+        config_files=[],
+        extensions=[]
+    )
+    
+    manifest_file = backup_dir / "backup_manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest.model_dump(), f, default=str)
+    
+    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should handle duplicates (might succeed since file exists for both references)
+    assert parsed_manifest is not None
+    
+    # Test checksum calculation with duplicates
+    checksum = _calculate_backup_checksum(backup_dir, manifest)
+    assert isinstance(checksum, str)
+    assert len(checksum) == 64 

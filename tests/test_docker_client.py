@@ -6,6 +6,9 @@ import socket
 import urllib.error
 import sys
 import pathlib
+import os
+import json
+from pathlib import Path
 
 from ollama_stack_cli.docker_client import DockerClient
 from ollama_stack_cli.schemas import AppConfig, PlatformConfig, ServiceStatus, ResourceUsage, CheckReport, EnvironmentCheck
@@ -1258,3 +1261,628 @@ def test_export_compose_config_empty_config(mock_docker_from_env, mock_subproces
     
     assert result is True
     mock_print.assert_called_once_with("")
+
+def test_backup_volumes_no_client(mock_config, mock_display):
+    """Test backup_volumes when client is None"""
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = None  # Simulate no docker client
+    
+    result = client.backup_volumes(["vol1"], Path("/backup/path"))
+    
+    assert result is False
+
+def test_backup_volumes_volume_not_found(mock_config, mock_display):
+    """Test backup_volumes when volume doesn't exist"""
+    mock_client = MagicMock()
+    mock_client.volumes.get.side_effect = docker.errors.NotFound("Volume not found")
+    
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = mock_client
+    
+    with patch("pathlib.Path.mkdir"):
+        result = client.backup_volumes(["nonexistent_vol"], Path("/backup/path"))
+    
+    assert result is True  # Should succeed because volume not found is handled gracefully
+    mock_client.volumes.get.assert_called_once_with("nonexistent_vol")
+
+def test_backup_volumes_container_run_fails(mock_config, mock_display):
+    """Test backup_volumes when container run fails"""
+    with patch("pathlib.Path.mkdir"), patch("pathlib.Path.exists", return_value=True):
+        mock_client = MagicMock()
+        mock_volume = MagicMock()
+        mock_volume.name = "test_vol"
+        mock_client.volumes.get.return_value = mock_volume
+        mock_client.containers.run.side_effect = docker.errors.APIError("Container run failed")
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.backup_volumes(["test_vol"], Path("/backup/path"))
+        
+        assert result is False
+        mock_client.volumes.get.assert_called_once_with("test_vol")
+        mock_client.containers.run.assert_called_once()
+
+def test_backup_volumes_container_wait_fails(mock_config, mock_display):
+    """Test backup_volumes when container wait returns non-zero exit code"""
+    with patch("pathlib.Path.mkdir"), patch("pathlib.Path.exists", return_value=False):
+        mock_client = MagicMock()
+        mock_volume = MagicMock()
+        mock_volume.name = "test_vol"
+        mock_client.volumes.get.return_value = mock_volume
+        
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 1}
+        mock_container.logs.return_value = b"Backup failed"
+        mock_client.containers.run.return_value = mock_container
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.backup_volumes(["test_vol"], Path("/backup/path"))
+        
+        assert result is False
+        mock_client.containers.run.assert_called_once()
+
+def test_backup_volumes_empty_list(mock_config, mock_display):
+    """Test backup_volumes with empty volume list"""
+    mock_client = MagicMock()
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = mock_client
+    
+    with patch("pathlib.Path.mkdir"):
+        result = client.backup_volumes([], Path("/backup/path"))
+    
+    assert result is True
+    mock_client.volumes.get.assert_not_called()
+    mock_client.containers.run.assert_not_called()
+
+def test_backup_volumes_backup_dir_creation(mock_config, mock_display):
+    """Test backup_volumes creates backup directory structure"""
+    with patch("pathlib.Path.mkdir") as mock_mkdir, patch("pathlib.Path.exists") as mock_exists:
+        mock_exists.return_value = True
+        
+        mock_client = MagicMock()
+        mock_volume = MagicMock()
+        mock_volume.name = "test_vol"
+        mock_client.volumes.get.return_value = mock_volume
+        
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 0}
+        mock_client.containers.run.return_value = mock_container
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.backup_volumes(["test_vol"], Path("/backup/path"))
+        
+        assert result is True
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+def test_backup_volumes_partial_failure(mock_config, mock_display):
+    """Test backup_volumes with some volumes failing"""
+    with patch("pathlib.Path.mkdir"), patch("pathlib.Path.exists") as mock_patches:
+        mock_mkdir = mock_patches[0]
+        mock_exists = mock_patches[1]
+        mock_exists.return_value = True
+        
+        mock_client = MagicMock()
+        
+        # First volume succeeds
+        mock_vol1 = MagicMock()
+        mock_vol1.name = "vol1"
+        
+        # Second volume fails
+        def volume_get_side_effect(name):
+            if name == "vol1":
+                return mock_vol1
+            elif name == "vol2":
+                raise docker.errors.NotFound("Volume not found")
+        
+        mock_client.volumes.get.side_effect = volume_get_side_effect
+        
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 0}
+        mock_client.containers.run.return_value = mock_container
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.backup_volumes(["vol1", "vol2"], Path("/backup/path"))
+        
+        assert result is True  # Should succeed even if some volumes are not found (they are skipped)
+        assert mock_client.volumes.get.call_count == 2
+    
+def test_restore_volumes_success(mock_config, mock_display):
+    """Test restore_volumes successful execution"""
+    with patch("pathlib.Path.exists", return_value=True):
+        mock_client = MagicMock()
+        mock_volume = MagicMock()
+        mock_volume.name = "test_vol"
+        mock_client.volumes.get.side_effect = docker.errors.NotFound("Volume not found")
+        mock_client.volumes.create.return_value = mock_volume
+        
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 0}
+        mock_client.containers.run.return_value = mock_container
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.restore_volumes(["test_vol"], Path("/backup/path"))
+        
+        assert result is True
+        mock_client.volumes.create.assert_called_once_with(name="test_vol")
+        mock_client.containers.run.assert_called_once()
+
+def test_restore_volumes_multiple_volumes(mock_config, mock_display):
+    """Test restore_volumes with multiple volumes"""
+    with patch("pathlib.Path.exists", return_value=True):
+        mock_client = MagicMock()
+        
+        mock_vol1 = MagicMock()
+        mock_vol1.name = "vol1"
+        mock_vol2 = MagicMock()
+        mock_vol2.name = "vol2"
+        
+        mock_client.volumes.get.side_effect = docker.errors.NotFound("Volume not found")
+        mock_client.volumes.create.side_effect = [mock_vol1, mock_vol2]
+        
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 0}
+        mock_client.containers.run.return_value = mock_container
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.restore_volumes(["vol1", "vol2"], Path("/backup/path"))
+        
+        assert result is True
+        assert mock_client.volumes.create.call_count == 2
+        assert mock_client.containers.run.call_count == 2
+        mock_client.volumes.create.assert_any_call(name="vol1")
+        mock_client.volumes.create.assert_any_call(name="vol2")
+
+def test_restore_volumes_no_client(mock_config, mock_display):
+    """Test restore_volumes when client is None"""
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = None
+    
+    result = client.restore_volumes(["vol1"], Path("/backup/path"))
+    
+    assert result is False
+
+def test_restore_volumes_backup_file_missing(mock_config, mock_display):
+    """Test restore_volumes when backup file doesn't exist"""
+    with patch("pathlib.Path.exists", return_value=False):
+        mock_client = MagicMock()
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.restore_volumes(["test_vol"], Path("/backup/path"))
+        
+        assert result is False
+        mock_client.volumes.create.assert_not_called()
+        mock_client.containers.run.assert_not_called()
+
+def test_restore_volumes_volume_create_fails(mock_config, mock_display):
+    """Test restore_volumes when volume creation fails"""
+    with patch("pathlib.Path.exists", return_value=True):
+        mock_client = MagicMock()
+        mock_client.volumes.get.side_effect = docker.errors.NotFound("Volume not found")
+        mock_client.volumes.create.side_effect = docker.errors.APIError("Volume creation failed")
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.restore_volumes(["test_vol"], Path("/backup/path"))
+        
+        assert result is False
+        mock_client.volumes.create.assert_called_once_with(name="test_vol")
+
+def test_restore_volumes_container_run_fails(mock_config, mock_display):
+    """Test restore_volumes when container run fails"""
+    with patch("pathlib.Path.exists", return_value=True):
+        mock_client = MagicMock()
+        mock_volume = MagicMock()
+        mock_volume.name = "test_vol"
+        mock_client.volumes.get.side_effect = docker.errors.NotFound("Volume not found")
+        mock_client.volumes.create.return_value = mock_volume
+        mock_client.containers.run.side_effect = docker.errors.APIError("Container run failed")
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.restore_volumes(["test_vol"], Path("/backup/path"))
+        
+        assert result is False
+        mock_client.volumes.create.assert_called_once_with(name="test_vol")
+        mock_client.containers.run.assert_called_once()
+
+def test_restore_volumes_container_wait_fails(mock_config, mock_display):
+    """Test restore_volumes when container wait returns non-zero exit code"""
+    with patch("pathlib.Path.exists", return_value=True):
+        mock_client = MagicMock()
+        mock_volume = MagicMock()
+        mock_volume.name = "test_vol"
+        mock_client.volumes.get.side_effect = docker.errors.NotFound("Volume not found")
+        mock_client.volumes.create.return_value = mock_volume
+        
+        # When detach=False, container failures raise exceptions rather than returning exit codes
+        mock_client.containers.run.side_effect = docker.errors.ContainerError(
+            container=MagicMock(),
+            exit_status=1,
+            command="tar -xzf /backup/test_vol.tar.gz -C /data",
+            image="alpine:latest",
+            stderr=b"Restore failed"
+        )
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.restore_volumes(["test_vol"], Path("/backup/path"))
+        
+        assert result is False
+        mock_client.containers.run.assert_called_once()
+
+def test_restore_volumes_empty_list(mock_config, mock_display):
+    """Test restore_volumes with empty volume list"""
+    mock_client = MagicMock()
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = mock_client
+    
+    result = client.restore_volumes([], Path("/backup/path"))
+    
+    assert result is True
+    mock_client.volumes.create.assert_not_called()
+    mock_client.containers.run.assert_not_called()
+
+def test_restore_volumes_existing_volume_handling(mock_config, mock_display):
+    """Test restore_volumes handles existing volumes correctly"""
+    with patch("pathlib.Path.exists", return_value=True):
+        mock_client = MagicMock()
+        
+        # First call creates volume, second call volume already exists
+        mock_volume = MagicMock()
+        mock_volume.name = "test_vol"
+        mock_client.volumes.get.side_effect = docker.errors.NotFound("Volume not found")
+        mock_client.volumes.create.side_effect = [
+            mock_volume,  # First volume created successfully
+            docker.errors.APIError("Volume already exists")  # Second volume already exists
+        ]
+        
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 0}
+        mock_client.containers.run.return_value = mock_container
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.restore_volumes(["vol1", "vol2"], Path("/backup/path"))
+        
+        assert result is False  # Should fail if volume creation fails
+        assert mock_client.volumes.create.call_count == 2
+
+def test_restore_volumes_partial_failure(mock_config, mock_display):
+    """Test restore_volumes with some volumes failing"""
+    with patch("pathlib.Path.exists", return_value=True):
+        mock_client = MagicMock()
+        
+        mock_vol1 = MagicMock()
+        mock_vol1.name = "vol1"
+        mock_client.volumes.get.side_effect = docker.errors.NotFound("Volume not found")
+        mock_client.volumes.create.side_effect = [
+            mock_vol1,  # First volume succeeds
+            docker.errors.APIError("Volume creation failed")  # Second volume fails
+        ]
+        
+        mock_container = MagicMock()
+        mock_container.wait.return_value = {"StatusCode": 0}
+        mock_client.containers.run.return_value = mock_container
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.restore_volumes(["vol1", "vol2"], Path("/backup/path"))
+        
+        assert result is False  # Should fail if any volume fails
+        assert mock_client.volumes.create.call_count == 2
+
+def test_export_stack_state_success(mock_config, mock_display):
+    """Test export_stack_state successful execution with all resource types"""
+    with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()) as mock_file:
+        mock_client = MagicMock()
+        mock_client.version.return_value = {"Version": "20.10.0"}
+        
+        # Mock containers
+        mock_container = MagicMock()
+        mock_container.name = "test_container"
+        mock_container.image.tags = ["test:latest"]
+        mock_container.status = "running"
+        mock_container.labels = {}
+        mock_container.ports = {}
+        mock_container.attrs = {
+            "Created": "2023-01-01T00:00:00Z",
+            "Config": {
+                "Env": ["VAR=value"],
+                "Cmd": ["nginx"],
+                "Volumes": {}
+            }
+        }
+        mock_client.containers.list.return_value = [mock_container]
+        
+        # Mock volumes
+        mock_volume = MagicMock()
+        mock_volume.name = "test_volume"
+        mock_volume.attrs = {
+            "Driver": "local",
+            "Mountpoint": "/var/lib/docker/volumes/test_volume",
+            "Labels": {},
+            "CreatedAt": "2023-01-01T00:00:00Z",
+            "Options": {}
+        }
+        mock_client.volumes.list.return_value = [mock_volume]
+        
+        # Mock networks
+        mock_network = MagicMock()
+        mock_network.name = "test_network"
+        mock_network.attrs = {
+            "Driver": "bridge",
+            "Labels": {},
+            "Created": "2023-01-01T00:00:00Z",
+            "Options": {},
+            "IPAM": {"Driver": "default"}
+        }
+        mock_client.networks.list.return_value = [mock_network]
+        
+        # Mock images
+        mock_image = MagicMock()
+        mock_image.id = "image123"
+        mock_image.tags = ["test:latest"]
+        mock_image.labels = {}
+        mock_image.attrs = {
+            "Created": "2023-01-01T00:00:00Z",
+            "Size": 1000
+        }
+        mock_client.images.list.return_value = [mock_image]
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        with patch("json.dump") as mock_json_dump:
+            result = client.export_stack_state(Path("/export/path/state.json"))
+            
+            assert result is True
+            mock_json_dump.assert_called_once()
+            
+            # Verify the structure of exported data
+            exported_data = mock_json_dump.call_args[0][0]
+            assert "containers" in exported_data
+            assert "volumes" in exported_data
+            assert "networks" in exported_data
+            assert "images" in exported_data
+            assert len(exported_data["containers"]) == 1
+            assert len(exported_data["volumes"]) == 1
+            assert len(exported_data["networks"]) == 1
+            assert len(exported_data["images"]) == 1
+
+def test_export_stack_state_no_client(mock_config, mock_display):
+    """Test export_stack_state when client is None"""
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = None
+    
+    result = client.export_stack_state(Path("/export/path/state.json"))
+    
+    assert result is False
+
+def test_export_stack_state_file_write_error(mock_config, mock_display):
+    """Test export_stack_state when file write fails"""
+    mock_client = MagicMock()
+    mock_client.containers.list.return_value = []
+    mock_client.volumes.list.return_value = []
+    mock_client.networks.list.return_value = []
+    mock_client.images.list.return_value = []
+    
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = mock_client
+    
+    with patch("builtins.open", side_effect=IOError("File write failed")):
+        result = client.export_stack_state(Path("/export/path/state.json"))
+        
+        assert result is False
+
+def test_export_stack_state_containers_api_error(mock_config, mock_display):
+    """Test export_stack_state when containers API fails"""
+    with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()) as mock_file_open:
+        mock_client = MagicMock()
+        mock_client.containers.list.side_effect = docker.errors.APIError("Containers API failed")
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.export_stack_state(Path("/export/path/state.json"))
+        
+        assert result is True  # Should still succeed even if containers API fails
+    
+def test_export_stack_state_volumes_api_error(mock_config, mock_display):
+    """Test export_stack_state when volumes API fails"""
+    with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()) as mock_file_open:
+        mock_client = MagicMock()
+        mock_client.containers.list.return_value = []
+        mock_client.volumes.list.side_effect = docker.errors.APIError("Volumes API failed")
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.export_stack_state(Path("/export/path/state.json"))
+        
+        assert result is True  # Should still succeed even if volumes API fails
+    
+def test_export_stack_state_networks_api_error(mock_config, mock_display):
+    """Test export_stack_state when networks API fails"""
+    with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()) as mock_file_open:
+        mock_client = MagicMock()
+        mock_client.containers.list.return_value = []
+        mock_client.volumes.list.return_value = []
+        mock_client.networks.list.side_effect = docker.errors.APIError("Networks API failed")
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.export_stack_state(Path("/export/path/state.json"))
+        
+        assert result is True  # Should still succeed even if networks API fails
+    
+def test_export_stack_state_images_api_error(mock_config, mock_display):
+    """Test export_stack_state when images API fails"""
+    with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()) as mock_file_open:
+        mock_client = MagicMock()
+        mock_client.containers.list.return_value = []
+        mock_client.volumes.list.return_value = []
+        mock_client.networks.list.return_value = []
+        mock_client.images.list.side_effect = docker.errors.APIError("Images API failed")
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.export_stack_state(Path("/export/path/state.json"))
+        
+        assert result is True  # Should still succeed even if images API fails
+    
+def test_export_stack_state_empty_resources(mock_config, mock_display):
+    """Test export_stack_state with no resources"""
+    with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()) as mock_file:
+        mock_client = MagicMock()
+        mock_client.version.return_value = {"Version": "20.10.0"}
+        mock_client.containers.list.return_value = []
+        mock_client.volumes.list.return_value = []
+        mock_client.networks.list.return_value = []
+        mock_client.images.list.return_value = []
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        with patch("json.dump") as mock_json_dump:
+            result = client.export_stack_state(Path("/export/path/state.json"))
+            
+            assert result is True
+            mock_json_dump.assert_called_once()
+            
+            # Verify empty data structure
+            exported_data = mock_json_dump.call_args[0][0]
+            assert exported_data["containers"] == []
+            assert exported_data["volumes"] == []
+            assert exported_data["networks"] == []
+            assert exported_data["images"] == []
+
+def test_export_stack_state_partial_api_failure(mock_config, mock_display):
+    """Test export_stack_state with partial API failures"""
+    with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()) as mock_file_open:
+        mock_client = MagicMock()
+        
+        # Containers succeed
+        mock_container = MagicMock()
+        mock_container.name = "test_container"
+        mock_container.image.tags = ["test:latest"]
+        mock_container.status = "running"
+        mock_container.labels = {}
+        mock_container.ports = {}
+        mock_container.attrs = {
+            "Created": "2023-01-01T00:00:00Z",
+            "Config": {
+                "Env": ["VAR=value"],
+                "Cmd": ["cmd"],
+                "Volumes": {}
+            }
+        }
+        mock_client.containers.list.return_value = [mock_container]
+        
+        # Volumes fail
+        mock_client.volumes.list.side_effect = docker.errors.APIError("Volumes API failed")
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.export_stack_state(Path("/export/path/state.json"))
+        
+        assert result is True  # Should still succeed even if some API calls fail
+    
+def test_export_stack_state_json_serialization_error(mock_config, mock_display):
+    """Test export_stack_state when JSON serialization fails"""
+    mock_client = MagicMock()
+    mock_client.containers.list.return_value = []
+    mock_client.volumes.list.return_value = []
+    mock_client.networks.list.return_value = []
+    mock_client.images.list.return_value = []
+    
+    client = DockerClient(config=mock_config, display=mock_display)
+    client.client = mock_client
+    
+    with patch("builtins.open", mock_open()):
+        with patch("json.dump", side_effect=ValueError("JSON serialization failed")):
+            result = client.export_stack_state(Path("/export/path/state.json"))
+            
+            assert result is False
+
+def test_export_stack_state_directory_creation(mock_config, mock_display):
+    """Test export_stack_state creates parent directories"""
+    with patch("pathlib.Path.mkdir") as mock_mkdir, patch("builtins.open", mock_open()) as mock_file:
+        mock_client = MagicMock()
+        mock_client.version.return_value = {"Version": "20.10.0"}
+        mock_client.containers.list.return_value = []
+        mock_client.volumes.list.return_value = []
+        mock_client.networks.list.return_value = []
+        mock_client.images.list.return_value = []
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        with patch("json.dump") as mock_json_dump:
+            result = client.export_stack_state(Path("/export/path/state.json"))
+            
+            assert result is True
+            mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+def test_export_stack_state_complex_data_structure(mock_config, mock_display):
+    """Test export_stack_state with complex nested data structures"""
+    with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()) as mock_file_open:
+        mock_client = MagicMock()
+        
+        # Mock complex container data
+        mock_container = MagicMock()
+        mock_container.name = "test_container"
+        mock_container.image.tags = ["test:latest"]
+        mock_container.status = "running"
+        mock_container.labels = {"com.docker.compose.project": "test"}
+        mock_container.ports = {}
+        mock_container.attrs = {
+            "Created": "2023-01-01T00:00:00Z",
+            "Config": {
+                "Env": ["VAR1=value1", "VAR2=value2"],
+                "Cmd": ["nginx"],
+                "Volumes": {}
+            }
+        }
+        mock_client.containers.list.return_value = [mock_container]
+        
+        # Mock complex volume data
+        mock_volume = MagicMock()
+        mock_volume.name = "test_volume"
+        mock_volume.attrs = {
+            "Driver": "local",
+            "Mountpoint": "/var/lib/docker/volumes/test_volume",
+            "Labels": {"com.docker.compose.project": "test"},
+            "CreatedAt": "2023-01-01T00:00:00Z",
+            "Options": {"device": "/dev/sda1", "type": "ext4"}
+        }
+        mock_client.volumes.list.return_value = [mock_volume]
+        
+        mock_client.networks.list.return_value = []
+        mock_client.images.list.return_value = []
+        
+        client = DockerClient(config=mock_config, display=mock_display)
+        client.client = mock_client
+        
+        result = client.export_stack_state(Path("/export/path/state.json"))
+        
+        assert result is True
