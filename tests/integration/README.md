@@ -15,6 +15,10 @@ This directory contains comprehensive integration tests for the ollama-stack CLI
 - `test_backup_integration.py` - Backup command integration tests
 - `test_restore_integration.py` - Restore command integration tests  
 - `test_migrate_integration.py` - Migrate command integration tests
+- `test_lifecycle_integration.py` - Core lifecycle tests (start/stop/restart/status/check/logs)
+- `test_update_integration.py` - Update command integration tests
+- `test_uninstall_integration.py` - Uninstall command integration tests
+- `test_install_integration.py` - Install command integration tests
 
 ### Workflow Tests
 
@@ -29,6 +33,18 @@ pytest tests/integration/
 
 ### Run Specific Test Categories
 ```bash
+# Core lifecycle functionality
+pytest tests/integration/ -m lifecycle
+
+# Update functionality
+pytest tests/integration/ -m update
+
+# Uninstall functionality
+pytest tests/integration/ -m uninstall
+
+# Install functionality
+pytest tests/integration/ -m install
+
 # Backup functionality
 pytest tests/integration/ -m backup
 
@@ -47,6 +63,18 @@ pytest tests/integration/ -m workflow
 
 ### Run Specific Test Files
 ```bash
+# Core lifecycle tests (start/stop/restart/status/check/logs)
+pytest tests/integration/test_lifecycle_integration.py
+
+# Update command tests
+pytest tests/integration/test_update_integration.py
+
+# Uninstall command tests
+pytest tests/integration/test_uninstall_integration.py
+
+# Install command tests
+pytest tests/integration/test_install_integration.py
+
 # Backup tests only
 pytest tests/integration/test_backup_integration.py
 
@@ -73,6 +101,42 @@ pytest tests/integration/ -m failure_scenario
 ```
 
 ## Test Categories
+
+### Lifecycle Integration Tests (`test_lifecycle_integration.py`)
+
+- **Basic Lifecycle**: Tests start/stop/restart workflows
+- **Service Health**: Tests service availability and health checks
+- **Platform Compatibility**: Tests Apple Silicon vs Docker platform behavior
+- **Error Handling**: Tests graceful failure when Docker unavailable
+- **Status/Check Commands**: Tests environment validation and status reporting
+- **Logs Access**: Tests log retrieval and streaming functionality
+
+### Update Integration Tests (`test_update_integration.py`)
+
+- **Update Operations**: Tests update with various flags and scenarios
+- **Running Stack Updates**: Tests update with stack running/stopped
+- **Service Coordination**: Tests update coordination across mixed service types
+- **Failure Recovery**: Tests update failure handling and rollback
+- **Performance**: Tests update performance under load
+- **Resource Management**: Tests resource cleanup during updates
+
+### Uninstall Integration Tests (`test_uninstall_integration.py`)
+
+- **Resource Cleanup**: Tests removal of containers, volumes, and configuration
+- **Selective Removal**: Tests --remove-volumes, --remove-config, --all flags
+- **Cross-Platform**: Tests uninstall on Apple Silicon vs Docker platforms
+- **Complete Cleanup**: Tests system state verification after uninstall
+- **Idempotent Operations**: Tests multiple uninstall runs
+- **Error Handling**: Tests graceful handling of cleanup failures
+
+### Install Integration Tests (`test_install_integration.py`)
+
+- **Fresh Installation**: Tests configuration creation on clean systems
+- **Configuration Management**: Tests secure key generation and file creation
+- **Platform-Specific Setup**: Tests Apple Silicon vs Docker platform configuration
+- **Existing Config Handling**: Tests install over existing configuration
+- **File Permissions**: Tests filesystem permissions and access
+- **Integration Enablement**: Tests that install enables other commands
 
 ### Backup Integration Tests (`test_backup_integration.py`)
 
@@ -113,6 +177,10 @@ The integration tests use pytest markers to categorize and filter tests:
 - `@pytest.mark.integration` - All integration tests
 - `@pytest.mark.docker_required` - Requires Docker daemon
 - `@pytest.mark.apple_silicon` - Apple Silicon specific
+- `@pytest.mark.lifecycle` - Core lifecycle functionality (start/stop/restart/status/check/logs)
+- `@pytest.mark.update` - Update functionality
+- `@pytest.mark.uninstall` - Uninstall functionality
+- `@pytest.mark.install` - Install functionality
 - `@pytest.mark.backup` - Backup functionality
 - `@pytest.mark.restore` - Restore functionality
 - `@pytest.mark.migrate` - Migration functionality
