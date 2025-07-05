@@ -242,7 +242,7 @@ def validate_backup_manifest(
         
         # Check volume backup files
         for volume in manifest.volumes:
-            volume_file = backup_dir / f"{volume}.tar.gz"
+            volume_file = backup_dir / "volumes" / f"{volume}.tar.gz"
             if not volume_file.exists():
                 missing_files.append(f"volume: {volume}")
         
@@ -296,7 +296,7 @@ def _calculate_backup_checksum(backup_dir: Path, manifest: BackupManifest) -> st
     
     # Add volume files
     for volume in sorted(manifest.volumes):
-        volume_file = backup_dir / f"{volume}.tar.gz"
+        volume_file = backup_dir / "volumes" / f"{volume}.tar.gz"
         if volume_file.exists():
             all_files.append(volume_file)
     
