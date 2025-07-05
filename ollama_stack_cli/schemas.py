@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field, HttpUrl
 from typing import Optional, List, Dict, Any, Literal
 import uuid
+from datetime import datetime
+from pathlib import Path
 
 class ServiceConfig(BaseModel):
     """Defines the configuration for a single service in the stack."""
@@ -61,6 +63,43 @@ class EnvironmentCheck(BaseModel):
 
 class CheckReport(BaseModel):
     checks: List[EnvironmentCheck]
+
+
+class BackupConfig(BaseModel):
+    """Configuration for backup operations."""
+    include_volumes: bool = True
+    include_config: bool = True
+    include_extensions: bool = True
+    compression: bool = True
+    encryption: bool = False
+    exclude_patterns: List[str] = Field(default_factory=list)
+
+
+class BackupManifest(BaseModel):
+    """Metadata for a stack backup."""
+    backup_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    created_at: datetime = Field(default_factory=datetime.now)
+    stack_version: str
+    cli_version: str
+    platform: str
+    backup_config: BackupConfig
+    volumes: List[str] = Field(default_factory=list)
+    config_files: List[str] = Field(default_factory=list)
+    extensions: List[str] = Field(default_factory=list)
+    checksum: Optional[str] = None
+    size_bytes: Optional[int] = None
+    description: Optional[str] = None
+
+
+class MigrationInfo(BaseModel):
+    """Information for version migration operations."""
+    from_version: str
+    to_version: str
+    migration_path: List[str] = Field(default_factory=list)
+    backup_required: bool = True
+    breaking_changes: List[str] = Field(default_factory=list)
+    migration_steps: List[str] = Field(default_factory=list)
+    estimated_duration: Optional[str] = None
 
 
 

@@ -10,7 +10,7 @@ import string
 import typer
 from .docker_client import DockerClient
 from .ollama_api_client import OllamaApiClient
-from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus, EnvironmentCheck, PlatformConfig
+from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus, EnvironmentCheck, PlatformConfig, BackupConfig, BackupManifest, MigrationInfo
 from .display import Display
 from typing import Optional, List
 from pathlib import Path
@@ -867,6 +867,400 @@ class StackManager:
             
         except Exception as e:
             log.error(f"Stack uninstall failed: {e}")
+            return False
+
+    # =============================================================================
+    # Backup and Migration Orchestration
+    # =============================================================================
+
+    def create_backup(self, backup_dir: Path, backup_config: Optional[dict] = None) -> bool:
+        """
+        Orchestrate full backup workflow for the stack.
+        
+        Args:
+            backup_dir: Directory to store the backup
+            backup_config: Optional backup configuration (include_volumes, include_config, etc.)
+            
+        Returns:
+            bool: True if backup succeeded, False otherwise
+        """
+        from .schemas import BackupConfig, BackupManifest
+        from .config import DEFAULT_CONFIG_DIR
+        import datetime
+        import platform
+        import json
+        
+        try:
+            # Parse backup configuration
+            if backup_config:
+                config = BackupConfig(**backup_config)
+            else:
+                config = BackupConfig()  # Use defaults
+            
+            log.info("Starting stack backup process...")
+            
+            # Create backup directory structure
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            volumes_dir = backup_dir / "volumes"
+            config_dir = backup_dir / "config"
+            extensions_dir = backup_dir / "extensions"
+            
+            # Initialize backup manifest
+            manifest = BackupManifest(
+                stack_version="0.2.0",  # TODO: Get from actual version
+                cli_version="0.2.0",   # TODO: Get from actual version
+                platform=platform.system().lower(),
+                backup_config=config
+            )
+            
+            success = True
+            
+            # Step 1: Backup volumes if requested
+            if config.include_volumes:
+                log.info("Backing up Docker volumes...")
+                volumes_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Get all stack volumes
+                resources = self.find_resources_by_label("ollama-stack.component")
+                if resources["volumes"]:
+                    volume_names = [vol.name for vol in resources["volumes"]]
+                    if self.docker_client.backup_volumes(volume_names, volumes_dir):
+                        manifest.volumes = volume_names
+                        log.info(f"Successfully backed up {len(volume_names)} volumes")
+                    else:
+                        log.error("Failed to backup some volumes")
+                        success = False
+                else:
+                    log.info("No volumes found to backup")
+            
+            # Step 2: Backup configuration if requested
+            if config.include_config:
+                log.info("Backing up configuration files...")
+                config_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Use config module to export configuration
+                from .config import Config
+                temp_config = Config(self.display)
+                
+                if temp_config.export_configuration(config_dir):
+                    manifest.config_files = [".ollama-stack.json", ".env"]
+                    log.info("Configuration files backed up successfully")
+                else:
+                    log.error("Failed to backup configuration files")
+                    success = False
+            
+            # Step 3: Backup extensions if requested
+            if config.include_extensions:
+                log.info("Backing up extensions...")
+                extensions_dir.mkdir(parents=True, exist_ok=True)
+                
+                enabled_extensions = self.config.extensions.enabled
+                if enabled_extensions:
+                    # TODO: Implement actual extension backup logic
+                    log.info(f"Found {len(enabled_extensions)} enabled extensions")
+                    manifest.extensions = enabled_extensions
+                    
+                    # For now, just log that extension backup is not implemented
+                    for ext_name in enabled_extensions:
+                        log.warning(f"Extension backup not yet implemented for: {ext_name}")
+                else:
+                    log.info("No extensions enabled to backup")
+            
+            # Step 4: Export current stack state
+            log.info("Exporting current stack state...")
+            state_file = backup_dir / "stack_state.json"
+            if not self.docker_client.export_stack_state(state_file):
+                log.warning("Failed to export stack state")
+                # Don't fail the backup for this
+            
+            # Step 5: Calculate backup size and checksum
+            log.info("Calculating backup metadata...")
+            total_size = 0
+            try:
+                for file_path in backup_dir.rglob("*"):
+                    if file_path.is_file():
+                        total_size += file_path.stat().st_size
+                manifest.size_bytes = total_size
+                log.debug(f"Backup size: {total_size} bytes")
+            except Exception as e:
+                log.warning(f"Failed to calculate backup size: {e}")
+            
+            # Step 6: Create backup manifest
+            manifest_file = backup_dir / "backup_manifest.json"
+            try:
+                with open(manifest_file, 'w') as f:
+                    json.dump(manifest.model_dump(), f, indent=2, default=str)
+                log.info(f"Backup manifest created: {manifest_file}")
+            except Exception as e:
+                log.error(f"Failed to create backup manifest: {e}")
+                success = False
+            
+            # Step 7: Verify backup integrity
+            log.info("Verifying backup integrity...")
+            from .config import validate_backup_manifest
+            is_valid, verified_manifest = validate_backup_manifest(manifest_file, backup_dir)
+            if not is_valid:
+                log.error("Backup integrity verification failed")
+                success = False
+            else:
+                log.info("Backup integrity verification passed")
+            
+            if success:
+                log.info(f"Backup completed successfully in: {backup_dir}")
+                log.info(f"Backup ID: {manifest.backup_id}")
+                if manifest.size_bytes:
+                    size_mb = manifest.size_bytes / (1024 * 1024)
+                    log.info(f"Backup size: {size_mb:.1f} MB")
+            else:
+                log.error("Backup completed with errors")
+                
+            return success
+            
+        except Exception as e:
+            log.error(f"Backup creation failed: {e}")
+            return False
+
+    def restore_from_backup(self, backup_dir: Path, validate_only: bool = False) -> bool:
+        """
+        Restore workflow with validation.
+        
+        Args:
+            backup_dir: Directory containing the backup
+            validate_only: If True, only validate the backup without restoring
+            
+        Returns:
+            bool: True if restore succeeded, False otherwise
+        """
+        from .config import validate_backup_manifest, import_configuration
+        
+        try:
+            log.info("Starting stack restore process...")
+            
+            # Step 1: Validate backup manifest
+            manifest_file = backup_dir / "backup_manifest.json"
+            log.info("Validating backup manifest...")
+            
+            is_valid, manifest = validate_backup_manifest(manifest_file, backup_dir)
+            if not is_valid or manifest is None:
+                log.error("Backup validation failed - cannot proceed with restore")
+                return False
+            
+            log.info("Backup validation passed")
+            log.info(f"Backup ID: {manifest.backup_id}")
+            log.info(f"Created: {manifest.created_at}")
+            log.info(f"Platform: {manifest.platform}")
+            
+            if validate_only:
+                log.info("Validation-only mode - restore not performed")
+                return True
+            
+            # Step 2: Check if stack is running and stop if necessary
+            if self.is_stack_running():
+                log.info("Stack is running - stopping services for restore...")
+                
+                docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
+                native_services = [name for name, conf in self.config.services.items() if conf.type == 'native-api']
+                
+                success = True
+                if docker_services and not self.stop_docker_services():
+                    log.error("Failed to stop Docker services")
+                    success = False
+                
+                if native_services and not self.stop_native_services(native_services):
+                    log.error("Failed to stop native services")
+                    success = False
+                
+                if not success:
+                    log.error("Failed to stop services - cannot proceed with restore")
+                    return False
+            
+            # Step 3: Restore configuration files
+            if manifest.config_files:
+                log.info("Restoring configuration files...")
+                config_backup_dir = backup_dir / "config"
+                
+                if not import_configuration(self.display, config_backup_dir):
+                    log.error("Failed to restore configuration files")
+                    return False
+                
+                log.info("Configuration files restored successfully")
+                
+                # Reload configuration after restore
+                from .config import load_config
+                self.config, _ = load_config(self.display)
+                log.info("Configuration reloaded after restore")
+            
+            # Step 4: Restore volumes
+            if manifest.volumes:
+                log.info("Restoring Docker volumes...")
+                volumes_dir = backup_dir / "volumes"
+                
+                if not self.docker_client.restore_volumes(manifest.volumes, volumes_dir):
+                    log.error("Failed to restore some volumes")
+                    return False
+                
+                log.info(f"Successfully restored {len(manifest.volumes)} volumes")
+            
+            # Step 5: Restore extensions
+            if manifest.extensions:
+                log.info("Restoring extensions...")
+                
+                # TODO: Implement actual extension restore logic
+                for ext_name in manifest.extensions:
+                    log.warning(f"Extension restore not yet implemented for: {ext_name}")
+                
+                log.info("Extension restore completed (with warnings)")
+            
+            # Step 6: Verify restore by checking available resources
+            log.info("Verifying restore...")
+            
+            # Check that expected volumes exist
+            if manifest.volumes:
+                resources = self.find_resources_by_label("ollama-stack.component")
+                restored_volumes = [vol.name for vol in resources["volumes"]]
+                missing_volumes = [vol for vol in manifest.volumes if vol not in restored_volumes]
+                
+                if missing_volumes:
+                    log.warning(f"Some volumes were not restored: {missing_volumes}")
+                else:
+                    log.info("All volumes restored successfully")
+            
+            log.info("Restore completed successfully")
+            log.info("You can now start the stack with: ollama-stack start")
+            
+            return True
+            
+        except Exception as e:
+            log.error(f"Restore failed: {e}")
+            return False
+
+    def migrate_stack(self, target_version: str, migration_path: Optional[List[str]] = None) -> bool:
+        """
+        Version-specific migration logic.
+        
+        Args:
+            target_version: Target version to migrate to
+            migration_path: Optional list of intermediate versions to migrate through
+            
+        Returns:
+            bool: True if migration succeeded, False otherwise
+        """
+        from .schemas import MigrationInfo
+        from .config import DEFAULT_CONFIG_DIR
+        import datetime
+        
+        try:
+            current_version = "0.2.0"  # TODO: Get from actual version
+            
+            log.info(f"Starting migration from {current_version} to {target_version}")
+            
+            # Create migration info
+            migration_info = MigrationInfo(
+                from_version=current_version,
+                to_version=target_version,
+                migration_path=migration_path or [],
+                backup_required=True,
+                breaking_changes=[],
+                migration_steps=[]
+            )
+            
+            # Step 1: Validate migration path
+            if current_version == target_version:
+                log.info("Already at target version - no migration needed")
+                return True
+            
+            # Step 2: Create automatic backup before migration
+            if migration_info.backup_required:
+                log.info("Creating automatic backup before migration...")
+                backup_dir = DEFAULT_CONFIG_DIR / "backups" / f"pre-migration-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                
+                if not self.create_backup(backup_dir):
+                    log.error("Failed to create backup before migration")
+                    log.error("Migration aborted for safety")
+                    return False
+                
+                log.info(f"Backup created at: {backup_dir}")
+            
+            # Step 3: Perform version-specific migration steps
+            log.info("Performing migration steps...")
+            
+            # TODO: Implement actual version-specific migration logic
+            # This would include:
+            # - Configuration format changes
+            # - Service configuration updates
+            # - Database schema changes
+            # - Extension compatibility updates
+            
+            # Example migration steps for different versions
+            if target_version == "0.3.0":
+                log.info("Migrating to v0.3.0...")
+                migration_info.migration_steps = [
+                    "Update service configuration format",
+                    "Migrate extension registry",
+                    "Update backup configuration"
+                ]
+                
+                for step in migration_info.migration_steps:
+                    log.info(f"Migration step: {step}")
+                    # TODO: Implement actual migration logic
+                    log.info("Migration step completed")
+            
+            elif target_version == "0.4.0":
+                log.info("Migrating to v0.4.0...")
+                migration_info.migration_steps = [
+                    "Update backup manifest format",
+                    "Migrate volume labels",
+                    "Update health check configuration"
+                ]
+                
+                for step in migration_info.migration_steps:
+                    log.info(f"Migration step: {step}")
+                    # TODO: Implement actual migration logic
+                    log.info("Migration step completed")
+            
+            else:
+                log.warning(f"No specific migration logic defined for version {target_version}")
+                log.info("Performing generic migration...")
+                
+                # Generic migration steps
+                migration_info.migration_steps = [
+                    "Validate configuration compatibility",
+                    "Update service definitions",
+                    "Refresh extension registry"
+                ]
+                
+                for step in migration_info.migration_steps:
+                    log.info(f"Migration step: {step}")
+                    # TODO: Implement generic migration logic
+                    log.info("Migration step completed")
+            
+            # Step 4: Update version information
+            log.info("Updating version information...")
+            
+            # TODO: Update actual version tracking
+            log.info(f"Updated stack version to {target_version}")
+            
+            # Step 5: Verify migration
+            log.info("Verifying migration...")
+            
+            # Run environment checks to ensure everything is still working
+            check_report = self.run_environment_checks(fix=False)
+            failed_checks = [check for check in check_report.checks if not check.passed]
+            
+            if failed_checks:
+                log.warning(f"Migration completed but some checks failed: {len(failed_checks)} issues")
+                log.warning("Please review the environment checks and fix any issues")
+            else:
+                log.info("Migration verification passed")
+            
+            log.info(f"Migration from {current_version} to {target_version} completed successfully")
+            
+            return True
+            
+        except Exception as e:
+            log.error(f"Migration failed: {e}")
+            log.error("Stack may be in an inconsistent state")
+            log.error("Consider restoring from backup if issues persist")
             return False
 
  

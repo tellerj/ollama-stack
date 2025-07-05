@@ -574,6 +574,281 @@ class DockerClient:
             log.error(f"Configuration export failed: {e}")
             return False
 
+    # =============================================================================
+    # Backup and Migration Support
+    # =============================================================================
+
+    def backup_volumes(self, volume_names: List[str], backup_dir: Path) -> bool:
+        """
+        Backup Docker volumes using containers.
+        
+        Args:
+            volume_names: List of volume names to backup
+            backup_dir: Directory to store volume backups
+            
+        Returns:
+            bool: True if backup succeeded, False otherwise
+        """
+        if not self.client:
+            log.warning("Docker client not available for volume backup")
+            return False
+        
+        try:
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            success = True
+            
+            log.info(f"Starting backup of {len(volume_names)} volumes...")
+            
+            for volume_name in volume_names:
+                try:
+                    # Check if volume exists
+                    try:
+                        volume = self.client.volumes.get(volume_name)
+                        log.debug(f"Found volume: {volume_name}")
+                    except docker.errors.NotFound:
+                        log.warning(f"Volume not found: {volume_name}")
+                        continue
+                    
+                    # Create backup using a temporary container
+                    backup_file = backup_dir / f"{volume_name}.tar.gz"
+                    
+                    log.info(f"Backing up volume: {volume_name}")
+                    
+                    # Use a minimal container to create the backup
+                    container = self.client.containers.run(
+                        "alpine:latest",
+                        f"tar -czf /backup/{volume_name}.tar.gz -C /data .",
+                        volumes={
+                            volume_name: {"bind": "/data", "mode": "ro"},
+                            str(backup_dir): {"bind": "/backup", "mode": "rw"}
+                        },
+                        remove=True,
+                        detach=False
+                    )
+                    
+                    if backup_file.exists():
+                        log.info(f"Volume backup completed: {volume_name}")
+                        log.debug(f"Backup file: {backup_file}")
+                    else:
+                        log.error(f"Volume backup failed: {volume_name}")
+                        success = False
+                        
+                except Exception as e:
+                    log.error(f"Failed to backup volume {volume_name}: {e}")
+                    success = False
+            
+            if success:
+                log.info("All volume backups completed successfully")
+            else:
+                log.warning("Some volume backups failed")
+                
+            return success
+            
+        except Exception as e:
+            log.error(f"Volume backup operation failed: {e}")
+            return False
+
+    def restore_volumes(self, volume_names: List[str], backup_dir: Path) -> bool:
+        """
+        Restore Docker volumes from backups.
+        
+        Args:
+            volume_names: List of volume names to restore
+            backup_dir: Directory containing volume backups
+            
+        Returns:
+            bool: True if restore succeeded, False otherwise
+        """
+        if not self.client:
+            log.warning("Docker client not available for volume restoration")
+            return False
+        
+        try:
+            success = True
+            
+            log.info(f"Starting restore of {len(volume_names)} volumes...")
+            
+            for volume_name in volume_names:
+                try:
+                    backup_file = backup_dir / f"{volume_name}.tar.gz"
+                    
+                    if not backup_file.exists():
+                        log.error(f"Backup file not found: {backup_file}")
+                        success = False
+                        continue
+                    
+                    log.info(f"Restoring volume: {volume_name}")
+                    
+                    # Create volume if it doesn't exist
+                    try:
+                        volume = self.client.volumes.get(volume_name)
+                        log.debug(f"Volume exists: {volume_name}")
+                    except docker.errors.NotFound:
+                        log.info(f"Creating volume: {volume_name}")
+                        volume = self.client.volumes.create(name=volume_name)
+                    
+                    # Restore volume using a temporary container
+                    container = self.client.containers.run(
+                        "alpine:latest",
+                        f"tar -xzf /backup/{volume_name}.tar.gz -C /data",
+                        volumes={
+                            volume_name: {"bind": "/data", "mode": "rw"},
+                            str(backup_dir): {"bind": "/backup", "mode": "ro"}
+                        },
+                        remove=True,
+                        detach=False
+                    )
+                    
+                    log.info(f"Volume restore completed: {volume_name}")
+                    
+                except Exception as e:
+                    log.error(f"Failed to restore volume {volume_name}: {e}")
+                    success = False
+            
+            if success:
+                log.info("All volume restores completed successfully")
+            else:
+                log.warning("Some volume restores failed")
+                
+            return success
+            
+        except Exception as e:
+            log.error(f"Volume restore operation failed: {e}")
+            return False
+
+    def export_stack_state(self, output_file: Path) -> bool:
+        """
+        Export current stack state for migration purposes.
+        
+        Args:
+            output_file: File to write the state information to
+            
+        Returns:
+            bool: True if export succeeded, False otherwise
+        """
+        if not self.client:
+            log.warning("Docker client not available for state export")
+            return False
+        
+        try:
+            log.info("Exporting current stack state...")
+            
+            state_info = {
+                "timestamp": time.time(),
+                "docker_version": self.client.version()["Version"],
+                "containers": [],
+                "volumes": [],
+                "networks": [],
+                "images": []
+            }
+            
+            # Export container information
+            try:
+                containers = self.client.containers.list(
+                    all=True, 
+                    filters={"label": "ollama-stack.component"}
+                )
+                
+                for container in containers:
+                    container_info = {
+                        "name": container.name,
+                        "image": container.image.tags[0] if container.image.tags else container.image.id,
+                        "status": container.status,
+                        "labels": container.labels,
+                        "ports": container.ports,
+                        "created": container.attrs["Created"],
+                        "config": {
+                            "env": container.attrs["Config"]["Env"],
+                            "cmd": container.attrs["Config"]["Cmd"],
+                            "volumes": container.attrs["Config"]["Volumes"] or {},
+                        }
+                    }
+                    state_info["containers"].append(container_info)
+                    
+                log.debug(f"Exported {len(containers)} container configurations")
+                
+            except Exception as e:
+                log.warning(f"Failed to export container information: {e}")
+            
+            # Export volume information
+            try:
+                volumes = self.client.volumes.list(
+                    filters={"label": "ollama-stack.component"}
+                )
+                
+                for volume in volumes:
+                    volume_info = {
+                        "name": volume.name,
+                        "driver": volume.attrs["Driver"],
+                        "mountpoint": volume.attrs["Mountpoint"],
+                        "labels": volume.attrs["Labels"] or {},
+                        "created": volume.attrs["CreatedAt"],
+                        "options": volume.attrs["Options"] or {}
+                    }
+                    state_info["volumes"].append(volume_info)
+                    
+                log.debug(f"Exported {len(volumes)} volume configurations")
+                
+            except Exception as e:
+                log.warning(f"Failed to export volume information: {e}")
+            
+            # Export network information
+            try:
+                networks = self.client.networks.list(
+                    filters={"label": "ollama-stack.component"}
+                )
+                
+                for network in networks:
+                    network_info = {
+                        "name": network.name,
+                        "driver": network.attrs["Driver"],
+                        "labels": network.attrs["Labels"] or {},
+                        "created": network.attrs["Created"],
+                        "options": network.attrs["Options"] or {},
+                        "ipam": network.attrs["IPAM"]
+                    }
+                    state_info["networks"].append(network_info)
+                    
+                log.debug(f"Exported {len(networks)} network configurations")
+                
+            except Exception as e:
+                log.warning(f"Failed to export network information: {e}")
+            
+            # Export image information
+            try:
+                images = self.client.images.list(
+                    filters={"label": "ollama-stack.component"}
+                )
+                
+                for image in images:
+                    image_info = {
+                        "id": image.id,
+                        "tags": image.tags,
+                        "labels": image.labels or {},
+                        "created": image.attrs["Created"],
+                        "size": image.attrs["Size"]
+                    }
+                    state_info["images"].append(image_info)
+                    
+                log.debug(f"Exported {len(images)} image configurations")
+                
+            except Exception as e:
+                log.warning(f"Failed to export image information: {e}")
+            
+            # Write state information to file
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            import json
+            with open(output_file, 'w') as f:
+                json.dump(state_info, f, indent=2, default=str)
+            
+            log.info(f"Stack state exported to: {output_file}")
+            return True
+            
+        except Exception as e:
+            log.error(f"Stack state export failed: {e}")
+            return False
+
 
 
 
