@@ -10,6 +10,9 @@ from .commands.check import check
 from .commands.install import install
 from .commands.update import update
 from .commands.uninstall import uninstall
+from .commands.backup import backup
+from .commands.restore import restore
+from .commands.migrate import migrate
 
 app = typer.Typer(
     help="A CLI for managing the Ollama Stack.",
@@ -25,6 +28,9 @@ app.command()(check)
 app.command()(install)
 app.command()(update)
 app.command()(uninstall)
+app.command()(backup)
+app.command()(restore)
+app.command()(migrate)
 
 @app.callback()
 def main(
