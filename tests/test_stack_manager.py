@@ -2696,3 +2696,854 @@ def test_install_stack_save_config_call_arguments(mock_config_file, mock_env_fil
     assert call_args[3] == mock_env_file            # Fourth: env file path
 
 # ... existing code ...
+
+# =============================================================================
+# Phase 6.1 New Methods Tests - Backup and Migration Orchestration  
+# =============================================================================
+
+# create_backup() Method Tests
+
+@patch('ollama_stack_cli.stack_manager.BackupManifest')
+@patch('ollama_stack_cli.stack_manager.BackupConfig')
+@patch('ollama_stack_cli.config.Config')
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+@patch('json.dump')
+@patch('datetime.datetime')
+@patch('platform.system')
+def test_create_backup_full_success(mock_platform_system, mock_datetime, mock_json_dump, mock_validate_manifest, mock_config_class, mock_backup_config, mock_backup_manifest, stack_manager, mock_docker_client):
+    """Tests create_backup with all options enabled - happy path."""
+    # Setup mocks
+    mock_platform_system.return_value = 'darwin'
+    mock_datetime.now.return_value.strftime.return_value = '20231201-143000'
+    
+    mock_backup_config_instance = MagicMock()
+    mock_backup_config_instance.include_volumes = True
+    mock_backup_config_instance.include_config = True
+    mock_backup_config_instance.include_extensions = True
+    mock_backup_config.return_value = mock_backup_config_instance
+    
+    mock_manifest_instance = MagicMock()
+    mock_manifest_instance.backup_id = 'test-backup-id'
+    mock_manifest_instance.size_bytes = 1024000
+    mock_backup_manifest.return_value = mock_manifest_instance
+    
+    # Mock config operations
+    mock_temp_config = MagicMock()
+    mock_temp_config.export_configuration.return_value = True
+    mock_config_class.return_value = mock_temp_config
+    
+    # Mock docker operations
+    mock_volume1 = MagicMock()
+    mock_volume1.name = 'ollama-data'
+    mock_volume2 = MagicMock()
+    mock_volume2.name = 'webui-data'
+    
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": [mock_volume1, mock_volume2]
+    })
+    
+    mock_docker_client.backup_volumes.return_value = True
+    mock_docker_client.export_stack_state.return_value = True
+    
+    # Mock backup validation
+    mock_validate_manifest.return_value = (True, mock_manifest_instance)
+    
+    # Mock extensions
+    stack_manager.config.extensions.enabled = ['ext1', 'ext2']
+    
+    # Mock pathlib operations
+    mock_backup_dir = MagicMock()
+    mock_backup_dir.mkdir = MagicMock()
+    mock_backup_dir.rglob.return_value = [
+        MagicMock(is_file=lambda: True, stat=lambda: MagicMock(st_size=512000)),
+        MagicMock(is_file=lambda: True, stat=lambda: MagicMock(st_size=512000))
+    ]
+    
+    result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is True
+    mock_backup_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+    stack_manager.find_resources_by_label.assert_called_once_with("ollama-stack.component")
+    mock_docker_client.backup_volumes.assert_called_once_with(['ollama-data', 'webui-data'], mock_backup_dir / "volumes")
+    mock_temp_config.export_configuration.assert_called_once()
+    mock_docker_client.export_stack_state.assert_called_once()
+    mock_validate_manifest.assert_called_once()
+
+
+@patch('ollama_stack_cli.stack_manager.BackupConfig')
+def test_create_backup_with_custom_config(mock_backup_config, stack_manager):
+    """Tests create_backup with custom backup configuration."""
+    # Custom config with selective options
+    custom_config = {
+        'include_volumes': False,
+        'include_config': True,
+        'include_extensions': False,
+        'compression': False
+    }
+    
+    mock_backup_config_instance = MagicMock()
+    mock_backup_config_instance.include_volumes = False
+    mock_backup_config_instance.include_config = True
+    mock_backup_config_instance.include_extensions = False
+    mock_backup_config.return_value = mock_backup_config_instance
+    
+    # Mock other dependencies
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    with patch('ollama_stack_cli.config.Config') as mock_config_class:
+        mock_temp_config = MagicMock()
+        mock_temp_config.export_configuration.return_value = True
+        mock_config_class.return_value = mock_temp_config
+        
+        with patch('ollama_stack_cli.stack_manager.BackupManifest') as mock_manifest:
+            with patch('json.dump'):
+                with patch('ollama_stack_cli.config.validate_backup_manifest', return_value=(True, MagicMock())):
+                    mock_backup_dir = MagicMock()
+                    mock_backup_dir.rglob.return_value = []
+                    
+                    result = stack_manager.create_backup(mock_backup_dir, custom_config)
+    
+    assert result is True
+    mock_backup_config.assert_called_once_with(**custom_config)
+
+
+def test_create_backup_no_volumes_found(stack_manager, mock_docker_client):
+    """Tests create_backup when no volumes are found."""
+    # Mock no volumes
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    with patch('ollama_stack_cli.stack_manager.BackupConfig') as mock_backup_config:
+        mock_backup_config_instance = MagicMock()
+        mock_backup_config_instance.include_volumes = True
+        mock_backup_config_instance.include_config = False
+        mock_backup_config_instance.include_extensions = False
+        mock_backup_config.return_value = mock_backup_config_instance
+        
+        with patch('ollama_stack_cli.stack_manager.BackupManifest'):
+            with patch('json.dump'):
+                with patch('ollama_stack_cli.config.validate_backup_manifest', return_value=(True, MagicMock())):
+                    mock_backup_dir = MagicMock()
+                    mock_backup_dir.rglob.return_value = []
+                    
+                    result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is True
+    mock_docker_client.backup_volumes.assert_not_called()
+
+
+def test_create_backup_volume_backup_failure(stack_manager, mock_docker_client):
+    """Tests create_backup when volume backup fails."""
+    # Mock volumes exist but backup fails
+    mock_volume = MagicMock()
+    mock_volume.name = 'test-volume'
+    
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": [mock_volume]
+    })
+    
+    mock_docker_client.backup_volumes.return_value = False  # Backup fails
+    
+    with patch('ollama_stack_cli.stack_manager.BackupConfig') as mock_backup_config:
+        mock_backup_config_instance = MagicMock()
+        mock_backup_config_instance.include_volumes = True
+        mock_backup_config_instance.include_config = False
+        mock_backup_config_instance.include_extensions = False
+        mock_backup_config.return_value = mock_backup_config_instance
+        
+        with patch('ollama_stack_cli.stack_manager.BackupManifest'):
+            with patch('json.dump'):
+                with patch('ollama_stack_cli.config.validate_backup_manifest', return_value=(True, MagicMock())):
+                    mock_backup_dir = MagicMock()
+                    mock_backup_dir.rglob.return_value = []
+                    
+                    result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is False  # Should fail when volume backup fails
+
+
+def test_create_backup_config_export_failure(stack_manager):
+    """Tests create_backup when config export fails."""
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    with patch('ollama_stack_cli.stack_manager.BackupConfig') as mock_backup_config:
+        mock_backup_config_instance = MagicMock()
+        mock_backup_config_instance.include_volumes = False
+        mock_backup_config_instance.include_config = True
+        mock_backup_config_instance.include_extensions = False
+        mock_backup_config.return_value = mock_backup_config_instance
+        
+        with patch('ollama_stack_cli.config.Config') as mock_config_class:
+            mock_temp_config = MagicMock()
+            mock_temp_config.export_configuration.return_value = False  # Export fails
+            mock_config_class.return_value = mock_temp_config
+            
+            with patch('ollama_stack_cli.stack_manager.BackupManifest'):
+                with patch('json.dump'):
+                    with patch('ollama_stack_cli.config.validate_backup_manifest', return_value=(True, MagicMock())):
+                        mock_backup_dir = MagicMock()
+                        mock_backup_dir.rglob.return_value = []
+                        
+                        result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is False  # Should fail when config export fails
+
+
+def test_create_backup_extensions_enabled(stack_manager):
+    """Tests create_backup with enabled extensions."""
+    stack_manager.config.extensions.enabled = ['tts-extension', 'web-search']
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    with patch('ollama_stack_cli.stack_manager.BackupConfig') as mock_backup_config:
+        mock_backup_config_instance = MagicMock()
+        mock_backup_config_instance.include_volumes = False
+        mock_backup_config_instance.include_config = False
+        mock_backup_config_instance.include_extensions = True
+        mock_backup_config.return_value = mock_backup_config_instance
+        
+        with patch('ollama_stack_cli.stack_manager.BackupManifest') as mock_manifest:
+            mock_manifest_instance = MagicMock()
+            mock_manifest_instance.extensions = []
+            mock_manifest.return_value = mock_manifest_instance
+            
+            with patch('json.dump'):
+                with patch('ollama_stack_cli.config.validate_backup_manifest', return_value=(True, MagicMock())):
+                    mock_backup_dir = MagicMock()
+                    mock_backup_dir.rglob.return_value = []
+                    
+                    result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is True
+    # Extensions should be added to manifest
+    assert mock_manifest_instance.extensions == ['tts-extension', 'web-search']
+
+
+def test_create_backup_manifest_creation_failure(stack_manager):
+    """Tests create_backup when manifest creation fails."""
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    with patch('ollama_stack_cli.stack_manager.BackupConfig') as mock_backup_config:
+        mock_backup_config_instance = MagicMock()
+        mock_backup_config_instance.include_volumes = False
+        mock_backup_config_instance.include_config = False
+        mock_backup_config_instance.include_extensions = False
+        mock_backup_config.return_value = mock_backup_config_instance
+        
+        with patch('ollama_stack_cli.stack_manager.BackupManifest'):
+            with patch('json.dump', side_effect=IOError("Cannot write file")):
+                mock_backup_dir = MagicMock()
+                mock_backup_dir.rglob.return_value = []
+                
+                result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is False
+
+
+def test_create_backup_validation_failure(stack_manager):
+    """Tests create_backup when backup validation fails."""
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    with patch('ollama_stack_cli.stack_manager.BackupConfig') as mock_backup_config:
+        mock_backup_config_instance = MagicMock()
+        mock_backup_config.return_value = mock_backup_config_instance
+        
+        with patch('ollama_stack_cli.stack_manager.BackupManifest'):
+            with patch('json.dump'):
+                with patch('ollama_stack_cli.config.validate_backup_manifest', return_value=(False, None)):
+                    mock_backup_dir = MagicMock()
+                    mock_backup_dir.rglob.return_value = []
+                    
+                    result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is False
+
+
+def test_create_backup_exception_handling(stack_manager):
+    """Tests create_backup handles exceptions gracefully."""
+    # Mock to raise exception during execution
+    stack_manager.find_resources_by_label = MagicMock(side_effect=Exception("Docker daemon not running"))
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is False
+
+
+def test_create_backup_size_calculation_failure(stack_manager):
+    """Tests create_backup when size calculation fails."""
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    with patch('ollama_stack_cli.stack_manager.BackupConfig') as mock_backup_config:
+        mock_backup_config_instance = MagicMock()
+        mock_backup_config.return_value = mock_backup_config_instance
+        
+        with patch('ollama_stack_cli.stack_manager.BackupManifest'):
+            with patch('json.dump'):
+                with patch('ollama_stack_cli.config.validate_backup_manifest', return_value=(True, MagicMock())):
+                    mock_backup_dir = MagicMock()
+                    # Mock rglob to raise exception during size calculation
+                    mock_backup_dir.rglob.side_effect = PermissionError("Permission denied")
+                    
+                    result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is True  # Should continue despite size calculation failure
+
+
+def test_create_backup_export_stack_state_failure(stack_manager, mock_docker_client):
+    """Tests create_backup when stack state export fails."""
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": []
+    })
+    
+    mock_docker_client.export_stack_state.return_value = False  # Export fails
+    
+    with patch('ollama_stack_cli.stack_manager.BackupConfig') as mock_backup_config:
+        mock_backup_config_instance = MagicMock()
+        mock_backup_config.return_value = mock_backup_config_instance
+        
+        with patch('ollama_stack_cli.stack_manager.BackupManifest'):
+            with patch('json.dump'):
+                with patch('ollama_stack_cli.config.validate_backup_manifest', return_value=(True, MagicMock())):
+                    mock_backup_dir = MagicMock()
+                    mock_backup_dir.rglob.return_value = []
+                    
+                    result = stack_manager.create_backup(mock_backup_dir)
+    
+    assert result is True  # Should continue despite stack state export failure
+
+
+# restore_from_backup() Method Tests
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+@patch('ollama_stack_cli.config.import_configuration')
+@patch('ollama_stack_cli.config.load_config')
+def test_restore_from_backup_full_success(mock_load_config, mock_import_config, mock_validate_manifest, stack_manager, mock_docker_client):
+    """Tests restore_from_backup with full restore - happy path."""
+    # Mock backup validation
+    mock_manifest = MagicMock()
+    mock_manifest.backup_id = 'test-backup-id'
+    mock_manifest.created_at = '2023-12-01T14:30:00'
+    mock_manifest.platform = 'darwin'
+    mock_manifest.config_files = ['.ollama-stack.json', '.env']
+    mock_manifest.volumes = ['ollama-data', 'webui-data']
+    mock_manifest.extensions = ['ext1', 'ext2']
+    
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    # Mock stack not running
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    # Mock successful operations
+    mock_import_config.return_value = True
+    mock_docker_client.restore_volumes.return_value = True
+    
+    # Mock config reload
+    mock_new_config = MagicMock()
+    mock_load_config.return_value = (mock_new_config, False)
+    
+    # Mock resource discovery for verification
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": [
+            MagicMock(name='ollama-data'),
+            MagicMock(name='webui-data')
+        ]
+    })
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir, validate_only=False)
+    
+    assert result is True
+    mock_validate_manifest.assert_called_once()
+    mock_import_config.assert_called_once()
+    mock_docker_client.restore_volumes.assert_called_once_with(['ollama-data', 'webui-data'], mock_backup_dir / "volumes")
+    mock_load_config.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+def test_restore_from_backup_validation_only(mock_validate_manifest, stack_manager):
+    """Tests restore_from_backup in validation-only mode."""
+    # Mock successful validation
+    mock_manifest = MagicMock()
+    mock_manifest.backup_id = 'test-backup-id'
+    mock_manifest.created_at = '2023-12-01T14:30:00'
+    mock_manifest.platform = 'darwin'
+    
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir, validate_only=True)
+    
+    assert result is True
+    mock_validate_manifest.assert_called_once()
+    # Should not proceed with actual restore
+    stack_manager.is_stack_running.assert_not_called()
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+def test_restore_from_backup_validation_failure(mock_validate_manifest, stack_manager):
+    """Tests restore_from_backup when backup validation fails."""
+    # Mock validation failure
+    mock_validate_manifest.return_value = (False, None)
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is False
+    mock_validate_manifest.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+def test_restore_from_backup_stack_running_stop_failure(mock_validate_manifest, stack_manager):
+    """Tests restore_from_backup when stack is running but stop fails."""
+    # Mock successful validation
+    mock_manifest = MagicMock()
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    # Mock stack running
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    
+    # Mock services configuration
+    stack_manager.config.services = {
+        'webui': MagicMock(type='docker'),
+        'ollama': MagicMock(type='native-api')
+    }
+    
+    # Mock stop operations - Docker fails
+    stack_manager.stop_docker_services = MagicMock(return_value=False)
+    stack_manager.stop_native_services = MagicMock(return_value=True)
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is False
+    stack_manager.stop_docker_services.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+@patch('ollama_stack_cli.config.import_configuration')
+def test_restore_from_backup_config_restore_failure(mock_import_config, mock_validate_manifest, stack_manager):
+    """Tests restore_from_backup when config restore fails."""
+    # Mock successful validation
+    mock_manifest = MagicMock()
+    mock_manifest.config_files = ['.ollama-stack.json', '.env']
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    # Mock stack not running
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    # Mock config import failure
+    mock_import_config.return_value = False
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is False
+    mock_import_config.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+@patch('ollama_stack_cli.config.import_configuration')
+@patch('ollama_stack_cli.config.load_config')
+def test_restore_from_backup_volume_restore_failure(mock_load_config, mock_import_config, mock_validate_manifest, stack_manager, mock_docker_client):
+    """Tests restore_from_backup when volume restore fails."""
+    # Mock successful validation and config restore
+    mock_manifest = MagicMock()
+    mock_manifest.config_files = ['.ollama-stack.json']
+    mock_manifest.volumes = ['test-volume']
+    mock_manifest.extensions = []
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    mock_import_config.return_value = True
+    mock_load_config.return_value = (MagicMock(), False)
+    
+    # Mock volume restore failure
+    mock_docker_client.restore_volumes.return_value = False
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is False
+    mock_docker_client.restore_volumes.assert_called_once()
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+def test_restore_from_backup_no_config_files(mock_validate_manifest, stack_manager):
+    """Tests restore_from_backup when backup has no config files."""
+    # Mock validation with no config files
+    mock_manifest = MagicMock()
+    mock_manifest.config_files = []
+    mock_manifest.volumes = []
+    mock_manifest.extensions = []
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is True  # Should succeed even without config files
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+def test_restore_from_backup_no_volumes(mock_validate_manifest, stack_manager):
+    """Tests restore_from_backup when backup has no volumes."""
+    # Mock validation with no volumes
+    mock_manifest = MagicMock()
+    mock_manifest.config_files = []
+    mock_manifest.volumes = []
+    mock_manifest.extensions = []
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is True
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+@patch('ollama_stack_cli.config.import_configuration')
+@patch('ollama_stack_cli.config.load_config')
+def test_restore_from_backup_extensions_warning(mock_load_config, mock_import_config, mock_validate_manifest, stack_manager):
+    """Tests restore_from_backup with extensions (currently shows warnings)."""
+    # Mock validation with extensions
+    mock_manifest = MagicMock()
+    mock_manifest.config_files = []
+    mock_manifest.volumes = []
+    mock_manifest.extensions = ['ext1', 'ext2']
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is True  # Should succeed with warnings
+
+
+@patch('ollama_stack_cli.config.validate_backup_manifest')
+@patch('ollama_stack_cli.config.import_configuration')
+@patch('ollama_stack_cli.config.load_config')
+def test_restore_from_backup_volume_verification_warning(mock_load_config, mock_import_config, mock_validate_manifest, stack_manager):
+    """Tests restore_from_backup when volume verification shows missing volumes."""
+    # Mock successful operations
+    mock_manifest = MagicMock()
+    mock_manifest.config_files = ['.ollama-stack.json']
+    mock_manifest.volumes = ['missing-volume', 'restored-volume']
+    mock_manifest.extensions = []
+    mock_validate_manifest.return_value = (True, mock_manifest)
+    
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    mock_import_config.return_value = True
+    mock_load_config.return_value = (MagicMock(), False)
+    
+    # Mock Docker operations
+    stack_manager.docker_client.restore_volumes = MagicMock(return_value=True)
+    
+    # Mock resource discovery - only one volume restored
+    stack_manager.find_resources_by_label = MagicMock(return_value={
+        "containers": [], "networks": [], "volumes": [
+            MagicMock(name='restored-volume')
+        ]
+    })
+    
+    mock_backup_dir = MagicMock()
+    result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is True  # Should succeed with warnings about missing volumes
+
+
+def test_restore_from_backup_exception_handling(stack_manager):
+    """Tests restore_from_backup handles exceptions gracefully."""
+    # Mock to raise exception early
+    with patch('ollama_stack_cli.config.validate_backup_manifest', side_effect=Exception("File system error")):
+        mock_backup_dir = MagicMock()
+        result = stack_manager.restore_from_backup(mock_backup_dir)
+    
+    assert result is False
+
+
+# migrate_stack() Method Tests
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('datetime.datetime')
+def test_migrate_stack_basic_success(mock_datetime, mock_config_dir, mock_migration_info, stack_manager):
+    """Tests migrate_stack basic migration - happy path."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = True
+    mock_migration_info_instance.migration_steps = [
+        "Update service configuration format",
+        "Migrate extension registry"
+    ]
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock backup creation
+    mock_datetime.now.return_value.strftime.return_value = '20231201-143000'
+    stack_manager.create_backup = MagicMock(return_value=True)
+    
+    # Mock environment checks
+    mock_check_report = MagicMock()
+    mock_check_report.checks = [MagicMock(passed=True), MagicMock(passed=True)]
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.migrate_stack("0.3.0")
+    
+    assert result is True
+    stack_manager.create_backup.assert_called_once()
+    stack_manager.run_environment_checks.assert_called_once_with(fix=False)
+
+
+def test_migrate_stack_same_version(stack_manager):
+    """Tests migrate_stack when already at target version."""
+    result = stack_manager.migrate_stack("0.2.0")  # Current version
+    
+    assert result is True
+    # Should not create backup or run migration steps
+    stack_manager.create_backup.assert_not_called()
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+def test_migrate_stack_backup_creation_failure(mock_migration_info, stack_manager):
+    """Tests migrate_stack when backup creation fails."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = True
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock backup creation failure
+    stack_manager.create_backup = MagicMock(return_value=False)
+    
+    result = stack_manager.migrate_stack("0.3.0")
+    
+    assert result is False
+    stack_manager.create_backup.assert_called_once()
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('datetime.datetime')
+def test_migrate_stack_version_specific_0_3_0(mock_datetime, mock_config_dir, mock_migration_info, stack_manager):
+    """Tests migrate_stack with version-specific logic for 0.3.0."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = True
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock successful backup
+    stack_manager.create_backup = MagicMock(return_value=True)
+    
+    # Mock environment checks
+    mock_check_report = MagicMock()
+    mock_check_report.checks = [MagicMock(passed=True)]
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.migrate_stack("0.3.0")
+    
+    assert result is True
+    stack_manager.create_backup.assert_called_once()
+    stack_manager.run_environment_checks.assert_called_once()
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('datetime.datetime')
+def test_migrate_stack_version_specific_0_4_0(mock_datetime, mock_config_dir, mock_migration_info, stack_manager):
+    """Tests migrate_stack with version-specific logic for 0.4.0."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = True
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock successful backup
+    stack_manager.create_backup = MagicMock(return_value=True)
+    
+    # Mock environment checks
+    mock_check_report = MagicMock()
+    mock_check_report.checks = [MagicMock(passed=True)]
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.migrate_stack("0.4.0")
+    
+    assert result is True
+    stack_manager.create_backup.assert_called_once()
+    stack_manager.run_environment_checks.assert_called_once()
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('datetime.datetime')
+def test_migrate_stack_generic_version(mock_datetime, mock_config_dir, mock_migration_info, stack_manager):
+    """Tests migrate_stack with generic migration logic for unknown version."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = True
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock successful backup
+    stack_manager.create_backup = MagicMock(return_value=True)
+    
+    # Mock environment checks
+    mock_check_report = MagicMock()
+    mock_check_report.checks = [MagicMock(passed=True)]
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.migrate_stack("1.0.0")  # Unknown version
+    
+    assert result is True
+    stack_manager.create_backup.assert_called_once()
+    stack_manager.run_environment_checks.assert_called_once()
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('datetime.datetime')
+def test_migrate_stack_environment_checks_some_fail(mock_datetime, mock_config_dir, mock_migration_info, stack_manager):
+    """Tests migrate_stack when some environment checks fail after migration."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = True
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock successful backup
+    stack_manager.create_backup = MagicMock(return_value=True)
+    
+    # Mock environment checks with some failures
+    mock_check_report = MagicMock()
+    mock_check_report.checks = [
+        MagicMock(passed=True),
+        MagicMock(passed=False),
+        MagicMock(passed=False)
+    ]
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.migrate_stack("0.3.0")
+    
+    assert result is True  # Should still succeed with warnings
+    stack_manager.run_environment_checks.assert_called_once()
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+def test_migrate_stack_no_backup_required(mock_migration_info, stack_manager):
+    """Tests migrate_stack when no backup is required."""
+    # Mock migration info with no backup required
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = False
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock environment checks
+    mock_check_report = MagicMock()
+    mock_check_report.checks = [MagicMock(passed=True)]
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.migrate_stack("0.3.0")
+    
+    assert result is True
+    # Should not create backup
+    stack_manager.create_backup.assert_not_called()
+    stack_manager.run_environment_checks.assert_called_once()
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+def test_migrate_stack_with_migration_path(mock_migration_info, stack_manager):
+    """Tests migrate_stack with custom migration path."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = False
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock environment checks
+    mock_check_report = MagicMock()
+    mock_check_report.checks = [MagicMock(passed=True)]
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    migration_path = ["0.2.1", "0.2.5", "0.3.0"]
+    result = stack_manager.migrate_stack("0.3.0", migration_path)
+    
+    assert result is True
+    # Verify migration path was passed to MigrationInfo
+    mock_migration_info.assert_called_once()
+    call_args = mock_migration_info.call_args[1]
+    assert call_args['migration_path'] == migration_path
+
+
+def test_migrate_stack_exception_handling(stack_manager):
+    """Tests migrate_stack handles exceptions gracefully."""
+    # Mock to raise exception during execution
+    with patch('ollama_stack_cli.stack_manager.MigrationInfo', side_effect=Exception("Migration system error")):
+        result = stack_manager.migrate_stack("0.3.0")
+    
+    assert result is False
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('datetime.datetime')
+def test_migrate_stack_environment_checks_exception(mock_datetime, mock_config_dir, mock_migration_info, stack_manager):
+    """Tests migrate_stack when environment checks raise exception."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = True
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock successful backup
+    stack_manager.create_backup = MagicMock(return_value=True)
+    
+    # Mock environment checks to raise exception
+    stack_manager.run_environment_checks = MagicMock(side_effect=Exception("Docker daemon not running"))
+    
+    result = stack_manager.migrate_stack("0.3.0")
+    
+    assert result is False
+    stack_manager.create_backup.assert_called_once()
+    stack_manager.run_environment_checks.assert_called_once()
+
+
+@patch('ollama_stack_cli.stack_manager.MigrationInfo')
+@patch('ollama_stack_cli.config.DEFAULT_CONFIG_DIR')
+@patch('datetime.datetime')
+def test_migrate_stack_backup_directory_creation(mock_datetime, mock_config_dir, mock_migration_info, stack_manager):
+    """Tests migrate_stack creates backup directory with correct timestamp."""
+    # Mock migration info
+    mock_migration_info_instance = MagicMock()
+    mock_migration_info_instance.backup_required = True
+    mock_migration_info.return_value = mock_migration_info_instance
+    
+    # Mock timestamp
+    mock_datetime.now.return_value.strftime.return_value = '20231201-143000'
+    
+    # Mock successful backup
+    stack_manager.create_backup = MagicMock(return_value=True)
+    
+    # Mock environment checks
+    mock_check_report = MagicMock()
+    mock_check_report.checks = []
+    stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
+    
+    result = stack_manager.migrate_stack("0.3.0")
+    
+    assert result is True
+    stack_manager.create_backup.assert_called_once()
+    
+    # Verify backup directory includes timestamp
+    backup_dir_arg = stack_manager.create_backup.call_args[0][0]
+    assert "pre-migration-20231201-143000" in str(backup_dir_arg)
+
+
+# ... existing code ...
