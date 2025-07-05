@@ -31,6 +31,7 @@ ollama-stack = "ollama_stack_cli.main:app"
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "psutil",
 ]
 
 [project.urls]
