@@ -143,35 +143,50 @@ def create_test_backup_structure(backup_dir):
     """Create a realistic backup directory structure for testing."""
     import json
     import os
+    import tarfile
     
-    # Create manifest
+    # Create manifest with all required fields
     manifest = {
-        "version": "1.0",
+        "backup_id": "test-backup-001",
         "created_at": "2024-01-01T00:00:00Z",
         "stack_version": "0.3.0",
+        "cli_version": "0.3.0",
         "platform": "apple" if IS_APPLE_SILICON else "default",
-        "components": {
-            "webui": {"version": "latest", "volumes": ["webui_data"]},
-            "mcp_proxy": {"version": "latest", "volumes": ["mcp_data"]},
-            "ollama": {"version": "latest", "volumes": ["ollama_data"]}
-        }
+        "backup_config": {
+            "include_volumes": True,
+            "include_config": True,
+            "include_extensions": True,
+            "compression": True,
+            "encryption": False,
+            "exclude_patterns": []
+        },
+        "volumes": ["webui_data", "mcp_data", "ollama_data"],
+        "config_files": [".ollama-stack.json", ".env"],
+        "extensions": [],
+        "checksum": None,
+        "size_bytes": None,
+        "description": "Test backup for integration tests"
     }
     
-    manifest_path = backup_dir / "manifest.json"
+    manifest_path = backup_dir / "backup_manifest.json"
     with open(manifest_path, 'w') as f:
         json.dump(manifest, f, indent=2)
     
-    # Create mock volume data
-    volumes_dir = backup_dir / "volumes"
-    volumes_dir.mkdir()
-    
+    # Create mock volume backup files (tar.gz format)
     for volume_name in ["webui_data", "mcp_data", "ollama_data"]:
-        volume_dir = volumes_dir / volume_name
-        volume_dir.mkdir()
+        volume_backup_file = backup_dir / f"{volume_name}.tar.gz"
         
-        # Create some mock files
-        (volume_dir / "config.json").write_text('{"test": "data"}')
-        (volume_dir / "data.txt").write_text("test volume data")
+        # Create a simple tar.gz file with mock data
+        with tarfile.open(volume_backup_file, 'w:gz') as tar:
+            # Create a temporary file with mock data
+            temp_file_path = backup_dir / f"temp_{volume_name}.txt"
+            temp_file_path.write_text(f"Mock data for {volume_name}")
+            
+            # Add the file to tar
+            tar.add(temp_file_path, arcname=f"{volume_name}_data.txt")
+            
+            # Clean up temp file
+            temp_file_path.unlink()
     
     # Create configuration backup
     config_dir = backup_dir / "config"
@@ -272,7 +287,7 @@ def create_corrupted_backup(backup_dir):
     import json
     
     # Create corrupted manifest
-    manifest_path = backup_dir / "manifest.json"
+    manifest_path = backup_dir / "backup_manifest.json"
     with open(manifest_path, 'w') as f:
         f.write('{"invalid": "json"')  # Missing closing brace
     
@@ -285,17 +300,28 @@ def create_incomplete_backup(backup_dir):
     
     # Create manifest but missing volume data
     manifest = {
-        "version": "1.0",
+        "backup_id": "incomplete-backup-001",
         "created_at": "2024-01-01T00:00:00Z",
         "stack_version": "0.3.0",
+        "cli_version": "0.3.0",
         "platform": "apple" if IS_APPLE_SILICON else "default",
-        "components": {
-            "webui": {"version": "latest", "volumes": ["webui_data"]},
-            "mcp_proxy": {"version": "latest", "volumes": ["mcp_data"]},
-        }
+        "backup_config": {
+            "include_volumes": True,
+            "include_config": True,
+            "include_extensions": True,
+            "compression": True,
+            "encryption": False,
+            "exclude_patterns": []
+        },
+        "volumes": ["webui_data", "mcp_data"],
+        "config_files": [".ollama-stack.json", ".env"],
+        "extensions": [],
+        "checksum": None,
+        "size_bytes": None,
+        "description": "Incomplete backup for testing"
     }
     
-    manifest_path = backup_dir / "manifest.json"
+    manifest_path = backup_dir / "backup_manifest.json"
     with open(manifest_path, 'w') as f:
         json.dump(manifest, f, indent=2)
     
@@ -312,9 +338,8 @@ def simulate_network_interruption():
 
 def get_system_resource_usage():
     """Get current system resource usage for performance testing."""
-    import psutil
-    
     try:
+        import psutil
         return {
             "cpu_percent": psutil.cpu_percent(interval=1),
             "memory_percent": psutil.virtual_memory().percent,
