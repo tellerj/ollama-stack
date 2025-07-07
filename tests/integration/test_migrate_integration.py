@@ -67,7 +67,7 @@ def test_migrate_dry_run_shows_migration_plan(runner):
     assert install_result.exit_code == 0
     
     # Run dry-run migration
-    result = runner.invoke(app, ["migrate", "--dry-run", "--target-version", "0.3.0"])
+    result = runner.invoke(app, ["migrate", "0.3.0", "--dry-run"])
     assert result.exit_code == 0
     
     # Should show migration plan
@@ -104,7 +104,7 @@ def test_migrate_with_stack_stopped_performs_offline_migration(runner):
     assert wait_for_stack_to_stop(timeout=10)
     
     # Perform migration with stack stopped
-    result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+    result = runner.invoke(app, ["migrate", "0.3.0"])
     assert result.exit_code == 0
     
     # Should complete successfully
@@ -138,7 +138,7 @@ def test_migrate_with_stack_running_stops_migrates_restarts(runner):
     assert running_services == expected_components
     
     # Perform migration
-    result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+    result = runner.invoke(app, ["migrate", "0.3.0"])
     assert result.exit_code == 0
     
     # Should show stop -> migrate -> restart cycle
@@ -184,7 +184,7 @@ def test_migrate_preserves_service_data_integrity(runner):
     initial_secret_key = extract_secret_key_from_env(env_file)
     
     # Perform migration
-    result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+    result = runner.invoke(app, ["migrate", "0.3.0"])
     assert result.exit_code == 0
     
     # Verify configuration is preserved
@@ -219,7 +219,7 @@ def test_migrate_target_version_validation(runner):
     assert install_result.exit_code == 0
     
     # Test with invalid version
-    result = runner.invoke(app, ["migrate", "--target-version", "invalid.version"])
+    result = runner.invoke(app, ["migrate", "invalid.version"])
     assert result.exit_code == 1
     
     # Should show version validation error
@@ -244,7 +244,7 @@ def test_migrate_same_version_handling(runner):
     assert install_result.exit_code == 0
     
     # Try to migrate to current version (should be idempotent)
-    result = runner.invoke(app, ["migrate", "--target-version", "0.2.0"])
+    result = runner.invoke(app, ["migrate", "0.2.0"])
     assert result.exit_code == 0
     
     # Should handle gracefully
@@ -934,7 +934,7 @@ def test_migrate_help_accessibility(runner):
     assert "version" in output_lower
     
     # Should show available options
-    assert "--target-version" in result.stdout
+    assert "target_version" in result.stdout or "TARGET_VERSION" in result.stdout
     assert "--dry-run" in result.stdout
     
     # Should provide clear description
