@@ -34,7 +34,7 @@ Before executing any command, the CLI application performs pre-flight checks to 
 ### 2.4. Backup and Migration Commands 🔄 (Planned)
 - `backup`: Create a backup of the current stack state and data
 - `restore`: Restore the stack from a backup
-- `migrate`: Migrate the stack to a new version or configuration
+
 
 ### 2.5. Extension Management Commands 🔄 (Planned)
 - `extensions`: A subcommand group for managing MCP extensions
@@ -169,7 +169,7 @@ Before executing any command, the CLI application performs pre-flight checks to 
 
 ---
 
-## 6. Backup and Migration Commands 🔄
+## 6. Backup and Restore Commands 🔄
 
 ### `backup`
 - **Purpose**: Create a backup of the current stack state and data.
@@ -203,24 +203,7 @@ Before executing any command, the CLI application performs pre-flight checks to 
     6. Verify restored configuration is valid
     7. Display success message with next steps (e.g., run `ollama-stack start`)
 
-### `migrate`
-- **Purpose**: Migrate the stack to a new version or configuration.
-- **Arguments**:
-    - `target_version`: Target version to migrate to (optional, defaults to latest)
-- **Options**:
-    - `--backup`: Create backup before migration (default: true)
-    - `--dry-run`: Show what would be changed without making changes
-- **Behavior**:
-    1. Detect current stack version and configuration
-    2. Determine migration path to target version
-    3. If `--backup` is true, create automatic backup
-    4. If `--dry-run`, display planned changes and exit
-    5. Apply version-specific migration steps:
-        - Update configuration file formats
-        - Migrate Docker Compose configurations
-        - Update extension registry and state
-    6. Verify migrated state is valid and consistent
-    7. Display migration summary and any manual steps required
+
 
 ---
 

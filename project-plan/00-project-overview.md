@@ -26,7 +26,7 @@ A single Python application provides a maintainable and robust foundation for ma
 
 **Remaining Work:**
 - 🔄 Resource management commands (update, uninstall)
-- 🔄 Backup and migration capabilities (backup, restore, migrate)
+- 🔄 Backup and restore capabilities (backup, restore)
 - 🔄 Extension management interface (list, enable, disable, start, stop)
 
 ---
@@ -55,7 +55,7 @@ The `ollama-stack` CLI is the primary interface for managing the entire stack li
 - **Platform Awareness**: Automatic detection and optimization for hardware ✅
 - **Health Monitoring**: Unified health checking across all service types ✅
 - **Resource Management**: Update images, clean up resources, uninstall stack 🔄
-- **Data Management**: Backup, restore, and migrate stack configurations 🔄
+- **Data Management**: Backup and restore stack configurations 🔄
 - **Extension Management**: Enable, disable, and control MCP extensions 🔄
 - **User Experience**: Consistent, rich terminal output with clear error messages ✅
 

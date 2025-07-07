@@ -37,7 +37,7 @@ class TestCommandRegistration:
         assert result.exit_code == 0
         help_text = result.stdout
 
-        expected_commands = ["start", "stop", "restart", "status", "logs", "check", "install", "update", "uninstall", "backup", "restore", "migrate"]
+        expected_commands = ["start", "stop", "restart", "status", "logs", "check", "install", "update", "uninstall", "backup", "restore"]
         for command in expected_commands:
             assert command in help_text
     
@@ -49,7 +49,7 @@ class TestCommandRegistration:
         
         # Count command occurrences in the Commands section
         commands_section = help_text.split("Commands:")[1] if "Commands:" in help_text else help_text
-        expected_commands = ["start", "stop", "restart", "status", "logs", "check", "install", "update", "uninstall", "backup", "restore", "migrate"]
+        expected_commands = ["start", "stop", "restart", "status", "logs", "check", "install", "update", "uninstall", "backup", "restore"]
         
         for command in expected_commands:
             assert command in commands_section
@@ -180,12 +180,10 @@ class TestBasicCommandRouting:
         mock_context.stack_manager.create_backup.return_value = True
         # For restore command
         mock_context.stack_manager.restore_from_backup.return_value = True
-        # For migrate command
-        mock_context.stack_manager.migrate_stack.return_value = True
         MockAppContext.return_value = mock_context
         
         # Test that each command can be invoked (not testing detailed logic)
-        commands = ["start", "stop", "restart", "status", "logs", "check", "install", "update", "uninstall", "backup", "restore", "migrate"]
+        commands = ["start", "stop", "restart", "status", "logs", "check", "install", "update", "uninstall", "backup", "restore"]
         for command in commands:
             result = runner.invoke(app, [command, "--help"])
             assert result.exit_code == 0, f"Command '{command} --help' failed with exit code {result.exit_code}"

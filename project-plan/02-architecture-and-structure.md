@@ -108,7 +108,7 @@ ollama_stack_cli/
     ├── uninstall.py       🔄 Planned (Phase 5)
     ├── backup.py          🔄 Planned (Phase 6)
     ├── restore.py         🔄 Planned (Phase 6)
-    ├── migrate.py         🔄 Planned (Phase 6)
+    
     └── extensions.py      🔄 Planned (Phase 7)
 ```
 
@@ -182,7 +182,7 @@ ollama_stack_cli/
 - **`uninstall.py`**: Safe resource removal with confirmation prompts
 - **`backup.py`**: Full backup creation with volume support
 - **`restore.py`**: Backup restoration with validation
-- **`migrate.py`**: Version migration with automatic backups
+
 - **`extensions.py`**: Complete extension lifecycle management
 
 ### 2.3. Unified Health Check Architecture (✅ Implemented)
@@ -242,6 +242,6 @@ The application implements a centralized health checking system to ensure consis
 
 ### 4.1. Release Roadmap
 - **v0.3.0**: Resource Management (update, uninstall commands)
-- **v0.4.0**: Backup and Migration (backup, restore, migrate commands)  
+- **v0.4.0**: Backup and Restore (backup, restore commands)  
 - **v0.5.0**: Extension Management (full extensions command group)
 - **v1.0.0**: Production Release with PyPI distribution

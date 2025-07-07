@@ -177,13 +177,61 @@ def update_services_logic(
             log.info("Update cancelled")
             return False
     
+    # Check for version transitions and handle them appropriately
+    current_version = ctx.config.app_config.version
+    latest_version = "0.4.0"  # This would come from a version registry in the future
+    
+    if current_version != latest_version:
+        log.info(f"Detected version transition: {current_version} → {latest_version}")
+        
+        # For major version updates, create automatic backup
+        if _is_major_version_update(current_version, latest_version):
+            log.info("Major version update detected - creating automatic backup...")
+            if not _create_version_update_backup(ctx):
+                log.error("Failed to create backup before version update")
+                if not typer.confirm("Continue without backup?"):
+                    log.info("Update cancelled")
+                    return False
+    
     # Delegate to StackManager for orchestration
-    return ctx.stack_manager.update_stack(
+    success = ctx.stack_manager.update_stack(
         services_only=services_only,
         extensions_only=extensions_only, 
         force_restart=force_restart,
         called_from_start_restart=False  # Always False when called directly
     )
+    
+    # Update version if update was successful
+    if success and current_version != latest_version:
+        log.info(f"Updating stack version from {current_version} to {latest_version}")
+        ctx.config.app_config.version = latest_version
+        # Save the updated config
+        from ..config import save_config
+        save_config(ctx.display, ctx.config.app_config)
+    
+    return success
+
+
+def _is_major_version_update(current_version: str, target_version: str) -> bool:
+    """Check if this is a major version update that requires backup."""
+    try:
+        current_major = int(current_version.split('.')[0])
+        target_major = int(target_version.split('.')[0])
+        return target_major > current_major
+    except (ValueError, IndexError):
+        # If version parsing fails, assume it's a major update to be safe
+        return True
+
+
+def _create_version_update_backup(ctx: AppContext) -> bool:
+    """Create a backup before version update."""
+    import datetime
+    from pathlib import Path
+    
+    backup_dir = Path(ctx.config.app_config.backup_directory) / f"pre-version-update-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    
+    log.info(f"Creating backup at: {backup_dir}")
+    return ctx.stack_manager.create_backup(backup_dir)
 
 
 def update(
@@ -204,9 +252,11 @@ def update(
     
     This command will:
     1. Check if the stack is running and prompt for confirmation before stopping
-    2. Pull latest images for core services (ollama, open-webui, mcp-proxy) 
-    3. Pull latest images for all enabled extensions
-    4. Restart the stack if it was running before the update
+    2. Detect version transitions and create automatic backups for major updates
+    3. Pull latest images for core services (ollama, open-webui, mcp-proxy) 
+    4. Pull latest images for all enabled extensions
+    5. Update the stack version if a version transition is detected
+    6. Restart the stack if it was running before the update
     
     Use --services to only update core services, or --extensions to only update extensions.
     """

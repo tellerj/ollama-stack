@@ -1,6 +1,7 @@
 import json
 import logging
 import hashlib
+import os
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -12,7 +13,8 @@ from .display import Display
 
 log = logging.getLogger(__name__)
 
-DEFAULT_CONFIG_DIR = Path.home() / ".ollama-stack"
+# Support environment variable override for testing
+DEFAULT_CONFIG_DIR = Path(os.environ.get("OLLAMA_STACK_CONFIG_DIR", str(Path.home() / ".ollama-stack")))
 DEFAULT_ENV_FILE = DEFAULT_CONFIG_DIR / ".env"
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / ".ollama-stack.json"
 

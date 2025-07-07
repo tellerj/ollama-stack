@@ -10,10 +10,11 @@ import string
 import typer
 from .docker_client import DockerClient
 from .ollama_api_client import OllamaApiClient
-from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus, EnvironmentCheck, PlatformConfig, BackupConfig, BackupManifest, MigrationInfo
+from .schemas import AppConfig, StackStatus, CheckReport, ServiceStatus, EnvironmentCheck, PlatformConfig, BackupConfig, BackupManifest
 from .display import Display
 from typing import Optional, List
 from pathlib import Path
+import os
 
 log = logging.getLogger(__name__)
 
@@ -1134,133 +1135,6 @@ class StackManager:
             log.error(f"Restore failed: {e}")
             return False
 
-    def migrate_stack(self, target_version: str, migration_path: Optional[List[str]] = None) -> bool:
-        """
-        Version-specific migration logic.
-        
-        Args:
-            target_version: Target version to migrate to
-            migration_path: Optional list of intermediate versions to migrate through
-            
-        Returns:
-            bool: True if migration succeeded, False otherwise
-        """
-        from .schemas import MigrationInfo
-        from .config import DEFAULT_CONFIG_DIR
-        import datetime
-        
-        try:
-            current_version = "0.2.0"  # TODO: Get from actual version
-            
-            log.info(f"Starting migration from {current_version} to {target_version}")
-            
-            # Create migration info
-            migration_info = MigrationInfo(
-                from_version=current_version,
-                to_version=target_version,
-                migration_path=migration_path or [],
-                backup_required=True,
-                breaking_changes=[],
-                migration_steps=[]
-            )
-            
-            # Step 1: Validate migration path
-            if current_version == target_version:
-                log.info("Already at target version - no migration needed")
-                return True
-            
-            # Step 2: Create automatic backup before migration
-            if migration_info.backup_required:
-                log.info("Creating automatic backup before migration...")
-                backup_dir = DEFAULT_CONFIG_DIR / "backups" / f"pre-migration-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
-                
-                if not self.create_backup(backup_dir):
-                    log.error("Failed to create backup before migration")
-                    log.error("Migration aborted for safety")
-                    return False
-                
-                log.info(f"Backup created at: {backup_dir}")
-            
-            # Step 3: Perform version-specific migration steps
-            log.info("Performing migration steps...")
-            
-            # TODO: Implement actual version-specific migration logic
-            # This would include:
-            # - Configuration format changes
-            # - Service configuration updates
-            # - Database schema changes
-            # - Extension compatibility updates
-            
-            # Example migration steps for different versions
-            if target_version == "0.3.0":
-                log.info("Migrating to v0.3.0...")
-                migration_info.migration_steps = [
-                    "Update service configuration format",
-                    "Migrate extension registry",
-                    "Update backup configuration"
-                ]
-                
-                for step in migration_info.migration_steps:
-                    log.info(f"Migration step: {step}")
-                    # TODO: Implement actual migration logic
-                    log.info("Migration step completed")
-            
-            elif target_version == "0.4.0":
-                log.info("Migrating to v0.4.0...")
-                migration_info.migration_steps = [
-                    "Update backup manifest format",
-                    "Migrate volume labels",
-                    "Update health check configuration"
-                ]
-                
-                for step in migration_info.migration_steps:
-                    log.info(f"Migration step: {step}")
-                    # TODO: Implement actual migration logic
-                    log.info("Migration step completed")
-            
-            else:
-                log.warning(f"No specific migration logic defined for version {target_version}")
-                log.info("Performing generic migration...")
-                
-                # Generic migration steps
-                migration_info.migration_steps = [
-                    "Validate configuration compatibility",
-                    "Update service definitions",
-                    "Refresh extension registry"
-                ]
-                
-                for step in migration_info.migration_steps:
-                    log.info(f"Migration step: {step}")
-                    # TODO: Implement generic migration logic
-                    log.info("Migration step completed")
-            
-            # Step 4: Update version information
-            log.info("Updating version information...")
-            
-            # TODO: Update actual version tracking
-            log.info(f"Updated stack version to {target_version}")
-            
-            # Step 5: Verify migration
-            log.info("Verifying migration...")
-            
-            # Run environment checks to ensure everything is still working
-            check_report = self.run_environment_checks(fix=False)
-            failed_checks = [check for check in check_report.checks if not check.passed]
-            
-            if failed_checks:
-                log.warning(f"Migration completed but some checks failed: {len(failed_checks)} issues")
-                log.warning("Please review the environment checks and fix any issues")
-            else:
-                log.info("Migration verification passed")
-            
-            log.info(f"Migration from {current_version} to {target_version} completed successfully")
-            
-            return True
-            
-        except Exception as e:
-            log.error(f"Migration failed: {e}")
-            log.error("Stack may be in an inconsistent state")
-            log.error("Consider restoring from backup if issues persist")
-            return False
+
 
  

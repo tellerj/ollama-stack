@@ -168,7 +168,7 @@ The CLI tool is **functionally complete for core operations** and production-rea
 - **`stack_manager.py`** additions:
   - `create_backup()`: Orchestrate full backup workflow
   - `restore_from_backup()`: Restore workflow with validation
-  - `migrate_stack()`: Version-specific migration logic
+  
 
 - **`docker_client.py`** additions:
   - `backup_volumes()`: Docker volume backup using containers
@@ -191,7 +191,7 @@ The CLI tool is **functionally complete for core operations** and production-rea
   - Validate backup integrity before restoration
   - Handle conflicts with existing installations
 
-- **`migrate` Command**:
+
   - Implement version detection and migration paths
   - Support dry-run mode and automatic backups
   - Handle configuration format changes across versions

@@ -13,8 +13,7 @@ from ollama_stack_cli.schemas import (
     EnvironmentCheck, 
     CheckReport,
     BackupConfig,
-    BackupManifest,
-    MigrationInfo
+    BackupManifest
 )
 
 
@@ -169,6 +168,7 @@ class TestAppConfig:
         assert "mcp_proxy" in config.services
         
         # Check other defaults
+        assert config.version == "0.2.0"  # New version field
         assert config.docker_compose_file == "docker-compose.yml"
         assert config.data_directory == "~/.ollama-stack/data"
         assert config.backup_directory == "~/.ollama-stack/backups"
@@ -187,6 +187,23 @@ class TestAppConfig:
         config1 = AppConfig()
         config2 = AppConfig()
         assert config1.webui_secret_key != config2.webui_secret_key
+    
+    def test_version_field(self):
+        """Test version field functionality."""
+        # Test default version
+        config = AppConfig()
+        assert config.version == "0.2.0"
+        
+        # Test custom version
+        config = AppConfig(version="1.0.0")
+        assert config.version == "1.0.0"
+        
+        # Test version with different formats
+        config = AppConfig(version="0.1.0")
+        assert config.version == "0.1.0"
+        
+        config = AppConfig(version="2.0.0-beta")
+        assert config.version == "2.0.0-beta"
     
     def test_services_factory_independence(self):
         """Test that services dictionary is independent across instances."""
@@ -207,6 +224,7 @@ class TestAppConfig:
         
         config = AppConfig(
             project_name="custom-project",
+            version="0.3.0",  # Custom version
             services=custom_services,
             docker_compose_file="custom-compose.yml",
             data_directory="/custom/data",
@@ -216,6 +234,7 @@ class TestAppConfig:
         )
         
         assert config.project_name == "custom-project"
+        assert config.version == "0.3.0"  # Check custom version
         assert config.services == custom_services
         assert config.docker_compose_file == "custom-compose.yml"
         assert config.data_directory == "/custom/data"
@@ -666,81 +685,7 @@ class TestBackupManifest:
             )
 
 
-class TestMigrationInfo:
-    """Test MigrationInfo model."""
-    
-    def test_minimal_required(self):
-        """Test MigrationInfo with minimal required fields."""
-        migration = MigrationInfo(
-            from_version="0.2.0",
-            to_version="0.3.0"
-        )
-        
-        assert migration.from_version == "0.2.0"
-        assert migration.to_version == "0.3.0"
-        assert migration.migration_path == []
-        assert migration.backup_required is True
-        assert migration.breaking_changes == []
-        assert migration.migration_steps == []
-        assert migration.estimated_duration is None
-    
-    def test_full_fields(self):
-        """Test MigrationInfo with all fields."""
-        migration = MigrationInfo(
-            from_version="0.2.0",
-            to_version="0.4.0",
-            migration_path=["0.2.1", "0.3.0"],
-            backup_required=False,
-            breaking_changes=["Config format changed", "API changes"],
-            migration_steps=["Update config", "Migrate data", "Restart services"],
-            estimated_duration="10 minutes"
-        )
-        
-        assert migration.from_version == "0.2.0"
-        assert migration.to_version == "0.4.0"
-        assert migration.migration_path == ["0.2.1", "0.3.0"]
-        assert migration.backup_required is False
-        assert migration.breaking_changes == ["Config format changed", "API changes"]
-        assert migration.migration_steps == ["Update config", "Migrate data", "Restart services"]
-        assert migration.estimated_duration == "10 minutes"
-    
-    def test_factory_independence(self):
-        """Test that list fields are independent across instances."""
-        migration1 = MigrationInfo(from_version="0.2.0", to_version="0.3.0")
-        migration2 = MigrationInfo(from_version="0.2.0", to_version="0.3.0")
-        
-        migration1.migration_path.append("0.2.1")
-        migration1.breaking_changes.append("Change 1")
-        migration1.migration_steps.append("Step 1")
-        
-        assert migration2.migration_path == []
-        assert migration2.breaking_changes == []
-        assert migration2.migration_steps == []
-    
-    def test_missing_required_fields(self):
-        """Test ValidationError for missing required fields."""
-        with pytest.raises(ValidationError):
-            MigrationInfo()
-        
-        with pytest.raises(ValidationError):
-            MigrationInfo(from_version="0.2.0")
-        
-        with pytest.raises(ValidationError):
-            MigrationInfo(to_version="0.3.0")
-    
-    def test_empty_lists(self):
-        """Test MigrationInfo with explicitly empty lists."""
-        migration = MigrationInfo(
-            from_version="0.2.0",
-            to_version="0.3.0",
-            migration_path=[],
-            breaking_changes=[],
-            migration_steps=[]
-        )
-        
-        assert migration.migration_path == []
-        assert migration.breaking_changes == []
-        assert migration.migration_steps == []
+
 
 
 class TestSerialization:

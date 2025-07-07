@@ -14,7 +14,7 @@ This directory contains comprehensive integration tests for the ollama-stack CLI
 
 - `test_backup_integration.py` - Backup command integration tests
 - `test_restore_integration.py` - Restore command integration tests  
-- `test_migrate_integration.py` - Migrate command integration tests
+
 - `test_lifecycle_integration.py` - Core lifecycle tests (start/stop/restart/status/check/logs)
 - `test_update_integration.py` - Update command integration tests
 - `test_uninstall_integration.py` - Uninstall command integration tests
@@ -82,7 +82,7 @@ pytest tests/integration/test_backup_integration.py
 pytest tests/integration/test_restore_integration.py
 
 # Migration tests only
-pytest tests/integration/test_migrate_integration.py
+
 
 # Workflow tests only
 pytest tests/integration/test_workflow_integration.py
@@ -154,7 +154,7 @@ pytest tests/integration/ -m failure_scenario
 - **State Management**: Tests restore with stack running/stopped
 - **Cross-Platform**: Tests restoring backups across different platforms
 
-### Migration Integration Tests (`test_migrate_integration.py`)
+
 
 - **Version Migrations**: Tests actual version detection and migration execution
 - **Migration Planning**: Tests dry run mode, validation, compatibility checks
@@ -183,7 +183,7 @@ The integration tests use pytest markers to categorize and filter tests:
 - `@pytest.mark.install` - Install functionality
 - `@pytest.mark.backup` - Backup functionality
 - `@pytest.mark.restore` - Restore functionality
-- `@pytest.mark.migrate` - Migration functionality
+
 - `@pytest.mark.workflow` - Cross-command workflows
 - `@pytest.mark.performance` - Performance and load tests
 - `@pytest.mark.failure_scenario` - Error and failure handling

@@ -18,6 +18,7 @@ class ExtensionsConfig(BaseModel):
 
 class AppConfig(BaseModel):
     project_name: str = Field(default_factory=lambda: f"ollama-stack-{uuid.uuid4().hex[:8]}")
+    version: str = Field(default="0.2.0", description="Current stack version")
     services: Dict[str, ServiceConfig] = Field(default_factory=lambda: {
         "ollama": ServiceConfig(),
         "webui": ServiceConfig(),
@@ -91,15 +92,7 @@ class BackupManifest(BaseModel):
     description: Optional[str] = None
 
 
-class MigrationInfo(BaseModel):
-    """Information for version migration operations."""
-    from_version: str
-    to_version: str
-    migration_path: List[str] = Field(default_factory=list)
-    backup_required: bool = True
-    breaking_changes: List[str] = Field(default_factory=list)
-    migration_steps: List[str] = Field(default_factory=list)
-    estimated_duration: Optional[str] = None
+
 
 
 
