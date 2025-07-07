@@ -1,0 +1,1115 @@
+============================= test session starts ==============================
+collecting ... collected 170 items
+
+tests/integration/test_backup_integration.py::test_backup_creates_real_docker_volume_backup SKIPPED [  0%]
+tests/integration/test_backup_integration.py::test_backup_with_stack_running_performs_live_backup SKIPPED [  1%]
+tests/integration/test_backup_integration.py::test_backup_with_stack_stopped_performs_offline_backup SKIPPED [  1%]
+tests/integration/test_backup_integration.py::test_backup_preserves_large_volume_data SKIPPED [  2%]
+tests/integration/test_backup_integration.py::test_backup_validates_manifest_structure PASSED [  2%]
+tests/integration/test_backup_integration.py::test_backup_validation_detects_corrupted_manifest PASSED [  3%]
+tests/integration/test_backup_integration.py::test_backup_validation_detects_missing_components PASSED [  4%]
+tests/integration/test_backup_integration.py::test_backup_validation_cross_platform_compatibility PASSED [  4%]
+tests/integration/test_backup_integration.py::test_backup_handles_insufficient_disk_space PASSED [  5%]
+tests/integration/test_backup_integration.py::test_backup_handles_permission_denied_scenarios PASSED [  5%]
+tests/integration/test_backup_integration.py::test_backup_handles_docker_service_interruption SKIPPED [  6%]
+tests/integration/test_backup_integration.py::test_backup_handles_corrupted_source_data PASSED [  7%]
+tests/integration/test_backup_integration.py::test_backup_apple_silicon_native_ollama_handling SKIPPED [  7%]
+tests/integration/test_backup_integration.py::test_backup_docker_ollama_handling SKIPPED [  8%]
+tests/integration/test_backup_integration.py::test_backup_performance_with_concurrent_operations SKIPPED [  8%]
+tests/integration/test_backup_integration.py::test_backup_handles_multiple_concurrent_backups SKIPPED [  9%]
+tests/integration/test_backup_integration.py::test_backup_after_update_operation SKIPPED [ 10%]
+tests/integration/test_backup_integration.py::test_backup_with_fresh_installation PASSED [ 10%]
+tests/integration/test_backup_integration.py::test_backup_error_recovery_and_cleanup SKIPPED [ 11%]
+tests/integration/test_backup_integration.py::test_backup_output_format_consistency PASSED [ 11%]
+tests/integration/test_backup_integration.py::test_backup_help_accessibility PASSED [ 12%]
+tests/integration/test_install_integration.py::test_install_command_fresh_system_creates_config_files PASSED [ 12%]
+tests/integration/test_install_integration.py::test_install_command_generates_unique_secure_keys PASSED [ 13%]
+tests/integration/test_install_integration.py::test_install_command_creates_platform_specific_configurations PASSED [ 14%]
+tests/integration/test_install_integration.py::test_install_command_runs_environment_validation PASSED [ 14%]
+tests/integration/test_install_integration.py::test_install_over_existing_configuration_user_confirms PASSED [ 15%]
+tests/integration/test_install_integration.py::test_install_over_existing_configuration_user_declines PASSED [ 15%]
+tests/integration/test_install_integration.py::test_install_with_force_flag_overwrites_without_prompting PASSED [ 16%]
+tests/integration/test_install_integration.py::test_install_partial_existing_configuration PASSED [ 17%]
+tests/integration/test_install_integration.py::test_install_existing_directory_no_config_files PASSED [ 17%]
+tests/integration/test_install_integration.py::test_install_command_help_accessibility PASSED [ 18%]
+tests/integration/test_install_integration.py::test_install_enables_other_commands SKIPPED [ 18%]
+tests/integration/test_install_integration.py::test_install_cross_platform_compatibility PASSED [ 19%]
+tests/integration/test_install_integration.py::test_install_filesystem_permissions_verification PASSED [ 20%]
+tests/integration/test_install_integration.py::test_install_configuration_file_format_validation PASSED [ 20%]
+tests/integration/test_install_integration.py::test_install_error_message_quality FAILED [ 21%]
+tests/integration/test_install_integration.py::test_install_idempotent_multiple_runs PASSED [ 21%]
+tests/integration/test_install_integration.py::test_install_preserves_existing_non_config_files PASSED [ 22%]
+tests/integration/test_install_integration.py::test_install_command_exit_codes PASSED [ 22%]
+tests/integration/test_install_integration.py::test_install_command_output_format_consistency FAILED [ 23%]
+tests/integration/test_install_integration.py::test_install_integration_with_stack_workflow SKIPPED [ 24%]
+tests/integration/test_install_integration.py::test_install_without_docker_daemon PASSED [ 24%]
+tests/integration/test_lifecycle_integration.py::test_start_and_stop_lifecycle SKIPPED [ 25%]
+tests/integration/test_lifecycle_integration.py::test_start_command_without_docker FAILED [ 25%]
+tests/integration/test_lifecycle_integration.py::test_start_when_already_running_is_idempotent SKIPPED [ 26%]
+tests/integration/test_lifecycle_integration.py::test_stop_when_already_stopped_is_idempotent FAILED [ 27%]
+tests/integration/test_lifecycle_integration.py::test_restart_recreates_services SKIPPED [ 27%]
+tests/integration/test_lifecycle_integration.py::test_restart_without_docker FAILED [ 28%]
+tests/integration/test_lifecycle_integration.py::test_restart_with_update_pulls_images SKIPPED [ 28%]
+tests/integration/test_lifecycle_integration.py::test_start_with_update_pulls_images SKIPPED [ 29%]
+tests/integration/test_lifecycle_integration.py::test_native_ollama_service_lifecycle SKIPPED [ 30%]
+tests/integration/test_lifecycle_integration.py::test_docker_ollama_service_lifecycle SKIPPED [ 30%]
+tests/integration/test_lifecycle_integration.py::test_service_health_after_start SKIPPED [ 31%]
+tests/integration/test_lifecycle_integration.py::test_apple_silicon_without_ollama_installed SKIPPED [ 31%]
+tests/integration/test_lifecycle_integration.py::test_status_command_reflects_actual_state SKIPPED [ 32%]
+tests/integration/test_lifecycle_integration.py::test_check_command_validates_environment FAILED [ 32%]
+tests/integration/test_lifecycle_integration.py::test_logs_command_accesses_actual_logs SKIPPED [ 33%]
+tests/integration/test_lifecycle_integration.py::test_logs_command_with_follow_option SKIPPED [ 34%]
+tests/integration/test_migrate_integration.py::test_migrate_detects_current_version SKIPPED [ 34%]
+tests/integration/test_migrate_integration.py::test_migrate_dry_run_shows_migration_plan SKIPPED [ 35%]
+tests/integration/test_migrate_integration.py::test_migrate_with_stack_stopped_performs_offline_migration SKIPPED [ 35%]
+tests/integration/test_migrate_integration.py::test_migrate_with_stack_running_stops_migrates_restarts SKIPPED [ 36%]
+tests/integration/test_migrate_integration.py::test_migrate_preserves_service_data_integrity SKIPPED [ 37%]
+tests/integration/test_migrate_integration.py::test_migrate_target_version_validation PASSED [ 37%]
+tests/integration/test_migrate_integration.py::test_migrate_same_version_handling PASSED [ 38%]
+tests/integration/test_migrate_integration.py::test_migrate_validates_migration_prerequisites FAILED [ 38%]
+tests/integration/test_migrate_integration.py::test_migrate_creates_backup_before_migration FAILED [ 39%]
+tests/integration/test_migrate_integration.py::test_migrate_handles_docker_compatibility_checks SKIPPED [ 40%]
+tests/integration/test_migrate_integration.py::test_migrate_cross_platform_compatibility_validation FAILED [ 40%]
+tests/integration/test_migrate_integration.py::test_migrate_handles_insufficient_disk_space FAILED [ 41%]
+tests/integration/test_migrate_integration.py::test_migrate_handles_docker_service_interruption SKIPPED [ 41%]
+tests/integration/test_migrate_integration.py::test_migrate_rollback_on_failure PASSED [ 42%]
+tests/integration/test_migrate_integration.py::test_migrate_handles_corrupted_configuration FAILED [ 42%]
+tests/integration/test_migrate_integration.py::test_migrate_apple_silicon_native_ollama_handling SKIPPED [ 43%]
+tests/integration/test_migrate_integration.py::test_migrate_docker_ollama_handling SKIPPED [ 44%]
+tests/integration/test_migrate_integration.py::test_migrate_platform_detection_accuracy FAILED [ 44%]
+tests/integration/test_migrate_integration.py::test_migrate_performance_timing SKIPPED [ 45%]
+tests/integration/test_migrate_integration.py::test_migrate_system_resource_usage SKIPPED [ 45%]
+tests/integration/test_migrate_integration.py::test_migrate_with_large_volume_data SKIPPED [ 46%]
+tests/integration/test_migrate_integration.py::test_migrate_after_backup_operation SKIPPED [ 47%]
+tests/integration/test_migrate_integration.py::test_migrate_followed_by_restore_workflow SKIPPED [ 47%]
+tests/integration/test_migrate_integration.py::test_migrate_after_fresh_installation FAILED [ 48%]
+tests/integration/test_migrate_integration.py::test_migrate_cleanup_on_failure FAILED [ 48%]
+tests/integration/test_migrate_integration.py::test_migrate_system_consistency_after_interruption SKIPPED [ 49%]
+tests/integration/test_migrate_integration.py::test_migrate_output_format_consistency FAILED [ 50%]
+tests/integration/test_migrate_integration.py::test_migrate_help_accessibility PASSED [ 50%]
+tests/integration/test_restore_integration.py::test_restore_performs_actual_volume_restoration SKIPPED [ 51%]
+tests/integration/test_restore_integration.py::test_restore_validates_backup_before_restoration SKIPPED [ 51%]
+tests/integration/test_restore_integration.py::test_restore_with_validate_only_flag FAILED [ 52%]
+tests/integration/test_restore_integration.py::test_restore_with_force_flag_overrides_running_stack SKIPPED [ 52%]
+tests/integration/test_restore_integration.py::test_restore_without_force_prompts_when_stack_running SKIPPED [ 53%]
+tests/integration/test_restore_integration.py::test_restore_user_declines_when_stack_running SKIPPED [ 54%]
+tests/integration/test_restore_integration.py::test_restore_detects_corrupted_backup PASSED [ 54%]
+tests/integration/test_restore_integration.py::test_restore_detects_incomplete_backup PASSED [ 55%]
+tests/integration/test_restore_integration.py::test_restore_handles_nonexistent_backup_path PASSED [ 55%]
+tests/integration/test_restore_integration.py::test_restore_handles_permission_denied_scenarios FAILED [ 56%]
+tests/integration/test_restore_integration.py::test_restore_handles_docker_service_interruption SKIPPED [ 57%]
+tests/integration/test_restore_integration.py::test_restore_handles_insufficient_disk_space PASSED [ 57%]
+tests/integration/test_restore_integration.py::test_restore_cross_platform_backup_compatibility FAILED [ 58%]
+tests/integration/test_restore_integration.py::test_restore_apple_silicon_native_ollama_handling SKIPPED [ 58%]
+tests/integration/test_restore_integration.py::test_restore_docker_ollama_handling SKIPPED [ 59%]
+tests/integration/test_restore_integration.py::test_restore_preserves_configuration_files FAILED [ 60%]
+tests/integration/test_restore_integration.py::test_restore_handles_configuration_conflicts FAILED [ 60%]
+tests/integration/test_restore_integration.py::test_restore_performance_with_large_backup SKIPPED [ 61%]
+tests/integration/test_restore_integration.py::test_restore_system_resource_usage SKIPPED [ 61%]
+tests/integration/test_restore_integration.py::test_restore_after_complete_uninstall SKIPPED [ 62%]
+tests/integration/test_restore_integration.py::test_restore_followed_by_start_workflow SKIPPED [ 62%]
+tests/integration/test_restore_integration.py::test_restore_interruption_recovery SKIPPED [ 63%]
+tests/integration/test_restore_integration.py::test_restore_cleanup_on_failure PASSED [ 64%]
+tests/integration/test_restore_integration.py::test_restore_output_format_consistency FAILED [ 64%]
+tests/integration/test_restore_integration.py::test_restore_help_accessibility PASSED [ 65%]
+tests/integration/test_uninstall_integration.py::test_uninstall_basic_removes_docker_resources_preserves_data SKIPPED [ 65%]
+tests/integration/test_uninstall_integration.py::test_uninstall_remove_volumes_actually_removes_data SKIPPED [ 66%]
+tests/integration/test_uninstall_integration.py::test_uninstall_remove_config_actually_removes_filesystem_config SKIPPED [ 67%]
+tests/integration/test_uninstall_integration.py::test_uninstall_all_flag_removes_everything SKIPPED [ 67%]
+tests/integration/test_uninstall_integration.py::test_uninstall_short_form_all_flag_equivalent SKIPPED [ 68%]
+tests/integration/test_uninstall_integration.py::test_uninstall_force_flag_handles_stuck_containers SKIPPED [ 68%]
+tests/integration/test_uninstall_integration.py::test_uninstall_complex_flag_combinations SKIPPED [ 69%]
+tests/integration/test_uninstall_integration.py::test_uninstall_stops_native_ollama_on_apple_silicon SKIPPED [ 70%]
+tests/integration/test_uninstall_integration.py::test_uninstall_removes_docker_ollama_on_other_platforms SKIPPED [ 70%]
+tests/integration/test_uninstall_integration.py::test_uninstall_when_stack_not_running SKIPPED [ 71%]
+tests/integration/test_uninstall_integration.py::test_uninstall_removes_docker_images SKIPPED [ 71%]
+tests/integration/test_uninstall_integration.py::test_uninstall_removes_docker_networks SKIPPED [ 72%]
+tests/integration/test_uninstall_integration.py::test_uninstall_idempotent_multiple_runs SKIPPED [ 72%]
+tests/integration/test_uninstall_integration.py::test_uninstall_without_docker_daemon FAILED [ 73%]
+tests/integration/test_uninstall_integration.py::test_uninstall_preserves_non_stack_docker_resources SKIPPED [ 74%]
+tests/integration/test_uninstall_integration.py::test_uninstall_handles_partial_resource_cleanup SKIPPED [ 74%]
+tests/integration/test_uninstall_integration.py::test_uninstall_config_removal_filesystem_verification SKIPPED [ 75%]
+tests/integration/test_uninstall_integration.py::test_uninstall_volume_removal_data_loss_verification SKIPPED [ 75%]
+tests/integration/test_uninstall_integration.py::test_uninstall_complete_system_state_verification SKIPPED [ 76%]
+tests/integration/test_uninstall_integration.py::test_uninstall_command_help_accessibility SKIPPED [ 77%]
+tests/integration/test_uninstall_integration.py::test_uninstall_error_message_quality PASSED [ 77%]
+tests/integration/test_uninstall_integration.py::test_uninstall_exit_codes_consistency SKIPPED [ 78%]
+tests/integration/test_update_integration.py::test_update_command_when_stack_stopped SKIPPED [ 78%]
+tests/integration/test_update_integration.py::test_update_command_services_only_flag SKIPPED [ 79%]
+tests/integration/test_update_integration.py::test_update_command_extensions_only_flag SKIPPED [ 80%]
+tests/integration/test_update_integration.py::test_update_command_conflicting_flags SKIPPED [ 80%]
+tests/integration/test_update_integration.py::test_update_command_without_docker FAILED [ 81%]
+tests/integration/test_update_integration.py::test_update_with_running_stack_user_confirms SKIPPED [ 81%]
+tests/integration/test_update_integration.py::test_update_with_running_stack_user_declines SKIPPED [ 82%]
+tests/integration/test_update_integration.py::test_start_with_update_integration SKIPPED [ 82%]
+tests/integration/test_update_integration.py::test_restart_with_update_integration SKIPPED [ 83%]
+tests/integration/test_update_integration.py::test_update_command_preserves_service_health SKIPPED [ 84%]
+tests/integration/test_update_integration.py::test_update_command_idempotent SKIPPED [ 84%]
+tests/integration/test_update_integration.py::test_update_command_help_accessibility SKIPPED [ 85%]
+tests/integration/test_update_integration.py::test_update_with_network_interruption SKIPPED [ 85%]
+tests/integration/test_update_integration.py::test_update_maintains_container_state_consistency SKIPPED [ 86%]
+tests/integration/test_update_integration.py::test_update_services_only_excludes_extensions SKIPPED [ 87%]
+tests/integration/test_update_integration.py::test_update_with_partial_service_failures SKIPPED [ 87%]
+tests/integration/test_update_integration.py::test_update_stop_failure_handling SKIPPED [ 88%]
+tests/integration/test_update_integration.py::test_update_restart_failure_handling SKIPPED [ 88%]
+tests/integration/test_update_integration.py::test_concurrent_update_operations SKIPPED [ 89%]
+tests/integration/test_update_integration.py::test_update_with_config_changes SKIPPED [ 90%]
+tests/integration/test_update_integration.py::test_update_preserves_running_service_data SKIPPED [ 90%]
+tests/integration/test_update_integration.py::test_update_command_resource_cleanup SKIPPED [ 91%]
+tests/integration/test_update_integration.py::test_update_mixed_service_types_coordination SKIPPED [ 91%]
+tests/integration/test_update_integration.py::test_update_performance_under_load SKIPPED [ 92%]
+tests/integration/test_update_integration.py::test_update_stack_state_consistency_across_operations SKIPPED [ 92%]
+tests/integration/test_update_integration.py::test_update_error_message_quality FAILED [ 93%]
+tests/integration/test_workflow_integration.py::test_complete_stack_lifecycle_workflow SKIPPED [ 94%]
+tests/integration/test_workflow_integration.py::test_backup_restore_migration_workflow SKIPPED [ 94%]
+tests/integration/test_workflow_integration.py::test_disaster_recovery_workflow SKIPPED [ 95%]
+tests/integration/test_workflow_integration.py::test_development_workflow_with_restarts SKIPPED [ 95%]
+tests/integration/test_workflow_integration.py::test_error_recovery_across_commands SKIPPED [ 96%]
+tests/integration/test_workflow_integration.py::test_concurrent_operation_handling SKIPPED [ 97%]
+tests/integration/test_workflow_integration.py::test_performance_under_load_workflow SKIPPED [ 97%]
+tests/integration/test_workflow_integration.py::test_long_running_stability_workflow SKIPPED [ 98%]
+tests/integration/test_workflow_integration.py::test_configuration_persistence_across_operations PASSED [ 98%]
+tests/integration/test_workflow_integration.py::test_user_friendly_error_messages_workflow FAILED [ 99%]
+tests/integration/test_workflow_integration.py::test_help_accessibility_workflow PASSED [100%]
+
+=================================== FAILURES ===================================
+______________________ test_install_error_message_quality ______________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_install_error_message_quality(runner):
+        """
+        Verifies that install command provides high-quality error messages.
+        """
+        # Test help accessibility
+        help_result = runner.invoke(app, ["install", "--help"])
+        assert help_result.exit_code == 0
+        assert "install" in help_result.stdout.lower()
+    
+        # Test with invalid arguments (if any)
+        invalid_result = runner.invoke(app, ["install", "--invalid-flag"])
+        assert invalid_result.exit_code != 0
+    
+        # Should have user-friendly error message
+>       assert "invalid" in invalid_result.stdout.lower() or "unknown" in invalid_result.stdout.lower()
+E       assert ('invalid' in "[02:46:37] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n" or 'unknown' in "[02:46:37] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n")
+E        +  where "[02:46:37] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n" = <built-in method lower of str object at 0x7d8780628570>()
+E        +    where <built-in method lower of str object at 0x7d8780628570> = "[02:46:37] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n".lower
+E        +      where "[02:46:37] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n" = <Result SystemExit(2)>.stdout
+E        +  and   "[02:46:37] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n" = <built-in method lower of str object at 0x7d87806288f0>()
+E        +    where <built-in method lower of str object at 0x7d87806288f0> = "[02:46:37] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n".lower
+E        +      where "[02:46:37] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n" = <Result SystemExit(2)>.stdout
+
+tests/integration/test_install_integration.py:493: AssertionError
+________________ test_install_command_output_format_consistency ________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+clean_config_dir = '/home/ubuntu/.ollama-stack'
+
+    @pytest.mark.integration
+    def test_install_command_output_format_consistency(runner, clean_config_dir):
+        """
+        Verifies that install command output is consistent and well-formatted.
+        """
+        config_dir = clean_config_dir
+    
+        # Run install command
+        result = runner.invoke(app, ["install", "--force"])
+        assert result.exit_code == 0
+    
+        # Output should be well-formatted
+        output_lines = result.stdout.strip().split('\n')
+    
+        # Should have meaningful output
+        assert len(output_lines) > 0
+    
+        # Should contain success indication
+        output_text = result.stdout.lower()
+        assert any(keyword in output_text for keyword in [
+            "installation", "completed", "success", "created", "configured"
+        ])
+    
+        # Should not contain error messages
+>       assert "error" not in output_text
+E       assert 'error' not in '[02:46:41] creating default configuration files in /home/ubuntu/.ollama-stack   \n           could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: (\'connection aborted.\', filenotfounderror(2, \'no such file  \n           or directory\'))                                                      \n           starting fresh stack installation...                                 \n           initializing fresh stack configuration...                            \n           configuration directory already exists: /home/ubuntu/.ollama-stack   \n           created configuration directory: /home/ubuntu/.ollama-stack          \n           created default configuration files                                  \n           configuration files created successfully!                            \n           running environment validation checks...                             \n           validating environment...                                            \n           failed to create configuration: \'nonetype\' object has no attribute   \n           \'ping\'                                                               \n           ╭──────────────── traceback (most recent call last) ────────────────╮\n           │ /workspace/ollama_stack_cli/stack_manager.py:189 in install_stack │\n           │                                                                   │\n           │    186 │   │   │   log.info("running environment validation check │\n           │    187 │   │   │   log.info("validating environment...")          │\n           │    188 │   │   │                                                  │\n           │ ❱  189 │   │   │   check_report = self.run_environment_checks(fix │\n           │    190 │   │   │                                                  │\n           │    191 │   │   │   # check if all critical checks passed          │\n           │    192 │   │   │   failed_checks = [check for check in check_repo │\n           │                                                                   │\n           │ /workspace/ollama_stack_cli/stack_manager.py:104 in               │\n           │ run_environment_checks                                            │\n           │                                                                   │\n           │    101 │   │   log.debug("running comprehensive environment check │\n           │    102 │   │                                                      │\n           │    103 │   │   # delegate environment checks to docker client     │\n           │ ❱  104 │   │   report = self.docker_client.run_environment_checks │\n           │        platform=self.platform)                                    │\n           │    105 │   │                                                      │\n           │    106 │   │   # add platform-specific checks for native services │\n           │    107 │   │   if self.platform == "apple":                       │\n           │                                                                   │\n           │ /workspace/ollama_stack_cli/docker_client.py:256 in               │\n           │ run_environment_checks                                            │\n           │                                                                   │\n           │   253 │   │                                                       │\n           │   254 │   │   # 1. docker daemon check                            │\n           │   255 │   │   try:                                                │\n           │ ❱ 256 │   │   │   self.client.ping()                              │\n           │   257 │   │   │   log.debug("docker daemon is running and accessi │\n           │   258 │   │   │   checks.append(environmentcheck(                 │\n           │   259 │   │   │   │   name="docker daemon running",               │\n           ╰───────────────────────────────────────────────────────────────────╯\n           attributeerror: \'nonetype\' object has no attribute \'ping\'            \n╭──────────────────────────────────────────────────────────────────────────────╮\n│ error: failed to create configuration: \'nonetype\' object has no attribute    │\n│ \'ping\'                                                                       │\n│                                                                              │\n╰──────────────────────────────────────────────────────────────────────────────╯\n           installation failed                                                  \n'
+E         
+E         'error' is contained here:
+E           [02:46:41] creating default configuration files in /home/ubuntu/.ollama-stack   
+E                      could not get docker info to check for nvidia runtime.               
+E                      defaulting to cpu platform.                                          
+E                      failed to initialize docker client: error while fetching server api  
+E         ?                                                +++++
+E                      version: ('connection aborted.', filenotfounderror(2, 'no such file  
+E                      or directory'))                                                      
+E                      starting fresh stack installation...                                 
+E                      initializing fresh stack configuration...                            
+E                      configuration directory already exists: /home/ubuntu/.ollama-stack   
+E                      created configuration directory: /home/ubuntu/.ollama-stack          
+E                      created default configuration files                                  
+E                      configuration files created successfully!                            
+E                      running environment validation checks...                             
+E                      validating environment...                                            
+E                      failed to create configuration: 'nonetype' object has no attribute   
+E                      'ping'                                                               
+E                      ╭──────────────── traceback (most recent call last) ────────────────╮
+E                      │ /workspace/ollama_stack_cli/stack_manager.py:189 in install_stack │
+E                      │                                                                   │
+E                      │    186 │   │   │   log.info("running environment validation check │
+E                      │    187 │   │   │   log.info("validating environment...")          │
+E                      │    188 │   │   │                                                  │
+E                      │ ❱  189 │   │   │   check_report = self.run_environment_checks(fix │
+E                      │    190 │   │   │                                                  │
+E                      │    191 │   │   │   # check if all critical checks passed          │
+E                      │    192 │   │   │   failed_checks = [check for check in check_repo │
+E                      │                                                                   │
+E                      │ /workspace/ollama_stack_cli/stack_manager.py:104 in               │
+E                      │ run_environment_checks                                            │
+E                      │                                                                   │
+E                      │    101 │   │   log.debug("running comprehensive environment check │
+E                      │    102 │   │                                                      │
+E                      │    103 │   │   # delegate environment checks to docker client     │
+E                      │ ❱  104 │   │   report = self.docker_client.run_environment_checks │
+E                      │        platform=self.platform)                                    │
+E                      │    105 │   │                                                      │
+E                      │    106 │   │   # add platform-specific checks for native services │
+E                      │    107 │   │   if self.platform == "apple":                       │
+E                      │                                                                   │
+E                      │ /workspace/ollama_stack_cli/docker_client.py:256 in               │
+E                      │ run_environment_checks                                            │
+E                      │                                                                   │
+E                      │   253 │   │                                                       │
+E                      │   254 │   │   # 1. docker daemon check                            │
+E                      │   255 │   │   try:                                                │
+E                      │ ❱ 256 │   │   │   self.client.ping()                              │
+E                      │   257 │   │   │   log.debug("docker daemon is running and accessi │
+E                      │   258 │   │   │   checks.append(environmentcheck(                 │
+E                      │   259 │   │   │   │   name="docker daemon running",               │
+E                      ╰───────────────────────────────────────────────────────────────────╯
+E                      attributeerror: 'nonetype' object has no attribute 'ping'            
+E           ╭──────────────────────────────────────────────────────────────────────────────╮
+E           │ error: failed to create configuration: 'nonetype' object has no attribute    │
+E           │ 'ping'                                                                       │
+E           │                                                                              │
+E           ╰──────────────────────────────────────────────────────────────────────────────╯
+E                      installation failed
+
+tests/integration/test_install_integration.py:621: AssertionError
+______________________ test_start_command_without_docker _______________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_start_command_without_docker(runner):
+        """
+        Verifies that when Docker daemon is not running, the start command
+        fails gracefully with a clean, user-friendly error message.
+    
+        This tests the actual error handling users would experience.
+        """
+        if is_docker_available():
+            pytest.skip("Docker is available - testing Docker unavailable scenario")
+    
+        result = runner.invoke(app, ["start"])
+    
+        # Should exit with error code
+        assert result.exit_code == 1
+    
+        # Should contain helpful error message about Docker daemon (not messy traceback)
+        output_lower = result.stdout.lower()
+>       assert any(keyword in output_lower for keyword in [
+            "docker daemon", "daemon is not running", "docker desktop"
+        ]), f"Expected Docker daemon error message, got: {result.stdout}"
+E       AssertionError: Expected Docker daemon error message, got: [02:46:43] Could not get Docker info to check for NVIDIA runtime.               
+E                    Defaulting to CPU platform.                                          
+E                    Failed to initialize Docker client: Error while fetching server API  
+E                    version: ('Connection aborted.', FileNotFoundError(2, 'No such file  
+E                    or directory'))                                                      
+E         ╭──────────────────────────── Security Warning ────────────────────────────╮
+E         │ ⚠️  Warning: Using default configuration with placeholder security keys   │
+E         │                                                                          │
+E         │ 📋 Run 'ollama-stack install' to generate a unique, secure configuration │
+E         ╰──────────────────────────────────────────────────────────────────────────╯
+E         
+E       assert False
+E        +  where False = any(<generator object test_start_command_without_docker.<locals>.<genexpr> at 0x7d8780a8dd80>)
+
+tests/integration/test_lifecycle_integration.py:65: AssertionError
+_________________ test_stop_when_already_stopped_is_idempotent _________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_stop_when_already_stopped_is_idempotent(runner):
+        """
+        Verifies that running 'stop' on an already stopped stack has no
+        negative side effects and exits gracefully.
+        """
+        # The fixture ensures the stack is already stopped.
+        result = runner.invoke(app, ["stop"])
+>       assert result.exit_code == 0
+E       AssertionError: assert 1 == 0
+E        +  where 1 = <Result FileNotFoundError(2, 'No such file or directory')>.exit_code
+
+tests/integration/test_lifecycle_integration.py:105: AssertionError
+_________________________ test_restart_without_docker __________________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_restart_without_docker(runner):
+        """
+        Verifies that when Docker daemon is not running, the restart command
+        fails gracefully with a clean, user-friendly error message.
+        """
+        if is_docker_available():
+            pytest.skip("Docker is available - testing Docker unavailable scenario")
+    
+        result = runner.invoke(app, ["restart"])
+    
+        # Should exit with error code
+        assert result.exit_code == 1
+    
+        # Should contain helpful error message about Docker daemon (not messy traceback)
+        output_lower = result.stdout.lower()
+>       assert any(keyword in output_lower for keyword in [
+            "docker daemon", "daemon is not running", "docker desktop"
+        ]), f"Expected Docker daemon error message, got: {result.stdout}"
+E       AssertionError: Expected Docker daemon error message, got: [02:46:45] Could not get Docker info to check for NVIDIA runtime.               
+E                    Defaulting to CPU platform.                                          
+E                    Failed to initialize Docker client: Error while fetching server API  
+E                    version: ('Connection aborted.', FileNotFoundError(2, 'No such file  
+E                    or directory'))                                                      
+E                    Restarting Ollama Stack...                                           
+E                    Stopping Docker-based services...                                    
+E         
+E       assert False
+E        +  where False = any(<generator object test_restart_without_docker.<locals>.<genexpr> at 0x7d87806d9ff0>)
+
+tests/integration/test_lifecycle_integration.py:155: AssertionError
+___________________ test_check_command_validates_environment ___________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_check_command_validates_environment(runner):
+        """
+        Verifies the 'check' command provides accurate environment validation.
+    
+        This tests actual system state detection.
+        """
+        result = runner.invoke(app, ["check"])
+    
+        # Check command should exit with appropriate code based on actual state
+        if is_docker_available():
+            # If Docker daemon is running, check should succeed or show minor issues
+            assert result.exit_code == 0
+        else:
+            # If Docker daemon is not running, check should fail (this is the correct behavior)
+            assert result.exit_code != 0
+    
+        # Should always check Docker daemon
+        assert "docker" in result.stdout.lower()
+    
+        # Should check port availability
+>       assert "port" in result.stdout.lower()
+E       assert 'port' in "[02:46:46] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n           running environment checks...                                        \n"
+E        +  where "[02:46:46] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n           running environment checks...                                        \n" = <built-in method lower of str object at 0x1d7710c0>()
+E        +    where <built-in method lower of str object at 0x1d7710c0> = "[02:46:46] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n           Running environment checks...                                        \n".lower
+E        +      where "[02:46:46] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n           Running environment checks...                                        \n" = <Result AttributeError("'NoneType' object has no attribute 'ping'")>.stdout
+
+tests/integration/test_lifecycle_integration.py:353: AssertionError
+________________ test_migrate_validates_migration_prerequisites ________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_migrate_validates_migration_prerequisites(runner):
+        """
+        Verifies migrate validates system prerequisites before migration.
+    
+        Tests pre-migration validation checks.
+        """
+        # Ensure configuration exists
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+    
+        # Run migration (should validate prerequisites)
+        result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+>       assert result.exit_code in [0, 1]  # May succeed or fail based on environment
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert 2 in [0, 1]
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:272: AssertionError
+_________________ test_migrate_creates_backup_before_migration _________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+temp_backup_dir = PosixPath('/tmp/pytest-of-ubuntu/pytest-2/test_migrate_creates_backup_be0/backup')
+
+    @pytest.mark.integration
+    def test_migrate_creates_backup_before_migration(runner, temp_backup_dir):
+        """
+        Verifies migrate creates automatic backup before performing migration.
+    
+        Tests automatic backup creation for safety.
+        """
+        # Ensure configuration exists
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+    
+        # Perform migration (should create backup automatically)
+        result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+>       assert result.exit_code == 0
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:302: AssertionError
+_____________ test_migrate_cross_platform_compatibility_validation _____________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_migrate_cross_platform_compatibility_validation(runner):
+        """
+        Verifies migrate validates cross-platform compatibility.
+    
+        Tests platform-specific migration validation.
+        """
+        # Ensure configuration exists
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+    
+        # Run migration dry-run to see platform validation
+        result = runner.invoke(app, ["migrate", "--dry-run", "--target-version", "0.3.0"])
+>       assert result.exit_code == 0
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:356: AssertionError
+_________________ test_migrate_handles_insufficient_disk_space _________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_migrate_handles_insufficient_disk_space(runner):
+        """
+        Verifies migrate behavior when disk space is insufficient.
+    
+        Tests handling of storage limitations during migration.
+        """
+        # Ensure configuration exists
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+    
+        # Create large file to simulate disk space issues
+        temp_dir = Path(tempfile.gettempdir()) / "ollama_stack_test"
+        temp_dir.mkdir(exist_ok=True)
+    
+        large_file = simulate_disk_full_scenario(temp_dir)
+    
+        if large_file:  # Only run if we could create the large file
+            try:
+                # Attempt migration with limited space
+                result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+    
+                # Should handle gracefully
+>               assert result.exit_code in [0, 1]
+E               assert 2 in [0, 1]
+E                +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:397: AssertionError
+_________________ test_migrate_handles_corrupted_configuration _________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_migrate_handles_corrupted_configuration(runner):
+        """
+        Verifies migrate handles corrupted configuration gracefully.
+    
+        Tests error handling for invalid source configuration.
+        """
+        # Create corrupted configuration
+        config_dir = os.path.expanduser("~/.ollama-stack")
+        os.makedirs(config_dir, exist_ok=True)
+    
+        config_file = os.path.join(config_dir, ".ollama-stack.json")
+        with open(config_file, 'w') as f:
+            f.write('{"invalid": "json"')  # Missing closing brace
+    
+        try:
+            # Attempt migration with corrupted config
+            result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+>           assert result.exit_code == 1
+E           assert 2 == 1
+E            +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:505: AssertionError
+___________________ test_migrate_platform_detection_accuracy ___________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_migrate_platform_detection_accuracy(runner):
+        """
+        Verifies migration accurately detects and reports platform information.
+    
+        Tests platform detection reliability.
+        """
+        # Ensure configuration exists
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+    
+        # Run migration dry-run to see platform detection
+        result = runner.invoke(app, ["migrate", "--dry-run", "--target-version", "0.3.0"])
+>       assert result.exit_code == 0
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:596: AssertionError
+____________________ test_migrate_after_fresh_installation _____________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+clean_config_dir = '/home/ubuntu/.ollama-stack'
+
+    @pytest.mark.integration
+    def test_migrate_after_fresh_installation(runner, clean_config_dir):
+        """
+        Verifies migration works correctly after fresh installation.
+    
+        Tests install -> migrate workflow.
+        """
+        # Fresh installation
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+    
+        # Immediate migration after install
+        result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+>       assert result.exit_code == 0
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:789: AssertionError
+_______________________ test_migrate_cleanup_on_failure ________________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_migrate_cleanup_on_failure(runner):
+        """
+        Verifies migration cleans up properly on failure.
+    
+        Tests that failed migrations don't leave partial state.
+        """
+        # Create minimal configuration that might cause migration issues
+        config_dir = os.path.expanduser("~/.ollama-stack")
+        os.makedirs(config_dir, exist_ok=True)
+    
+        config_file = os.path.join(config_dir, ".ollama-stack.json")
+        with open(config_file, 'w') as f:
+            json.dump({"minimal": "config"}, f)
+    
+        try:
+            # Attempt migration (may fail due to incomplete config)
+            result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+    
+            # Should handle gracefully
+>           assert result.exit_code in [0, 1]
+E           assert 2 in [0, 1]
+E            +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:823: AssertionError
+____________________ test_migrate_output_format_consistency ____________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_migrate_output_format_consistency(runner):
+        """
+        Verifies migrate command output is consistent and well-formatted.
+    
+        Tests user experience and output quality.
+        """
+        # Ensure configuration exists
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+    
+        # Perform migration
+        result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
+>       assert result.exit_code == 0
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_migrate_integration.py:891: AssertionError
+_____________________ test_restore_with_validate_only_flag _____________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+temp_backup_dir = PosixPath('/tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup')
+
+    @pytest.mark.integration
+    def test_restore_with_validate_only_flag(runner, temp_backup_dir):
+        """
+        Verifies restore --validate-only performs validation without restoration.
+    
+        Tests validation-only mode for backup verification.
+        """
+        # Create valid backup structure
+        create_test_backup_structure(temp_backup_dir)
+    
+        # Run validation only
+        result = runner.invoke(app, ["restore", "--validate-only", str(temp_backup_dir)])
+        assert result.exit_code == 0
+    
+        # Should show validation results
+        output_lower = result.stdout.lower()
+        assert "validation" in output_lower
+        assert "successful" in output_lower
+    
+        # Should NOT perform actual restore
+>       assert "restoring" not in output_lower
+E       assert 'restoring' not in "[02:47:01] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n           restoring from backup:                                               \n           /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup\n           validating backup integrity...                                       \n           starting stack restore process...                                    \n           validating backup manifest...                                        \n           backup manifest validation completed successfully                    \n           backup validation passed                                             \n           backup id: test-backup-12345                                         \n           created: 2024-01-01 00:00:00+00:00                                   \n           platform: default                                                    \n           validation-only mode - restore not performed                         \n           backup validation passed                                             \n           validation-only mode - restore not performed                         \n╭──────────────────────────── validation complete ─────────────────────────────╮\n│ ✅ backup validation successful                                              │\n│                                                                              │\n│ 📁 backup:                                                                   │\n│ /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup        │\n│ 🔍 status: valid and ready for restore                                       │\n│                                                                              │\n│ 💡 to restore this backup, run:                                              │\n│    ollama-stack restore                                                      │\n│ /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup        │\n╰──────────────────────────────────────────────────────────────────────────────╯\n"
+E         
+E         'restoring' is contained here:
+E           [02:47:01] could not get docker info to check for nvidia runtime.               
+E                      defaulting to cpu platform.                                          
+E                      failed to initialize docker client: error while fetching server api  
+E                      version: ('connection aborted.', filenotfounderror(2, 'no such file  
+E                      or directory'))                                                      
+E                      restoring from backup:                                               
+E         ?            +++++++++
+E                      /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup
+E                      validating backup integrity...                                       
+E                      starting stack restore process...                                    
+E                      validating backup manifest...                                        
+E                      backup manifest validation completed successfully                    
+E                      backup validation passed                                             
+E                      backup id: test-backup-12345                                         
+E                      created: 2024-01-01 00:00:00+00:00                                   
+E                      platform: default                                                    
+E                      validation-only mode - restore not performed                         
+E                      backup validation passed                                             
+E                      validation-only mode - restore not performed                         
+E           ╭──────────────────────────── validation complete ─────────────────────────────╮
+E           │ ✅ backup validation successful                                              │
+E           │                                                                              │
+E           │ 📁 backup:                                                                   │
+E           │ /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup        │
+E           │ 🔍 status: valid and ready for restore                                       │
+E           │                                                                              │
+E           │ 💡 to restore this backup, run:                                              │
+E           │    ollama-stack restore                                                      │
+E           │ /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup        │
+E           ╰──────────────────────────────────────────────────────────────────────────────╯
+
+tests/integration/test_restore_integration.py:127: AssertionError
+_______________ test_restore_handles_permission_denied_scenarios _______________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+temp_backup_dir = PosixPath('/tmp/pytest-of-ubuntu/pytest-2/test_restore_handles_permissio0/backup')
+
+    @pytest.mark.integration
+    def test_restore_handles_permission_denied_scenarios(runner, temp_backup_dir):
+        """
+        Verifies restore handles permission restrictions gracefully.
+    
+        Tests handling of filesystem permission issues during restore.
+        """
+        # Create backup structure
+        create_test_backup_structure(temp_backup_dir)
+    
+        # Remove read permissions from backup directory
+        try:
+            os.chmod(temp_backup_dir, 0o000)
+    
+            # Restore should fail gracefully
+            result = runner.invoke(app, ["restore", str(temp_backup_dir)])
+            assert result.exit_code == 1
+    
+            # Should show permission error
+            output_lower = result.stdout.lower()
+>           assert any(keyword in output_lower for keyword in [
+                "permission", "denied", "access", "cannot read"
+            ])
+E           assert False
+E            +  where False = any(<generator object test_restore_handles_permission_denied_scenarios.<locals>.<genexpr> at 0x7d87806da740>)
+
+tests/integration/test_restore_integration.py:311: AssertionError
+_______________ test_restore_cross_platform_backup_compatibility _______________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+temp_backup_dir = PosixPath('/tmp/pytest-of-ubuntu/pytest-2/test_restore_cross_platform_ba0/backup')
+
+    @pytest.mark.integration
+    def test_restore_cross_platform_backup_compatibility(runner, temp_backup_dir):
+        """
+        Verifies restore works with backups from different platforms.
+    
+        Tests cross-platform backup compatibility.
+        """
+        # Create backup structure
+        create_test_backup_structure(temp_backup_dir)
+    
+        # Modify manifest to simulate different platform
+        manifest_path = temp_backup_dir / "manifest.json"
+>       with open(manifest_path, 'r') as f:
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-ubuntu/pytest-2/test_restore_cross_platform_ba0/backup/manifest.json'
+
+tests/integration/test_restore_integration.py:409: FileNotFoundError
+__________________ test_restore_preserves_configuration_files __________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+temp_backup_dir = PosixPath('/tmp/pytest-of-ubuntu/pytest-2/test_restore_preserves_configu0/backup')
+clean_config_dir = '/home/ubuntu/.ollama-stack'
+
+    @pytest.mark.integration
+    def test_restore_preserves_configuration_files(runner, temp_backup_dir, clean_config_dir):
+        """
+        Verifies restore correctly restores configuration files.
+    
+        Tests configuration restoration and validation.
+        """
+        # Create backup with configuration
+        create_test_backup_structure(temp_backup_dir)
+    
+        # Restore should restore configuration
+        result = runner.invoke(app, ["restore", str(temp_backup_dir)])
+>       assert result.exit_code == 0
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/integration/test_restore_integration.py:510: AssertionError
+_________________ test_restore_handles_configuration_conflicts _________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+temp_backup_dir = PosixPath('/tmp/pytest-of-ubuntu/pytest-2/test_restore_handles_configura0/backup')
+clean_config_dir = '/home/ubuntu/.ollama-stack'
+
+    @pytest.mark.integration
+    def test_restore_handles_configuration_conflicts(runner, temp_backup_dir, clean_config_dir):
+        """
+        Verifies restore handles existing configuration conflicts.
+    
+        Tests configuration conflict resolution during restore.
+        """
+        # Create existing configuration
+        config_dir = clean_config_dir
+        os.makedirs(config_dir, exist_ok=True)
+    
+        existing_config = {"docker_compose_file": "existing.yml"}
+        with open(os.path.join(config_dir, ".ollama-stack.json"), 'w') as f:
+            json.dump(existing_config, f)
+    
+        with open(os.path.join(config_dir, ".env"), 'w') as f:
+            f.write("PROJECT_NAME=existing-stack\nWEBUI_SECRET_KEY=existing-key")
+    
+        # Create backup with different configuration
+        create_test_backup_structure(temp_backup_dir)
+    
+        # Restore should handle configuration conflict
+        result = runner.invoke(app, ["restore", str(temp_backup_dir)])
+>       assert result.exit_code == 0
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/integration/test_restore_integration.py:554: AssertionError
+____________________ test_restore_output_format_consistency ____________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+temp_backup_dir = PosixPath('/tmp/pytest-of-ubuntu/pytest-2/test_restore_output_format_con0/backup')
+
+    @pytest.mark.integration
+    def test_restore_output_format_consistency(runner, temp_backup_dir):
+        """
+        Verifies restore command output is consistent and well-formatted.
+    
+        Tests user experience and output quality.
+        """
+        # Create backup structure
+        create_test_backup_structure(temp_backup_dir)
+    
+        # Perform restore
+        result = runner.invoke(app, ["restore", str(temp_backup_dir)])
+>       assert result.exit_code == 0
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/integration/test_restore_integration.py:770: AssertionError
+_____________________ test_uninstall_without_docker_daemon _____________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_uninstall_without_docker_daemon(runner):
+        """
+        Verifies that uninstall handles Docker unavailability gracefully.
+        """
+        if is_docker_available():
+            pytest.skip("Docker is available - testing Docker unavailable scenario")
+    
+        result = runner.invoke(app, ["uninstall"])
+    
+        # Should handle Docker unavailability gracefully
+        assert result.exit_code in [0, 1]  # May succeed or fail gracefully
+    
+        # Should not crash with technical errors
+        output_lower = result.stdout.lower()
+        assert "traceback" not in output_lower
+        assert "exception" not in output_lower
+    
+        # Should provide helpful message
+>       assert any(keyword in output_lower for keyword in [
+            "docker daemon", "docker desktop", "not running", "unavailable"
+        ])
+E       assert False
+E        +  where False = any(<generator object test_uninstall_without_docker_daemon.<locals>.<genexpr> at 0x7d8780a1d970>)
+
+tests/integration/test_uninstall_integration.py:453: AssertionError
+______________________ test_update_command_without_docker ______________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_update_command_without_docker(runner):
+        """
+        Verifies that update command handles Docker unavailability gracefully.
+        """
+        if is_docker_available():
+            pytest.skip("Docker is available - testing Docker unavailable scenario")
+    
+        result = runner.invoke(app, ["update"])
+    
+        # Should exit with error code
+        assert result.exit_code != 0
+    
+        # Should contain helpful error message about Docker
+        output_lower = result.stdout.lower()
+>       assert any(keyword in output_lower for keyword in [
+            "docker daemon", "daemon is not running", "docker desktop"
+        ])
+E       assert False
+E        +  where False = any(<generator object test_update_command_without_docker.<locals>.<genexpr> at 0x7d8780a3d080>)
+
+tests/integration/test_update_integration.py:104: AssertionError
+______________________ test_update_error_message_quality _______________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_update_error_message_quality(runner):
+        """
+        Verifies that update command provides high-quality error messages.
+        """
+        # Test with Docker unavailable
+        if not is_docker_available():
+            result = runner.invoke(app, ["update"])
+            assert result.exit_code != 0
+    
+            # Should have user-friendly error message
+            output_lower = result.stdout.lower()
+>           assert any(keyword in output_lower for keyword in [
+                "docker daemon", "docker desktop", "not running"
+            ])
+E           assert False
+E            +  where False = any(<generator object test_update_error_message_quality.<locals>.<genexpr> at 0x7d878055d3c0>)
+
+tests/integration/test_update_integration.py:659: AssertionError
+__________________ test_user_friendly_error_messages_workflow __________________
+
+runner = <typer.testing.CliRunner object at 0x7d8780aaf620>
+
+    @pytest.mark.integration
+    def test_user_friendly_error_messages_workflow(runner):
+        """
+        Verifies user-friendly error messages across command workflows.
+    
+        Tests that error messages are helpful and not technical.
+        """
+        # Test commands without installation
+        commands_to_test = [
+            ["start"],
+            ["stop"],
+            ["restart"],
+            ["status"],
+            ["backup", "--output", "/tmp/test_backup"],
+            ["restore", "/nonexistent/backup"],
+            ["migrate", "--target-version", "0.3.0"]
+        ]
+    
+        for command in commands_to_test:
+            result = runner.invoke(app, command)
+    
+            # Commands may fail without installation, but should fail gracefully
+>           assert result.exit_code in [0, 1]
+E           assert 2 in [0, 1]
+E            +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/integration/test_workflow_integration.py:550: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_install_integration.py::test_install_error_message_quality - assert ('invalid' in "[02:46:37] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n" or 'unknown' in "[02:46:37] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n")
+ +  where "[02:46:37] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n" = <built-in method lower of str object at 0x7d8780628570>()
+ +    where <built-in method lower of str object at 0x7d8780628570> = "[02:46:37] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n".lower
+ +      where "[02:46:37] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n" = <Result SystemExit(2)>.stdout
+ +  and   "[02:46:37] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n" = <built-in method lower of str object at 0x7d87806288f0>()
+ +    where <built-in method lower of str object at 0x7d87806288f0> = "[02:46:37] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n".lower
+ +      where "[02:46:37] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n" = <Result SystemExit(2)>.stdout
+FAILED tests/integration/test_install_integration.py::test_install_command_output_format_consistency - assert 'error' not in '[02:46:41] creating default configuration files in /home/ubuntu/.ollama-stack   \n           could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: (\'connection aborted.\', filenotfounderror(2, \'no such file  \n           or directory\'))                                                      \n           starting fresh stack installation...                                 \n           initializing fresh stack configuration...                            \n           configuration directory already exists: /home/ubuntu/.ollama-stack   \n           created configuration directory: /home/ubuntu/.ollama-stack          \n           created default configuration files                                  \n           configuration files created successfully!                            \n           running environment validation checks...                             \n           validating environment...                                            \n           failed to create configuration: \'nonetype\' object has no attribute   \n           \'ping\'                                                               \n           ╭──────────────── traceback (most recent call last) ────────────────╮\n           │ /workspace/ollama_stack_cli/stack_manager.py:189 in install_stack │\n           │                                                                   │\n           │    186 │   │   │   log.info("running environment validation check │\n           │    187 │   │   │   log.info("validating environment...")          │\n           │    188 │   │   │                                                  │\n           │ ❱  189 │   │   │   check_report = self.run_environment_checks(fix │\n           │    190 │   │   │                                                  │\n           │    191 │   │   │   # check if all critical checks passed          │\n           │    192 │   │   │   failed_checks = [check for check in check_repo │\n           │                                                                   │\n           │ /workspace/ollama_stack_cli/stack_manager.py:104 in               │\n           │ run_environment_checks                                            │\n           │                                                                   │\n           │    101 │   │   log.debug("running comprehensive environment check │\n           │    102 │   │                                                      │\n           │    103 │   │   # delegate environment checks to docker client     │\n           │ ❱  104 │   │   report = self.docker_client.run_environment_checks │\n           │        platform=self.platform)                                    │\n           │    105 │   │                                                      │\n           │    106 │   │   # add platform-specific checks for native services │\n           │    107 │   │   if self.platform == "apple":                       │\n           │                                                                   │\n           │ /workspace/ollama_stack_cli/docker_client.py:256 in               │\n           │ run_environment_checks                                            │\n           │                                                                   │\n           │   253 │   │                                                       │\n           │   254 │   │   # 1. docker daemon check                            │\n           │   255 │   │   try:                                                │\n           │ ❱ 256 │   │   │   self.client.ping()                              │\n           │   257 │   │   │   log.debug("docker daemon is running and accessi │\n           │   258 │   │   │   checks.append(environmentcheck(                 │\n           │   259 │   │   │   │   name="docker daemon running",               │\n           ╰───────────────────────────────────────────────────────────────────╯\n           attributeerror: \'nonetype\' object has no attribute \'ping\'            \n╭──────────────────────────────────────────────────────────────────────────────╮\n│ error: failed to create configuration: \'nonetype\' object has no attribute    │\n│ \'ping\'                                                                       │\n│                                                                              │\n╰──────────────────────────────────────────────────────────────────────────────╯\n           installation failed                                                  \n'
+  
+  'error' is contained here:
+    [02:46:41] creating default configuration files in /home/ubuntu/.ollama-stack   
+               could not get docker info to check for nvidia runtime.               
+               defaulting to cpu platform.                                          
+               failed to initialize docker client: error while fetching server api  
+  ?                                                +++++
+               version: ('connection aborted.', filenotfounderror(2, 'no such file  
+               or directory'))                                                      
+               starting fresh stack installation...                                 
+               initializing fresh stack configuration...                            
+               configuration directory already exists: /home/ubuntu/.ollama-stack   
+               created configuration directory: /home/ubuntu/.ollama-stack          
+               created default configuration files                                  
+               configuration files created successfully!                            
+               running environment validation checks...                             
+               validating environment...                                            
+               failed to create configuration: 'nonetype' object has no attribute   
+               'ping'                                                               
+               ╭──────────────── traceback (most recent call last) ────────────────╮
+               │ /workspace/ollama_stack_cli/stack_manager.py:189 in install_stack │
+               │                                                                   │
+               │    186 │   │   │   log.info("running environment validation check │
+               │    187 │   │   │   log.info("validating environment...")          │
+               │    188 │   │   │                                                  │
+               │ ❱  189 │   │   │   check_report = self.run_environment_checks(fix │
+               │    190 │   │   │                                                  │
+               │    191 │   │   │   # check if all critical checks passed          │
+               │    192 │   │   │   failed_checks = [check for check in check_repo │
+               │                                                                   │
+               │ /workspace/ollama_stack_cli/stack_manager.py:104 in               │
+               │ run_environment_checks                                            │
+               │                                                                   │
+               │    101 │   │   log.debug("running comprehensive environment check │
+               │    102 │   │                                                      │
+               │    103 │   │   # delegate environment checks to docker client     │
+               │ ❱  104 │   │   report = self.docker_client.run_environment_checks │
+               │        platform=self.platform)                                    │
+               │    105 │   │                                                      │
+               │    106 │   │   # add platform-specific checks for native services │
+               │    107 │   │   if self.platform == "apple":                       │
+               │                                                                   │
+               │ /workspace/ollama_stack_cli/docker_client.py:256 in               │
+               │ run_environment_checks                                            │
+               │                                                                   │
+               │   253 │   │                                                       │
+               │   254 │   │   # 1. docker daemon check                            │
+               │   255 │   │   try:                                                │
+               │ ❱ 256 │   │   │   self.client.ping()                              │
+               │   257 │   │   │   log.debug("docker daemon is running and accessi │
+               │   258 │   │   │   checks.append(environmentcheck(                 │
+               │   259 │   │   │   │   name="docker daemon running",               │
+               ╰───────────────────────────────────────────────────────────────────╯
+               attributeerror: 'nonetype' object has no attribute 'ping'            
+    ╭──────────────────────────────────────────────────────────────────────────────╮
+    │ error: failed to create configuration: 'nonetype' object has no attribute    │
+    │ 'ping'                                                                       │
+    │                                                                              │
+    ╰──────────────────────────────────────────────────────────────────────────────╯
+               installation failed
+FAILED tests/integration/test_lifecycle_integration.py::test_start_command_without_docker - AssertionError: Expected Docker daemon error message, got: [02:46:43] Could not get Docker info to check for NVIDIA runtime.               
+             Defaulting to CPU platform.                                          
+             Failed to initialize Docker client: Error while fetching server API  
+             version: ('Connection aborted.', FileNotFoundError(2, 'No such file  
+             or directory'))                                                      
+  ╭──────────────────────────── Security Warning ────────────────────────────╮
+  │ ⚠️  Warning: Using default configuration with placeholder security keys   │
+  │                                                                          │
+  │ 📋 Run 'ollama-stack install' to generate a unique, secure configuration │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+  
+assert False
+ +  where False = any(<generator object test_start_command_without_docker.<locals>.<genexpr> at 0x7d8780a8dd80>)
+FAILED tests/integration/test_lifecycle_integration.py::test_stop_when_already_stopped_is_idempotent - AssertionError: assert 1 == 0
+ +  where 1 = <Result FileNotFoundError(2, 'No such file or directory')>.exit_code
+FAILED tests/integration/test_lifecycle_integration.py::test_restart_without_docker - AssertionError: Expected Docker daemon error message, got: [02:46:45] Could not get Docker info to check for NVIDIA runtime.               
+             Defaulting to CPU platform.                                          
+             Failed to initialize Docker client: Error while fetching server API  
+             version: ('Connection aborted.', FileNotFoundError(2, 'No such file  
+             or directory'))                                                      
+             Restarting Ollama Stack...                                           
+             Stopping Docker-based services...                                    
+  
+assert False
+ +  where False = any(<generator object test_restart_without_docker.<locals>.<genexpr> at 0x7d87806d9ff0>)
+FAILED tests/integration/test_lifecycle_integration.py::test_check_command_validates_environment - assert 'port' in "[02:46:46] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n           running environment checks...                                        \n"
+ +  where "[02:46:46] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n           running environment checks...                                        \n" = <built-in method lower of str object at 0x1d7710c0>()
+ +    where <built-in method lower of str object at 0x1d7710c0> = "[02:46:46] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n           Running environment checks...                                        \n".lower
+ +      where "[02:46:46] Could not get Docker info to check for NVIDIA runtime.               \n           Defaulting to CPU platform.                                          \n           Failed to initialize Docker client: Error while fetching server API  \n           version: ('Connection aborted.', FileNotFoundError(2, 'No such file  \n           or directory'))                                                      \n           Running environment checks...                                        \n" = <Result AttributeError("'NoneType' object has no attribute 'ping'")>.stdout
+FAILED tests/integration/test_migrate_integration.py::test_migrate_validates_migration_prerequisites - assert 2 in [0, 1]
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_migrate_integration.py::test_migrate_creates_backup_before_migration - assert 2 == 0
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_migrate_integration.py::test_migrate_cross_platform_compatibility_validation - assert 2 == 0
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_migrate_integration.py::test_migrate_handles_insufficient_disk_space - assert 2 in [0, 1]
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_migrate_integration.py::test_migrate_handles_corrupted_configuration - assert 2 == 1
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_migrate_integration.py::test_migrate_platform_detection_accuracy - assert 2 == 0
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_migrate_integration.py::test_migrate_after_fresh_installation - assert 2 == 0
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_migrate_integration.py::test_migrate_cleanup_on_failure - assert 2 in [0, 1]
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_migrate_integration.py::test_migrate_output_format_consistency - assert 2 == 0
+ +  where 2 = <Result SystemExit(2)>.exit_code
+FAILED tests/integration/test_restore_integration.py::test_restore_with_validate_only_flag - assert 'restoring' not in "[02:47:01] could not get docker info to check for nvidia runtime.               \n           defaulting to cpu platform.                                          \n           failed to initialize docker client: error while fetching server api  \n           version: ('connection aborted.', filenotfounderror(2, 'no such file  \n           or directory'))                                                      \n           restoring from backup:                                               \n           /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup\n           validating backup integrity...                                       \n           starting stack restore process...                                    \n           validating backup manifest...                                        \n           backup manifest validation completed successfully                    \n           backup validation passed                                             \n           backup id: test-backup-12345                                         \n           created: 2024-01-01 00:00:00+00:00                                   \n           platform: default                                                    \n           validation-only mode - restore not performed                         \n           backup validation passed                                             \n           validation-only mode - restore not performed                         \n╭──────────────────────────── validation complete ─────────────────────────────╮\n│ ✅ backup validation successful                                              │\n│                                                                              │\n│ 📁 backup:                                                                   │\n│ /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup        │\n│ 🔍 status: valid and ready for restore                                       │\n│                                                                              │\n│ 💡 to restore this backup, run:                                              │\n│    ollama-stack restore                                                      │\n│ /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup        │\n╰──────────────────────────────────────────────────────────────────────────────╯\n"
+  
+  'restoring' is contained here:
+    [02:47:01] could not get docker info to check for nvidia runtime.               
+               defaulting to cpu platform.                                          
+               failed to initialize docker client: error while fetching server api  
+               version: ('connection aborted.', filenotfounderror(2, 'no such file  
+               or directory'))                                                      
+               restoring from backup:                                               
+  ?            +++++++++
+               /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup
+               validating backup integrity...                                       
+               starting stack restore process...                                    
+               validating backup manifest...                                        
+               backup manifest validation completed successfully                    
+               backup validation passed                                             
+               backup id: test-backup-12345                                         
+               created: 2024-01-01 00:00:00+00:00                                   
+               platform: default                                                    
+               validation-only mode - restore not performed                         
+               backup validation passed                                             
+               validation-only mode - restore not performed                         
+    ╭──────────────────────────── validation complete ─────────────────────────────╮
+    │ ✅ backup validation successful                                              │
+    │                                                                              │
+    │ 📁 backup:                                                                   │
+    │ /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup        │
+    │ 🔍 status: valid and ready for restore                                       │
+    │                                                                              │
+    │ 💡 to restore this backup, run:                                              │
+    │    ollama-stack restore                                                      │
+    │ /tmp/pytest-of-ubuntu/pytest-2/test_restore_with_validate_onl0/backup        │
+    ╰──────────────────────────────────────────────────────────────────────────────╯
+FAILED tests/integration/test_restore_integration.py::test_restore_handles_permission_denied_scenarios - assert False
+ +  where False = any(<generator object test_restore_handles_permission_denied_scenarios.<locals>.<genexpr> at 0x7d87806da740>)
+FAILED tests/integration/test_restore_integration.py::test_restore_cross_platform_backup_compatibility - FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-ubuntu/pytest-2/test_restore_cross_platform_ba0/backup/manifest.json'
+FAILED tests/integration/test_restore_integration.py::test_restore_preserves_configuration_files - assert 1 == 0
+ +  where 1 = <Result SystemExit(1)>.exit_code
+FAILED tests/integration/test_restore_integration.py::test_restore_handles_configuration_conflicts - assert 1 == 0
+ +  where 1 = <Result SystemExit(1)>.exit_code
+FAILED tests/integration/test_restore_integration.py::test_restore_output_format_consistency - assert 1 == 0
+ +  where 1 = <Result SystemExit(1)>.exit_code
+FAILED tests/integration/test_uninstall_integration.py::test_uninstall_without_docker_daemon - assert False
+ +  where False = any(<generator object test_uninstall_without_docker_daemon.<locals>.<genexpr> at 0x7d8780a1d970>)
+FAILED tests/integration/test_update_integration.py::test_update_command_without_docker - assert False
+ +  where False = any(<generator object test_update_command_without_docker.<locals>.<genexpr> at 0x7d8780a3d080>)
+FAILED tests/integration/test_update_integration.py::test_update_error_message_quality - assert False
+ +  where False = any(<generator object test_update_error_message_quality.<locals>.<genexpr> at 0x7d878055d3c0>)
+FAILED tests/integration/test_workflow_integration.py::test_user_friendly_error_messages_workflow - assert 2 in [0, 1]
+ +  where 2 = <Result SystemExit(2)>.exit_code
+============ 25 failed, 40 passed, 105 skipped in 69.34s (0:01:09) =============
