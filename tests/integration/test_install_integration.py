@@ -31,7 +31,7 @@ def test_install_command_fresh_system_creates_config_files(runner, isolated_test
     assert os.listdir(config_dir) == []
     
     # Run install command
-    result = runner.invoke(app, ["install", "--force"])
+    result = runner.invoke(app, ["install", "--force"], env={**os.environ, "OLLAMA_STACK_CONFIG_DIR": config_dir})
     assert result.exit_code == 0
     
     # Verify success message
@@ -83,7 +83,7 @@ def test_install_command_generates_unique_secure_keys(runner, isolated_test_envi
     assert os.listdir(config_dir) == []
     
     # First installation
-    result1 = runner.invoke(app, ["install", "--force"])
+    result1 = runner.invoke(app, ["install", "--force"], env={**os.environ, "OLLAMA_STACK_CONFIG_DIR": config_dir})
     assert result1.exit_code == 0
     
     env_file = os.path.join(config_dir, ".env")
@@ -95,7 +95,7 @@ def test_install_command_generates_unique_secure_keys(runner, isolated_test_envi
     assert os.listdir(config_dir) == []
     
     # Second installation
-    result2 = runner.invoke(app, ["install", "--force"])
+    result2 = runner.invoke(app, ["install", "--force"], env={**os.environ, "OLLAMA_STACK_CONFIG_DIR": config_dir})
     assert result2.exit_code == 0
     
     secret_key_2 = extract_secret_key_from_env(env_file)

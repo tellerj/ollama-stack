@@ -658,9 +658,9 @@ def test_validate_backup_manifest_success(tmp_path: Path, mock_display: MagicMoc
     with open(manifest_file, "w") as f:
         json.dump(manifest.model_dump(), f, default=str)
     
-    # Create expected backup files
-    (backup_dir / "ollama_data.tar.gz").touch()
-    (backup_dir / "webui_data.tar.gz").touch()
+    # Create expected backup files (volumes are stored in volumes/ subdirectory)
+    (backup_dir / "volumes" / "ollama_data.tar.gz").touch()
+    (backup_dir / "volumes" / "webui_data.tar.gz").touch()
     (backup_dir / "config" / ".ollama-stack.json").touch()
     (backup_dir / "config" / ".env").touch()
     (backup_dir / "extensions" / "test_extension.tar.gz").touch()

@@ -80,10 +80,10 @@ def test_backup_stack_logic_custom_output_path(mock_app_context):
     
     assert result == True
     
-    # Verify custom path was used
+    # Verify custom path was used (resolve paths to handle macOS /tmp -> /private/tmp)
     call_args = mock_app_context.stack_manager.create_backup.call_args
     backup_dir = call_args[1]['backup_dir']
-    assert str(backup_dir) == custom_path
+    assert str(backup_dir.resolve()) == str(Path(custom_path).resolve())
 
 def test_backup_stack_logic_with_description(mock_app_context):
     """Test backup with description."""

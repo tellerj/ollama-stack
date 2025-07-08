@@ -15,6 +15,7 @@ from .display import Display
 from typing import Optional, List
 from pathlib import Path
 import os
+from .config import get_default_config_dir, get_default_config_file, get_default_env_file, save_config
 
 log = logging.getLogger(__name__)
 
@@ -125,22 +126,20 @@ class StackManager:
         Returns:
             dict: Dictionary with installation results including success status, paths, and check results
         """
-        from .config import DEFAULT_CONFIG_DIR, DEFAULT_ENV_FILE, DEFAULT_CONFIG_FILE, save_config
-        
         log.info("Initializing fresh stack configuration...")
-        
+        config_dir = get_default_config_dir()
+        config_file = get_default_config_file()
+        env_file = get_default_env_file()
         # Check if configuration directory already exists
-        if DEFAULT_CONFIG_DIR.exists():
-            log.info(f"Configuration directory already exists: {DEFAULT_CONFIG_DIR}")
-            
+        if config_dir.exists():
+            log.info(f"Configuration directory already exists: {config_dir}")
             if not force:
                 # Check if there are any existing config files
                 existing_files = []
-                if DEFAULT_CONFIG_FILE.exists():
+                if config_file.exists():
                     existing_files.append(".ollama-stack.json")
-                if DEFAULT_ENV_FILE.exists():
+                if env_file.exists():
                     existing_files.append(".env")
-                
                 if existing_files:
                     self.display.panel(
                         f"Found existing configuration files: {', '.join(existing_files)}\n\n"
@@ -148,7 +147,6 @@ class StackManager:
                         "Configuration Already Exists",
                         border_style="yellow"
                     )
-                    
                     if not typer.confirm("Do you want to overwrite the existing configuration?"):
                         self.display.error("Installation cancelled by user")
                         log.info("Installation cancelled - existing configuration preserved")
@@ -156,39 +154,30 @@ class StackManager:
                             'success': False,
                             'error': "Installation cancelled by user"
                         }
-        
         try:
             # Create the configuration directory
-            DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            log.info(f"Created configuration directory: {DEFAULT_CONFIG_DIR}")
-            
+            config_dir.mkdir(parents=True, exist_ok=True)
+            log.info(f"Created configuration directory: {config_dir}")
             # Generate a secure secret key for WebUI
             secure_key = self._generate_secure_key()
-            
             # Create a fresh AppConfig with platform-specific configurations
             app_config = AppConfig()
             app_config.project_name = "ollama-stack"
             app_config.webui_secret_key = secure_key
-            
             # Add platform configurations
             app_config.platform = {
                 "apple": PlatformConfig(compose_file="docker-compose.apple.yml"),
                 "nvidia": PlatformConfig(compose_file="docker-compose.nvidia.yml"),
             }
-            
             # Save the configuration
-            save_config(self.display, app_config, DEFAULT_CONFIG_FILE, DEFAULT_ENV_FILE)
+            save_config(self.display, app_config, config_file, env_file)
             log.info("Created default configuration files")
-            
             # Log success message
             log.info("Configuration files created successfully!")
-            
             # Run environment checks to validate the setup
             log.info("Running environment validation checks...")
             log.info("Validating Environment...")
-            
             check_report = self.run_environment_checks(fix=False)
-            
             # Check if all critical checks passed
             failed_checks = [check for check in check_report.checks if not check.passed]
             if failed_checks:
@@ -196,17 +185,15 @@ class StackManager:
             else:
                 log.info("All environment checks passed")
                 log.info("Environment validation completed - all checks passed!")
-            
             # Return installation results for command layer to display
             return {
                 'success': True,
-                'config_dir': DEFAULT_CONFIG_DIR,
-                'config_file': DEFAULT_CONFIG_FILE,
-                'env_file': DEFAULT_ENV_FILE,
+                'config_dir': config_dir,
+                'config_file': config_file,
+                'env_file': env_file,
                 'check_report': check_report,
                 'failed_checks': failed_checks
             }
-            
         except Exception as e:
             error_msg = f"Failed to create configuration: {str(e)}"
             log.error(error_msg, exc_info=True)
@@ -838,12 +825,12 @@ class StackManager:
             if remove_config:
                 log.info("Removing configuration directory...")
                 try:
-                    from .config import DEFAULT_CONFIG_DIR
+                    config_dir = get_default_config_dir()
                     
-                    if DEFAULT_CONFIG_DIR.exists():
+                    if config_dir.exists():
                         import shutil
-                        shutil.rmtree(DEFAULT_CONFIG_DIR)
-                        log.debug(f"Removed configuration directory: {DEFAULT_CONFIG_DIR}")
+                        shutil.rmtree(config_dir)
+                        log.debug(f"Removed configuration directory: {config_dir}")
                     else:
                         log.debug("Configuration directory not found")
                         
@@ -886,7 +873,6 @@ class StackManager:
             bool: True if backup succeeded, False otherwise
         """
         from .schemas import BackupConfig, BackupManifest
-        from .config import DEFAULT_CONFIG_DIR
         import datetime
         import platform
         import json

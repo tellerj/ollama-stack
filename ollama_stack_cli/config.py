@@ -14,15 +14,21 @@ from .display import Display
 log = logging.getLogger(__name__)
 
 # Support environment variable override for testing
-DEFAULT_CONFIG_DIR = Path(os.environ.get("OLLAMA_STACK_CONFIG_DIR", str(Path.home() / ".ollama-stack")))
-DEFAULT_ENV_FILE = DEFAULT_CONFIG_DIR / ".env"
-DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / ".ollama-stack.json"
+
+def get_default_config_dir():
+    return Path(os.environ.get("OLLAMA_STACK_CONFIG_DIR", str(Path.home() / ".ollama-stack")))
+
+def get_default_env_file():
+    return get_default_config_dir() / ".env"
+
+def get_default_config_file():
+    return get_default_config_dir() / ".ollama-stack.json"
 
 
 def load_config(
     display: Display,
-    config_path: Path = DEFAULT_CONFIG_FILE,
-    env_path: Path = DEFAULT_ENV_FILE,
+    config_path: Path = None,
+    env_path: Path = None,
 ) -> tuple[AppConfig, bool]:
     """
     Loads the application configuration from JSON and .env files.
@@ -31,14 +37,18 @@ def load_config(
     Returns:
         tuple: (AppConfig, fell_back_to_defaults)
     """
+    if config_path is None:
+        config_path = get_default_config_file()
+    if env_path is None:
+        env_path = get_default_env_file()
     if not config_path.exists() or not env_path.exists():
-        log.info(f"Creating default configuration files in {DEFAULT_CONFIG_DIR}")
+        log.info(f"Creating default configuration files in {get_default_config_dir()}")
         app_config = AppConfig()
         app_config.platform = {
             "apple": PlatformConfig(compose_file="docker-compose.apple.yml"),
             "nvidia": PlatformConfig(compose_file="docker-compose.nvidia.yml"),
         }
-        save_config(display, app_config, config_path)
+        save_config(display, app_config, config_path, env_path)
         # Create a default .env file
         set_key(env_path, "PROJECT_NAME", "ollama-stack")
         set_key(env_path, "WEBUI_SECRET_KEY", "your-secret-key-here")
@@ -67,11 +77,15 @@ def load_config(
 def save_config(
     display: Display,
     config: AppConfig,
-    config_path: Path = DEFAULT_CONFIG_FILE,
-    env_path: Path = DEFAULT_ENV_FILE,
+    config_path: Path = None,
+    env_path: Path = None,
 ):
     """Saves the application configuration to JSON and .env files."""
     try:
+        if config_path is None:
+            config_path = get_default_config_file()
+        if env_path is None:
+            env_path = get_default_env_file()
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w") as f:
             f.write(config.model_dump_json(indent=4, exclude={"project_name", "webui_secret_key"}))
@@ -89,8 +103,8 @@ def save_config(
 def export_configuration(
     display: Display,
     output_dir: Path,
-    config_path: Path = DEFAULT_CONFIG_FILE,
-    env_path: Path = DEFAULT_ENV_FILE,
+    config_path: Path = None,
+    env_path: Path = None,
 ) -> bool:
     """
     Export configuration files to a specified directory for backup purposes.
@@ -105,6 +119,10 @@ def export_configuration(
         bool: True if export was successful, False otherwise
     """
     try:
+        if config_path is None:
+            config_path = get_default_config_file()
+        if env_path is None:
+            env_path = get_default_env_file()
         output_dir.mkdir(parents=True, exist_ok=True)
         
         # Copy configuration files if they exist
@@ -137,8 +155,8 @@ def export_configuration(
 def import_configuration(
     display: Display,
     source_dir: Path,
-    config_path: Path = DEFAULT_CONFIG_FILE,
-    env_path: Path = DEFAULT_ENV_FILE,
+    config_path: Path = None,
+    env_path: Path = None,
     validate_only: bool = False,
 ) -> bool:
     """
@@ -155,6 +173,10 @@ def import_configuration(
         bool: True if import/validation was successful, False otherwise
     """
     try:
+        if config_path is None:
+            config_path = get_default_config_file()
+        if env_path is None:
+            env_path = get_default_env_file()
         source_config = source_dir / config_path.name
         source_env = source_dir / env_path.name
         
@@ -326,7 +348,7 @@ def _calculate_backup_checksum(backup_dir: Path, manifest: BackupManifest) -> st
 class Config:
     """A configuration manager that handles loading and accessing app configuration."""
     
-    def __init__(self, display: Display, config_path: Path = DEFAULT_CONFIG_FILE, env_path: Path = DEFAULT_ENV_FILE):
+    def __init__(self, display: Display, config_path: Path = None, env_path: Path = None):
         """Initialize the Config with a loaded AppConfig."""
         self._display = display
         self._config_path = config_path
