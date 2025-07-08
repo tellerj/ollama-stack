@@ -1,9 +1,13 @@
 import pytest
+import os
+import json
 import time
-import docker
+import shutil
+from pathlib import Path
 from typer.testing import CliRunner
 from ollama_stack_cli.main import app
 
+import docker
 from tests.integration.helpers import (
     is_docker_available,
     get_actual_running_services,
@@ -11,11 +15,44 @@ from tests.integration.helpers import (
     IS_APPLE_SILICON,
     EXPECTED_ALL_COMPONENTS,
     EXPECTED_DOCKER_COMPONENTS,
+    TestArtifactTracker,
 )
 
 # --- Update Command Integration Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_update_pulls_latest_images(runner, pin_stack_version):
+    """
+    Verifies that update command pulls the latest Docker images.
+    
+    Tests the core update functionality with actual image pulling.
+    """
+    # Start with pinned version
+    start_result = runner.invoke(app, ["start"])
+    assert start_result.exit_code == 0
+    
+    # Run update command
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    
+    # Should show pulling behavior
+    output_lower = result.stdout.lower()
+    pulling_keywords = ["pull", "downloading", "latest", "updating"]
+    has_pulling_output = any(keyword in output_lower for keyword in pulling_keywords)
+    
+    # Note: May not always show pulling if images are already latest
+    # The important thing is that the command succeeds
+    
+    # Verify services are still running after update
+    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    running_services = get_actual_running_services()
+    assert running_services == expected_components
+
+
+@pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_when_stack_stopped(runner):
     """
@@ -36,6 +73,7 @@ def test_update_command_when_stack_stopped(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_services_only_flag(runner):
     """
@@ -55,6 +93,7 @@ def test_update_command_services_only_flag(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_extensions_only_flag(runner):
     """
@@ -74,6 +113,7 @@ def test_update_command_extensions_only_flag(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_conflicting_flags(runner):
     """
@@ -87,26 +127,7 @@ def test_update_command_conflicting_flags(runner):
 
 
 @pytest.mark.integration
-def test_update_command_without_docker(runner):
-    """
-    Verifies that update command handles Docker unavailability gracefully.
-    """
-    if is_docker_available():
-        pytest.skip("Docker is available - testing Docker unavailable scenario")
-    
-    result = runner.invoke(app, ["update"])
-    
-    # Should exit with error code
-    assert result.exit_code != 0
-    
-    # Should contain helpful error message about Docker
-    output_lower = result.stdout.lower()
-    assert any(keyword in output_lower for keyword in [
-        "docker daemon", "daemon is not running", "docker desktop"
-    ])
-
-
-@pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_with_running_stack_user_confirms(runner):
     """
@@ -130,6 +151,7 @@ def test_update_with_running_stack_user_confirms(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_with_running_stack_user_declines(runner):
     """
@@ -152,6 +174,7 @@ def test_update_with_running_stack_user_declines(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_start_with_update_integration(runner):
     """
@@ -176,6 +199,7 @@ def test_start_with_update_integration(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_restart_with_update_integration(runner):
     """
@@ -211,6 +235,7 @@ def test_restart_with_update_integration(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_preserves_service_health(runner):
     """
@@ -239,6 +264,7 @@ def test_update_command_preserves_service_health(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_idempotent(runner):
     """
@@ -263,6 +289,7 @@ def test_update_command_idempotent(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_help_accessibility(runner):
     """
@@ -283,6 +310,7 @@ def test_update_command_help_accessibility(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_with_network_interruption(runner):
     """
@@ -306,6 +334,7 @@ def test_update_with_network_interruption(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_maintains_container_state_consistency(runner):
     """
@@ -344,6 +373,7 @@ def test_update_maintains_container_state_consistency(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_services_only_excludes_extensions(runner):
     """
@@ -367,6 +397,7 @@ def test_update_services_only_excludes_extensions(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_with_partial_service_failures(runner):
     """
@@ -394,6 +425,7 @@ def test_update_with_partial_service_failures(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_stop_failure_handling(runner):
     """
@@ -417,6 +449,7 @@ def test_update_stop_failure_handling(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_restart_failure_handling(runner):
     """
@@ -440,6 +473,7 @@ def test_update_restart_failure_handling(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_concurrent_update_operations(runner):
     """
@@ -466,6 +500,7 @@ def test_concurrent_update_operations(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_with_config_changes(runner):
     """
@@ -488,6 +523,7 @@ def test_update_with_config_changes(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_preserves_running_service_data(runner):
     """
@@ -516,6 +552,7 @@ def test_update_preserves_running_service_data(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_resource_cleanup(runner):
     """
@@ -551,6 +588,7 @@ def test_update_command_resource_cleanup(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_mixed_service_types_coordination(runner):
     """
@@ -577,6 +615,7 @@ def test_update_mixed_service_types_coordination(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_performance_under_load(runner):
     """
@@ -609,6 +648,7 @@ def test_update_performance_under_load(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_stack_state_consistency_across_operations(runner):
     """

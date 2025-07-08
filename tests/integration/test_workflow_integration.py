@@ -18,11 +18,13 @@ from tests.integration.helpers import (
     wait_for_stack_to_stop,
     extract_secret_key_from_env,
     get_system_resource_usage,
+    TestArtifactTracker,
 )
 
 # --- Complete Lifecycle Workflow Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_complete_stack_lifecycle_workflow(runner, clean_config_dir):
     """
@@ -88,6 +90,7 @@ def test_complete_stack_lifecycle_workflow(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_backup_restore_migration_workflow(runner, temp_backup_dir, clean_config_dir):
     """
@@ -151,6 +154,7 @@ def test_backup_restore_migration_workflow(runner, temp_backup_dir, clean_config
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_disaster_recovery_workflow(runner, temp_backup_dir, clean_config_dir):
     """
@@ -225,6 +229,7 @@ def test_disaster_recovery_workflow(runner, temp_backup_dir, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_development_workflow_with_restarts(runner, clean_config_dir):
     """
@@ -284,6 +289,7 @@ def test_development_workflow_with_restarts(runner, clean_config_dir):
 # --- Multi-Command Error Recovery Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_error_recovery_across_commands(runner, clean_config_dir):
     """
@@ -324,6 +330,7 @@ def test_error_recovery_across_commands(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_concurrent_operation_handling(runner, clean_config_dir):
     """
@@ -367,6 +374,7 @@ def test_concurrent_operation_handling(runner, clean_config_dir):
 # --- Performance Workflow Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_performance_under_load_workflow(runner, temp_backup_dir, clean_config_dir):
     """
@@ -425,6 +433,7 @@ def test_performance_under_load_workflow(runner, temp_backup_dir, clean_config_d
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_long_running_stability_workflow(runner, clean_config_dir):
     """
@@ -470,6 +479,7 @@ def test_long_running_stability_workflow(runner, clean_config_dir):
 # --- Complex Configuration Workflow Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_configuration_persistence_across_operations(runner, clean_config_dir):
     """
     Verifies configuration persistence through various operations.
@@ -526,6 +536,7 @@ def test_configuration_persistence_across_operations(runner, clean_config_dir):
 # --- User Experience Workflow Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_user_friendly_error_messages_workflow(runner):
     """
     Verifies user-friendly error messages across command workflows.
@@ -565,6 +576,7 @@ def test_user_friendly_error_messages_workflow(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_help_accessibility_workflow(runner):
     """
     Verifies help system accessibility across all commands.

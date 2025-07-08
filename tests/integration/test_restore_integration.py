@@ -23,13 +23,15 @@ from tests.integration.helpers import (
     extract_secret_key_from_env,
     get_system_resource_usage,
     simulate_disk_full_scenario,
+    TestArtifactTracker,
 )
 
 # --- Real Restore Operation Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_restore_performs_actual_volume_restoration(runner, temp_backup_dir):
+def test_restore_performs_actual_volume_restoration(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies restore command actually restores Docker volumes from backup.
     
@@ -80,8 +82,9 @@ def test_restore_performs_actual_volume_restoration(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_restore_validates_backup_before_restoration(runner, temp_backup_dir):
+def test_restore_validates_backup_before_restoration(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies restore command validates backup integrity before restoring.
     
@@ -105,6 +108,7 @@ def test_restore_validates_backup_before_restoration(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_restore_with_validate_only_flag(runner, temp_backup_dir):
     """
     Verifies restore --validate-only performs validation without restoration.
@@ -129,8 +133,9 @@ def test_restore_with_validate_only_flag(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_restore_with_force_flag_overrides_running_stack(runner, temp_backup_dir):
+def test_restore_with_force_flag_overrides_running_stack(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies restore --force works when stack is running.
     
@@ -164,8 +169,9 @@ def test_restore_with_force_flag_overrides_running_stack(runner, temp_backup_dir
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_restore_without_force_prompts_when_stack_running(runner, temp_backup_dir):
+def test_restore_without_force_prompts_when_stack_running(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies restore prompts user when stack is running without --force.
     
@@ -192,8 +198,9 @@ def test_restore_without_force_prompts_when_stack_running(runner, temp_backup_di
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_restore_user_declines_when_stack_running(runner, temp_backup_dir):
+def test_restore_user_declines_when_stack_running(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies restore respects user declining when stack is running.
     
@@ -222,6 +229,7 @@ def test_restore_user_declines_when_stack_running(runner, temp_backup_dir):
 # --- Restore Validation and Error Handling Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_restore_detects_corrupted_backup(runner, temp_backup_dir):
     """
     Verifies restore detects and handles corrupted backups gracefully.
@@ -246,6 +254,7 @@ def test_restore_detects_corrupted_backup(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_restore_detects_incomplete_backup(runner, temp_backup_dir):
     """
     Verifies restore detects incomplete backups.
@@ -267,6 +276,7 @@ def test_restore_detects_incomplete_backup(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_restore_handles_nonexistent_backup_path(runner, temp_backup_dir):
     """
     Verifies restore handles nonexistent backup paths gracefully.
@@ -289,6 +299,7 @@ def test_restore_handles_nonexistent_backup_path(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_restore_handles_permission_denied_scenarios(runner, temp_backup_dir):
     """
     Verifies restore handles permission restrictions gracefully.
@@ -324,8 +335,9 @@ def test_restore_handles_permission_denied_scenarios(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_restore_handles_docker_service_interruption(runner, temp_backup_dir):
+def test_restore_handles_docker_service_interruption(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies restore behavior when Docker service is interrupted.
     
@@ -353,6 +365,7 @@ def test_restore_handles_docker_service_interruption(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_restore_handles_insufficient_disk_space(runner, temp_backup_dir):
     """
     Verifies restore behavior when disk space is insufficient.
@@ -395,6 +408,7 @@ def test_restore_handles_insufficient_disk_space(runner, temp_backup_dir):
 # --- Cross-Platform Restore Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_restore_cross_platform_backup_compatibility(runner, temp_backup_dir):
     """
     Verifies restore works with backups from different platforms.

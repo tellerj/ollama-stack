@@ -2,19 +2,48 @@
 
 This directory contains comprehensive integration tests for the ollama-stack CLI, organized by functionality and workflow patterns.
 
+## Test Isolation and State Management
+
+### Guaranteed Clean State
+
+All integration tests are designed to run from a completely clean, consistent starting point. The test framework ensures:
+
+1. **Complete Service Cleanup**: All Docker containers and native processes are stopped before each test
+2. **Config Directory Isolation**: Configuration files are cleaned up between tests
+3. **Backup Artifact Cleanup**: Backup files created during tests are removed
+4. **State Verification**: Tests verify clean state before and after execution
+
+### Test Environment Setup
+
+The test framework provides several fixtures for clean state management:
+
+- `clean_stack_between_tests` (autouse): Ensures complete cleanup before/after each test
+- `isolated_test_environment`: Creates isolated config directory for each test
+- `clean_config_dir`: Provides clean configuration directory
+- `temp_backup_dir`: Temporary directory for backup testing
+
+### Best Practices for Writing Tests
+
+1. **Always use `ensure_clean_test_environment()`** at the start of tests that require clean state
+2. **Track test artifacts** and clean them up in `finally` blocks
+3. **Use `verify_clean_environment()`** to verify state after tests
+4. **Handle cleanup even when tests fail** using try/finally patterns
+
+See `test_template_example.py` for complete examples of proper test patterns.
+
 ## Structure
 
 ### Core Test Files
 
-- `conftest.py` - Shared fixtures and configuration
-- `helpers.py` - Common helper functions and utilities
-- `pytest.ini` - Test configuration and markers
+- `conftest.py` - Shared fixtures and configuration with enhanced cleanup
+- `helpers.py` - Common helper functions and state management utilities
+- `pytest.ini` - Test configuration and isolation settings
+- `test_template_example.py` - Template showing proper test patterns
 
 ### Command-Specific Tests
 
 - `test_backup_integration.py` - Backup command integration tests
 - `test_restore_integration.py` - Restore command integration tests  
-
 - `test_lifecycle_integration.py` - Core lifecycle tests (start/stop/restart/status/check/logs)
 - `test_update_integration.py` - Update command integration tests
 - `test_uninstall_integration.py` - Uninstall command integration tests
@@ -80,9 +109,6 @@ pytest tests/integration/test_backup_integration.py
 
 # Restore tests only
 pytest tests/integration/test_restore_integration.py
-
-# Migration tests only
-
 
 # Workflow tests only
 pytest tests/integration/test_workflow_integration.py
@@ -154,14 +180,6 @@ pytest tests/integration/ -m failure_scenario
 - **State Management**: Tests restore with stack running/stopped
 - **Cross-Platform**: Tests restoring backups across different platforms
 
-
-
-- **Version Migrations**: Tests actual version detection and migration execution
-- **Migration Planning**: Tests dry run mode, validation, compatibility checks
-- **Failure Scenarios**: Tests interrupted migrations, incompatible versions
-- **Rollback**: Tests handling failed migrations and system recovery
-- **Cross-Platform**: Tests migrations across different platforms
-
 ### Workflow Integration Tests (`test_workflow_integration.py`)
 
 - **Complete Lifecycles**: Tests install → start → backup → stop → uninstall
@@ -183,7 +201,6 @@ The integration tests use pytest markers to categorize and filter tests:
 - `@pytest.mark.install` - Install functionality
 - `@pytest.mark.backup` - Backup functionality
 - `@pytest.mark.restore` - Restore functionality
-
 - `@pytest.mark.workflow` - Cross-command workflows
 - `@pytest.mark.performance` - Performance and load tests
 - `@pytest.mark.failure_scenario` - Error and failure handling

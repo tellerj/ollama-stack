@@ -13,19 +13,22 @@ from tests.integration.helpers import (
     IS_APPLE_SILICON,
     EXPECTED_ALL_COMPONENTS,
     EXPECTED_DOCKER_COMPONENTS,
+    TestArtifactTracker,
 )
 
 # --- Install Command Integration Tests ---
 
 @pytest.mark.integration
-def test_install_command_fresh_system_creates_config_files(runner, clean_config_dir):
+@pytest.mark.stateful
+def test_install_command_fresh_system_creates_config_files(runner, isolated_test_environment):
     """
     Verifies that install command creates proper configuration files on fresh system.
     """
-    config_dir = clean_config_dir
+    config_dir = isolated_test_environment
     
-    # Verify config directory doesn't exist initially
-    assert not os.path.exists(config_dir)
+    # The isolated_test_environment fixture creates the directory, so we do not assert its non-existence.
+    # Instead, verify it is empty before install.
+    assert os.listdir(config_dir) == []
     
     # Run install command
     result = runner.invoke(app, ["install", "--force"])
@@ -69,11 +72,15 @@ def test_install_command_fresh_system_creates_config_files(runner, clean_config_
 
 
 @pytest.mark.integration
-def test_install_command_generates_unique_secure_keys(runner, clean_config_dir):
+@pytest.mark.stateful
+def test_install_command_generates_unique_secure_keys(runner, isolated_test_environment):
     """
     Verifies that install command generates unique secure keys.
     """
-    config_dir = clean_config_dir
+    config_dir = isolated_test_environment
+    
+    # The isolated_test_environment fixture creates the directory, so we do not assert its non-existence.
+    assert os.listdir(config_dir) == []
     
     # First installation
     result1 = runner.invoke(app, ["install", "--force"])
@@ -84,6 +91,8 @@ def test_install_command_generates_unique_secure_keys(runner, clean_config_dir):
     
     # Remove config for second installation
     shutil.rmtree(config_dir)
+    os.makedirs(config_dir, exist_ok=True)
+    assert os.listdir(config_dir) == []
     
     # Second installation
     result2 = runner.invoke(app, ["install", "--force"])
@@ -100,6 +109,7 @@ def test_install_command_generates_unique_secure_keys(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_command_creates_platform_specific_configurations(runner, clean_config_dir):
     """
     Verifies that install command creates platform-specific configurations.
@@ -141,6 +151,7 @@ def test_install_command_creates_platform_specific_configurations(runner, clean_
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_command_runs_environment_validation(runner, clean_config_dir):
     """
     Verifies that install command validates environment during installation.
@@ -171,6 +182,7 @@ def test_install_command_runs_environment_validation(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_over_existing_configuration_user_confirms(runner, clean_config_dir):
     """
     Verifies that install handles existing configuration with user confirmation.
@@ -198,6 +210,7 @@ def test_install_over_existing_configuration_user_confirms(runner, clean_config_
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_over_existing_configuration_user_declines(runner, clean_config_dir):
     """
     Verifies that install respects user decline for existing configuration.
@@ -228,6 +241,7 @@ def test_install_over_existing_configuration_user_declines(runner, clean_config_
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_with_force_flag_overwrites_without_prompting(runner, clean_config_dir):
     """
     Verifies that --force flag overwrites existing configuration without prompting.
@@ -256,6 +270,7 @@ def test_install_with_force_flag_overwrites_without_prompting(runner, clean_conf
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_partial_existing_configuration(runner, clean_config_dir):
     """
     Verifies that install handles partial existing configuration.
@@ -284,6 +299,7 @@ def test_install_partial_existing_configuration(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_existing_directory_no_config_files(runner, clean_config_dir):
     """
     Verifies that install handles existing directory without config files.
@@ -322,6 +338,7 @@ def test_install_existing_directory_no_config_files(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_command_help_accessibility(runner):
     """
     Verifies that install command help is accessible and informative.
@@ -342,6 +359,7 @@ def test_install_command_help_accessibility(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_install_enables_other_commands(runner, clean_config_dir):
     """
@@ -370,6 +388,7 @@ def test_install_enables_other_commands(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_cross_platform_compatibility(runner, clean_config_dir):
     """
     Verifies that install works across different platforms.
@@ -401,6 +420,7 @@ def test_install_cross_platform_compatibility(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_filesystem_permissions_verification(runner, clean_config_dir):
     """
     Verifies that install creates files with appropriate permissions.
@@ -431,6 +451,7 @@ def test_install_filesystem_permissions_verification(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_configuration_file_format_validation(runner, clean_config_dir):
     """
     Verifies that install creates properly formatted configuration files.
@@ -476,6 +497,7 @@ def test_install_configuration_file_format_validation(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_error_message_quality(runner):
     """
     Verifies that install command provides high-quality error messages.
@@ -497,6 +519,7 @@ def test_install_error_message_quality(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_idempotent_multiple_runs(runner, clean_config_dir):
     """
     Verifies that install is idempotent when using force flag.
@@ -531,6 +554,7 @@ def test_install_idempotent_multiple_runs(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_preserves_existing_non_config_files(runner, clean_config_dir):
     """
     Verifies that install preserves existing non-configuration files.
@@ -575,6 +599,7 @@ def test_install_preserves_existing_non_config_files(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_command_exit_codes(runner, clean_config_dir):
     """
     Verifies that install command returns appropriate exit codes.
@@ -595,6 +620,7 @@ def test_install_command_exit_codes(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_install_command_output_format_consistency(runner, clean_config_dir):
     """
     Verifies that install command output is consistent and well-formatted.
@@ -627,6 +653,7 @@ def test_install_command_output_format_consistency(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_install_integration_with_stack_workflow(runner, clean_config_dir):
     """
@@ -656,6 +683,7 @@ def test_install_integration_with_stack_workflow(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(is_docker_available(), reason="Docker daemon is available - test requires Docker to be unavailable")
 def test_install_without_docker_daemon(runner, clean_config_dir):
     """

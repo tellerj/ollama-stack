@@ -14,11 +14,13 @@ from tests.integration.helpers import (
     IS_APPLE_SILICON,
     EXPECTED_ALL_COMPONENTS,
     EXPECTED_DOCKER_COMPONENTS,
+    TestArtifactTracker,
 )
 
 # --- Core Lifecycle Integration Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available or not running")
 def test_start_and_stop_lifecycle(runner):
     """
@@ -45,6 +47,7 @@ def test_start_and_stop_lifecycle(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_start_command_without_docker(runner):
     """
     Verifies that when Docker daemon is not running, the start command 
@@ -73,6 +76,7 @@ def test_start_command_without_docker(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_start_when_already_running_is_idempotent(runner):
     """
@@ -95,6 +99,7 @@ def test_start_when_already_running_is_idempotent(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_stop_when_already_stopped_is_idempotent(runner):
     """
     Verifies that running 'stop' on an already stopped stack has no
@@ -107,6 +112,7 @@ def test_stop_when_already_stopped_is_idempotent(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_restart_recreates_services(runner):
     """
@@ -137,6 +143,7 @@ def test_restart_recreates_services(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_restart_without_docker(runner):
     """
     Verifies that when Docker daemon is not running, the restart command 
@@ -162,6 +169,7 @@ def test_restart_without_docker(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_restart_with_update_pulls_images(runner):
     """
@@ -187,6 +195,7 @@ def test_restart_with_update_pulls_images(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_start_with_update_pulls_images(runner):
     """
@@ -203,6 +212,7 @@ def test_start_with_update_pulls_images(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not IS_APPLE_SILICON, reason="Native Ollama test only applicable on Apple Silicon")
 def test_native_ollama_service_lifecycle(runner):
     """
@@ -234,6 +244,7 @@ def test_native_ollama_service_lifecycle(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(IS_APPLE_SILICON, reason="Docker Ollama test not applicable on Apple Silicon")
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_docker_ollama_service_lifecycle(runner):
@@ -250,6 +261,7 @@ def test_docker_ollama_service_lifecycle(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_service_health_after_start(runner):
     """
@@ -275,6 +287,7 @@ def test_service_health_after_start(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not IS_APPLE_SILICON, reason="Test only applicable on Apple Silicon") 
 def test_apple_silicon_without_ollama_installed(runner):
     """
@@ -301,6 +314,7 @@ def test_apple_silicon_without_ollama_installed(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_status_command_reflects_actual_state(runner):
     """
@@ -330,6 +344,7 @@ def test_status_command_reflects_actual_state(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_check_command_validates_environment(runner):
     """
     Verifies the 'check' command provides accurate environment validation.
@@ -365,6 +380,7 @@ def test_check_command_validates_environment(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_logs_command_accesses_actual_logs(runner):
     """
@@ -389,6 +405,7 @@ def test_logs_command_accesses_actual_logs(runner):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_logs_command_with_follow_option(runner):
     """

@@ -23,13 +23,15 @@ from tests.integration.helpers import (
     get_system_resource_usage,
     create_large_test_data,
     wait_for_stack_to_stop,
+    TestArtifactTracker,
 )
 
 # --- Real Backup Operation Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_backup_creates_real_docker_volume_backup(runner, temp_backup_dir):
+def test_backup_creates_real_docker_volume_backup(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies that backup command creates actual backup of Docker volumes
     with real data preservation.
@@ -93,8 +95,9 @@ def test_backup_creates_real_docker_volume_backup(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_backup_with_stack_running_performs_live_backup(runner, temp_backup_dir):
+def test_backup_with_stack_running_performs_live_backup(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies that backup works correctly while stack is running (live backup).
     
@@ -137,8 +140,9 @@ def test_backup_with_stack_running_performs_live_backup(runner, temp_backup_dir)
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_backup_with_stack_stopped_performs_offline_backup(runner, temp_backup_dir):
+def test_backup_with_stack_stopped_performs_offline_backup(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies that backup works correctly when stack is stopped (offline backup).
     
@@ -180,8 +184,9 @@ def test_backup_with_stack_stopped_performs_offline_backup(runner, temp_backup_d
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_backup_preserves_large_volume_data(runner, temp_backup_dir):
+def test_backup_preserves_large_volume_data(runner, temp_backup_dir, isolated_test_environment):
     """
     Verifies that backup correctly handles large volume data.
     
@@ -227,6 +232,7 @@ def test_backup_preserves_large_volume_data(runner, temp_backup_dir):
 # --- Backup Validation Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_backup_validates_manifest_structure(runner, temp_backup_dir):
     """
     Verifies that backup command creates valid manifest structure.
@@ -243,6 +249,7 @@ def test_backup_validates_manifest_structure(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_backup_validation_detects_corrupted_manifest(runner, temp_backup_dir):
     """
     Verifies that restore validation detects corrupted manifest files.
@@ -267,6 +274,7 @@ def test_backup_validation_detects_corrupted_manifest(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_backup_validation_detects_missing_components(runner, temp_backup_dir):
     """
     Verifies that restore validation detects missing backup components.
@@ -285,6 +293,7 @@ def test_backup_validation_detects_missing_components(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_backup_validation_cross_platform_compatibility(runner, temp_backup_dir):
     """
     Verifies that restore validation works across different platforms.
@@ -320,6 +329,7 @@ def test_backup_validation_cross_platform_compatibility(runner, temp_backup_dir)
 # --- Backup Failure Scenario Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_backup_handles_insufficient_disk_space(runner, temp_backup_dir):
     """
     Verifies backup behavior when disk space is insufficient.
@@ -358,6 +368,7 @@ def test_backup_handles_insufficient_disk_space(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_backup_handles_permission_denied_scenarios(runner, temp_backup_dir):
     """
     Verifies backup behavior with permission restrictions.
@@ -397,6 +408,7 @@ def test_backup_handles_permission_denied_scenarios(runner, temp_backup_dir):
 
 @pytest.mark.integration
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+@pytest.mark.stateful
 def test_backup_handles_docker_service_interruption(runner, temp_backup_dir):
     """
     Verifies backup behavior when Docker service is interrupted during backup.
@@ -424,6 +436,7 @@ def test_backup_handles_docker_service_interruption(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_backup_handles_corrupted_source_data(runner, temp_backup_dir):
     """
     Verifies backup behavior with corrupted source configuration.
@@ -469,6 +482,7 @@ def test_backup_handles_corrupted_source_data(runner, temp_backup_dir):
 
 @pytest.mark.integration
 @pytest.mark.skipif(not IS_APPLE_SILICON, reason="Apple Silicon specific test")
+@pytest.mark.stateful
 def test_backup_apple_silicon_native_ollama_handling(runner, temp_backup_dir):
     """
     Verifies backup correctly handles native Ollama on Apple Silicon.
@@ -504,6 +518,7 @@ def test_backup_apple_silicon_native_ollama_handling(runner, temp_backup_dir):
 @pytest.mark.integration
 @pytest.mark.skipif(IS_APPLE_SILICON, reason="Docker Ollama specific test")
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+@pytest.mark.stateful
 def test_backup_docker_ollama_handling(runner, temp_backup_dir):
     """
     Verifies backup correctly handles Docker Ollama on other platforms.
@@ -537,6 +552,7 @@ def test_backup_docker_ollama_handling(runner, temp_backup_dir):
 
 @pytest.mark.integration
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+@pytest.mark.stateful
 def test_backup_performance_with_concurrent_operations(runner, temp_backup_dir):
     """
     Verifies backup performance when other operations are running.
@@ -577,6 +593,7 @@ def test_backup_performance_with_concurrent_operations(runner, temp_backup_dir):
 
 @pytest.mark.integration
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+@pytest.mark.stateful
 def test_backup_handles_multiple_concurrent_backups(runner, temp_backup_dir):
     """
     Verifies system behavior with multiple concurrent backup operations.
@@ -607,6 +624,7 @@ def test_backup_handles_multiple_concurrent_backups(runner, temp_backup_dir):
 
 @pytest.mark.integration
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+@pytest.mark.stateful
 def test_backup_after_update_operation(runner, temp_backup_dir):
     """
     Verifies backup works correctly after update operations.
@@ -644,6 +662,7 @@ def test_backup_after_update_operation(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 def test_backup_with_fresh_installation(runner, temp_backup_dir, clean_config_dir):
     """
     Verifies backup works correctly with fresh installation.
@@ -682,6 +701,7 @@ def test_backup_with_fresh_installation(runner, temp_backup_dir, clean_config_di
 
 @pytest.mark.integration
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+@pytest.mark.stateful
 def test_backup_error_recovery_and_cleanup(runner, temp_backup_dir):
     """
     Verifies backup error recovery and cleanup behavior.
@@ -732,6 +752,7 @@ def test_backup_error_recovery_and_cleanup(runner, temp_backup_dir):
 # --- Backup Output Format Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_backup_output_format_consistency(runner, temp_backup_dir):
     """
     Verifies backup command output is consistent and well-formatted.
@@ -769,6 +790,7 @@ def test_backup_output_format_consistency(runner, temp_backup_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_backup_help_accessibility(runner):
     """
     Verifies backup command help is accessible and informative.

@@ -43,8 +43,6 @@ def restore_stack_logic(
         log.error("This does not appear to be a valid backup directory")
         return False
     
-    log.info(f"Restoring from backup: {backup_dir}")
-    
     # Validate the backup first
     log.info("Validating backup integrity...")
     
@@ -123,6 +121,7 @@ def restore_stack_logic(
         log.info(f"Restore will include: {', '.join(restore_items)}")
         
         # Perform the actual restore
+        log.info(f"Restoring from backup: {backup_dir}")
         log.info("Starting restore process...")
         
         success = app_context.stack_manager.restore_from_backup(

@@ -8,6 +8,13 @@ import urllib.request
 import urllib.error
 from typer.testing import CliRunner
 from ollama_stack_cli.main import app
+import os
+import json
+import tempfile
+import signal
+import psutil
+from typing import List, Set, Optional
+from contextlib import contextmanager
 
 # --- Test Configuration ---
 
@@ -21,6 +28,278 @@ HEALTH_CHECK_URLS = {
     "mcp_proxy": "http://localhost:8200",
     "ollama": "http://localhost:11434"
 }
+
+# --- Test Artifact Tracking ---
+
+class TestArtifactTracker:
+    """Tracks test artifacts for automatic cleanup."""
+    
+    def __init__(self):
+        self.created_files: Set[str] = set()
+        self.created_dirs: Set[str] = set()
+        self.created_containers: Set[str] = set()
+        self.modified_configs: Set[str] = set()
+    
+    def track_created_file(self, file_path: str):
+        """Track a file that was created during the test."""
+        self.created_files.add(file_path)
+    
+    def track_created_dir(self, dir_path: str):
+        """Track a directory that was created during the test."""
+        self.created_dirs.add(dir_path)
+    
+    def track_created_container(self, container_name: str):
+        """Track a Docker container that was created during the test."""
+        self.created_containers.add(container_name)
+    
+    def track_modified_config(self, config_path: str):
+        """Track a config file that was modified during the test."""
+        self.modified_configs.add(config_path)
+    
+    def cleanup_tracked_artifacts(self):
+        """Clean up all tracked artifacts."""
+        # Clean up created files
+        for file_path in self.created_files:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception:
+                pass
+        
+        # Clean up created directories
+        for dir_path in self.created_dirs:
+            try:
+                if os.path.exists(dir_path):
+                    shutil.rmtree(dir_path)
+            except Exception:
+                pass
+        
+        # Clean up created containers
+        for container_name in self.created_containers:
+            try:
+                client = docker.from_env()
+                containers = client.containers.list(
+                    filters={"name": container_name}, 
+                    all=True
+                )
+                for container in containers:
+                    container.remove(force=True)
+            except Exception:
+                pass
+        
+        # Reset tracking
+        self.created_files.clear()
+        self.created_dirs.clear()
+        self.created_containers.clear()
+        self.modified_configs.clear()
+    
+    @contextmanager
+    def track_artifacts(self):
+        """Context manager for automatic artifact tracking and cleanup."""
+        try:
+            yield self
+        finally:
+            self.cleanup_tracked_artifacts()
+
+# --- Enhanced Cleanup and State Management ---
+
+def ensure_clean_test_environment():
+    """
+    Ensure the test environment is completely clean before starting a test.
+    This should be called at the beginning of each test that requires a clean state.
+    """
+    # Force stop all services
+    force_stop_all_stack_services()
+    
+    # Clean up config directory
+    cleanup_config_directory()
+    
+    # Clean up backup artifacts
+    cleanup_backup_artifacts()
+    
+    # Wait for cleanup to complete with polling
+    time.sleep(1)
+    
+    # Verify clean state
+    assert verify_clean_environment(), "Test environment is not clean"
+
+def force_stop_all_stack_services():
+    """Force stop all stack services including Docker containers and native processes."""
+    # Stop via CLI first
+    runner = CliRunner()
+    runner.invoke(app, ["stop"], catch_exceptions=True)
+    
+    # Force stop native Ollama
+    stop_native_ollama_if_running()
+    
+    # Force kill any remaining native Ollama processes with polling
+    try:
+        subprocess.run(["pkill", "-f", "ollama serve"], check=False, timeout=5)
+        # Poll for process exit instead of fixed sleep
+        start_time = time.time()
+        while time.time() - start_time < 10:
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", "ollama serve"], 
+                    capture_output=True, 
+                    text=True, 
+                    check=False
+                )
+                if result.returncode != 0:  # Process not found
+                    break
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                break
+            time.sleep(0.5)
+        
+        subprocess.run(["pkill", "-f", "ollama"], check=False, timeout=3)
+        # Poll for process exit
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", "ollama"], 
+                    capture_output=True, 
+                    text=True, 
+                    check=False
+                )
+                if result.returncode != 0:  # Process not found
+                    break
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                break
+            time.sleep(0.5)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    
+    # Force remove any stack Docker containers with polling
+    try:
+        client = docker.from_env()
+        containers = client.containers.list(
+            filters={"label": "ollama-stack.component"}, 
+            all=True
+        )
+        for container in containers:
+            try:
+                container.remove(force=True)
+                # Poll for container stop
+                start_time = time.time()
+                while time.time() - start_time < 10:
+                    try:
+                        containers_check = client.containers.list(
+                            filters={"name": container.name}, 
+                            all=True
+                        )
+                        if not containers_check:
+                            break
+                        # Check if container is stopped
+                        for cont in containers_check:
+                            if cont.status == "exited":
+                                break
+                    except Exception:
+                        break
+                    time.sleep(0.5)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def cleanup_config_directory():
+    """Clean up the configuration directory completely."""
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    if os.path.exists(config_dir):
+        try:
+            shutil.rmtree(config_dir)
+            # Poll for directory deletion
+            start_time = time.time()
+            while time.time() - start_time < 5:
+                if not os.path.exists(config_dir):
+                    break
+                time.sleep(0.2)
+        except Exception:
+            # If we can't remove the whole directory, try removing specific files
+            for file_name in [".ollama-stack.json", ".env"]:
+                file_path = os.path.join(config_dir, file_name)
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        # Poll for file deletion
+                        start_time = time.time()
+                        while time.time() - start_time < 3:
+                            if not os.path.exists(file_path):
+                                break
+                            time.sleep(0.2)
+                    except Exception:
+                        pass
+
+def cleanup_backup_artifacts():
+    """Clean up any backup artifacts created during testing."""
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    backups_dir = os.path.join(config_dir, "backups")
+    if os.path.exists(backups_dir):
+        try:
+            shutil.rmtree(backups_dir)
+            # Poll for directory deletion
+            start_time = time.time()
+            while time.time() - start_time < 5:
+                if not os.path.exists(backups_dir):
+                    break
+                time.sleep(0.2)
+        except Exception:
+            pass
+
+def cleanup_minimal():
+    """Minimal cleanup for stateless tests - only stops services."""
+    force_stop_all_stack_services()
+    time.sleep(1)
+
+def cleanup_full():
+    """Full cleanup for stateful tests - stops services and cleans config."""
+    force_stop_all_stack_services()
+    cleanup_config_directory()
+    cleanup_backup_artifacts()
+    time.sleep(1)
+
+def verify_clean_environment():
+    """
+    Verify that the environment is completely clean.
+    Returns True if clean, False otherwise.
+    """
+    # Check for running services
+    running_services = get_actual_running_services()
+    if running_services:
+        return False
+    
+    # Check for config files
+    config_dir = os.path.expanduser("~/.ollama-stack")
+    
+    if os.path.exists(config_dir):
+        config_files = [".ollama-stack.json", ".env"]
+        for file_name in config_files:
+            file_path = os.path.join(config_dir, file_name)
+            if os.path.exists(file_path):
+                return False
+    
+    # Check for backup artifacts
+    backups_dir = os.path.join(config_dir, "backups")
+    if os.path.exists(backups_dir):
+        return False
+    
+    return True
+
+def cleanup_test_artifacts(artifacts_list):
+    """
+    Clean up a list of test artifacts (files, directories, etc.).
+    
+    Args:
+        artifacts_list: List of paths to clean up
+    """
+    for artifact_path in artifacts_list:
+        try:
+            if os.path.isfile(artifact_path):
+                os.remove(artifact_path)
+            elif os.path.isdir(artifact_path):
+                shutil.rmtree(artifact_path)
+        except Exception:
+            pass  # Ignore cleanup errors
 
 # --- Helper Functions ---
 
@@ -380,3 +659,140 @@ def create_large_test_data(directory, size_mb: int = 100):
         return test_file
     except OSError:
         return None 
+
+def poll_for_process_exit(process_name: str, timeout: int = 30) -> bool:
+    """Poll for a process to exit, returning True if it exits within timeout."""
+    import subprocess, time
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", process_name], 
+                capture_output=True, 
+                text=True, 
+                check=False
+            )
+            if result.returncode != 0:  # Process not found
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return True
+        time.sleep(0.5)
+    return False
+
+def poll_for_container_stop(container_name: str, timeout: int = 30) -> bool:
+    """Poll for a Docker container to stop, returning True if it stops within timeout."""
+    import docker, time
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            client = docker.from_env()
+            containers = client.containers.list(
+                filters={"name": container_name}, 
+                all=True
+            )
+            if not containers:
+                return True
+            for container in containers:
+                if container.status == "exited":
+                    return True
+        except Exception:
+            return True
+        time.sleep(0.5)
+    return False
+
+def poll_for_file_deletion(file_path: str, timeout: int = 10) -> bool:
+    """Poll for a file to be deleted, returning True if it's deleted within timeout."""
+    import os, time
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if not os.path.exists(file_path):
+            return True
+        time.sleep(0.2)
+    return False
+
+def poll_for_service_health(service_name: str, timeout: int = 30) -> bool:
+    """Poll for a service to become healthy, returning True if healthy within timeout."""
+    import urllib.request, urllib.error, socket, time
+    HEALTH_CHECK_URLS = {
+        "webui": "http://localhost:8080",
+        "mcp_proxy": "http://localhost:8200",
+        "ollama": "http://localhost:11434"
+    }
+    if service_name not in HEALTH_CHECK_URLS:
+        return False
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            response = urllib.request.urlopen(HEALTH_CHECK_URLS[service_name], timeout=2)
+            if response.getcode() == 200:
+                return True
+        except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout):
+            pass
+        time.sleep(1)
+    return False 
+
+class TemporaryConfigDir:
+    """Context manager for temporary configuration directories."""
+    def __init__(self, tmp_path, monkeypatch):
+        self.tmp_path = tmp_path
+        self.monkeypatch = monkeypatch
+        self.config_dir = None
+        self.original_env = None
+    def __enter__(self):
+        self.config_dir = self.tmp_path / ".ollama-stack"
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.original_env = os.environ.get("OLLAMA_STACK_CONFIG_DIR")
+        self.monkeypatch.setenv("OLLAMA_STACK_CONFIG_DIR", str(self.config_dir))
+        return str(self.config_dir)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.original_env is not None:
+            self.monkeypatch.setenv("OLLAMA_STACK_CONFIG_DIR", self.original_env)
+        else:
+            self.monkeypatch.delenv("OLLAMA_STACK_CONFIG_DIR", raising=False)
+
+class TemporaryBackupDir:
+    """Context manager for temporary backup directories."""
+    def __init__(self, tmp_path):
+        self.tmp_path = tmp_path
+        self.backup_dir = None
+    def __enter__(self):
+        self.backup_dir = self.tmp_path / "backup"
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        return str(self.backup_dir)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.backup_dir and os.path.exists(self.backup_dir):
+            shutil.rmtree(self.backup_dir, ignore_errors=True)
+
+class StackServiceManager:
+    """Context manager for starting/stopping stack services for a test."""
+    def __init__(self, runner):
+        self.runner = runner
+    def __enter__(self):
+        result = self.runner.invoke(app, ["start"])
+        assert result.exit_code == 0
+        return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.runner.invoke(app, ["stop"])
+
+class ArtifactTracker:
+    """Context manager for tracking and cleaning up test artifacts."""
+    def __init__(self):
+        self.artifacts = []
+    def track_file(self, file_path):
+        self.artifacts.append(file_path)
+    def track_dir(self, dir_path):
+        self.artifacts.append(dir_path)
+    def cleanup(self):
+        for artifact in self.artifacts:
+            try:
+                if os.path.isfile(artifact):
+                    os.remove(artifact)
+                elif os.path.isdir(artifact):
+                    shutil.rmtree(artifact)
+            except Exception:
+                pass
+        self.artifacts.clear()
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup() 

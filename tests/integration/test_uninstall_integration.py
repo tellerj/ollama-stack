@@ -1,5 +1,6 @@
 import pytest
 import os
+import json
 import time
 import shutil
 import docker
@@ -17,11 +18,50 @@ from tests.integration.helpers import (
     IS_APPLE_SILICON,
     EXPECTED_ALL_COMPONENTS,
     EXPECTED_DOCKER_COMPONENTS,
+    TestArtifactTracker,
 )
 
 # --- Uninstall Command Integration Tests ---
 
 @pytest.mark.integration
+@pytest.mark.stateful
+@pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
+def test_uninstall_removes_all_stack_components(runner, isolated_test_environment):
+    """
+    Verifies that uninstall command removes all stack components.
+    
+    Tests the core uninstall functionality with actual component removal.
+    """
+    # Install and start stack first
+    install_result = runner.invoke(app, ["install", "--force"])
+    assert install_result.exit_code == 0
+    
+    start_result = runner.invoke(app, ["start"])
+    assert start_result.exit_code == 0
+    
+    # Verify stack is running
+    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    running_services = get_actual_running_services()
+    assert running_services == expected_components
+    
+    # Stop stack before uninstall
+    stop_result = runner.invoke(app, ["stop"])
+    assert stop_result.exit_code == 0
+    
+    # Run uninstall command
+    result = runner.invoke(app, ["uninstall", "--force"])
+    assert result.exit_code == 0
+    
+    # Verify uninstall completed
+    assert "uninstall completed" in result.stdout.lower()
+    
+    # Verify all services are stopped
+    final_services = get_actual_running_services()
+    assert len(final_services) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_uninstall_basic_removes_docker_resources_preserves_data(runner, clean_config_dir):
     """
@@ -64,6 +104,7 @@ def test_uninstall_basic_removes_docker_resources_preserves_data(runner, clean_c
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_uninstall_remove_volumes_actually_removes_data(runner, clean_config_dir):
     """
@@ -98,6 +139,7 @@ def test_uninstall_remove_volumes_actually_removes_data(runner, clean_config_dir
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_uninstall_remove_config_actually_removes_filesystem_config(runner, clean_config_dir):
     """
@@ -125,6 +167,7 @@ def test_uninstall_remove_config_actually_removes_filesystem_config(runner, clea
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_uninstall_all_flag_removes_everything(runner, clean_config_dir):
     """
@@ -168,6 +211,7 @@ def test_uninstall_all_flag_removes_everything(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_uninstall_short_form_all_flag_equivalent(runner, clean_config_dir):
     """
@@ -432,6 +476,7 @@ def test_uninstall_idempotent_multiple_runs(runner, clean_config_dir):
 
 
 @pytest.mark.integration
+@pytest.mark.stateless
 def test_uninstall_without_docker_daemon(runner):
     """
     Verifies that uninstall handles Docker unavailability gracefully.
