@@ -84,19 +84,12 @@ def backup_stack_logic(
         
         if success:
             log.info("Backup completed successfully!")
-            
-            # Show backup information
-            app_context.display.panel(
-                f"✅ Backup Created Successfully\n\n"
-                f"📁 Location: {backup_dir}\n"
-                f"📋 Includes: {', '.join(backup_items)}\n"
-                f"🔒 Compressed: {'Yes' if compress else 'No'}\n"
-                + (f"📝 Description: {description}\n" if description else "") +
-                f"\n💡 To restore this backup, run:\n"
-                f"   ollama-stack restore {backup_dir}",
-                "Backup Complete",
-                border_style="green"
-            )
+            log.info(f"Location: {backup_dir}")
+            log.info(f"Includes: {', '.join(backup_items)}")
+            log.info(f"Compressed: {'Yes' if compress else 'No'}")
+            if description:
+                log.info(f"Description: {description}")
+            log.info(f"To restore this backup, run: ollama-stack restore {backup_dir}")
             
             return True
         else:

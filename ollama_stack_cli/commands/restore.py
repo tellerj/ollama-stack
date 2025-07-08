@@ -61,15 +61,9 @@ def restore_stack_logic(
         
         if validate_only:
             log.info("Validation-only mode - restore not performed")
-            app_context.display.panel(
-                f"✅ Backup Validation Successful\n\n"
-                f"📁 Backup: {backup_dir}\n"
-                f"🔍 Status: Valid and ready for restore\n\n"
-                f"💡 To restore this backup, run:\n"
-                f"   ollama-stack restore {backup_dir}",
-                "Validation Complete",
-                border_style="green"
-            )
+            log.info(f"Backup: {backup_dir}")
+            log.info("Status: Valid and ready for restore")
+            log.info(f"To restore this backup, run: ollama-stack restore {backup_dir}")
             return True
         
         # Check if stack is currently running
@@ -77,37 +71,30 @@ def restore_stack_logic(
             log.warning("Stack is currently running")
             
             if not force:
-                app_context.display.panel(
-                    "⚠️  Stack Currently Running\n\n"
-                    "The stack must be stopped before restoring from backup.\n"
-                    "This will temporarily interrupt any running services.\n\n"
-                    "Use --force to automatically stop services during restore.",
-                    "Confirmation Required",
-                    border_style="yellow"
-                )
+                log.warning("The stack must be stopped before restoring from backup")
+                log.warning("This will temporarily interrupt any running services")
+                log.info("Use --force to automatically stop services during restore")
                 
                 if not typer.confirm("Do you want to stop the stack and proceed with restore?"):
                     log.info("Restore cancelled by user")
                     return False
         
         # Check for existing configuration conflicts
-        from ..config import DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE, DEFAULT_ENV_FILE
+        from ..config import get_default_config_file, get_default_env_file
         
         existing_config = []
-        if DEFAULT_CONFIG_FILE.exists():
+        config_file = get_default_config_file()
+        env_file = get_default_env_file()
+        if config_file.exists():
             existing_config.append(".ollama-stack.json")
-        if DEFAULT_ENV_FILE.exists():
+        if env_file.exists():
             existing_config.append(".env")
         
         if existing_config and not force:
-            app_context.display.panel(
-                f"⚠️  Existing Configuration Detected\n\n"
-                f"Found existing files: {', '.join(existing_config)}\n"
-                f"These will be overwritten during restore.\n\n"
-                f"Use --force to skip this confirmation.",
-                "Configuration Conflict",
-                border_style="yellow"
-            )
+            log.warning("Existing configuration detected")
+            log.warning(f"Found existing files: {', '.join(existing_config)}")
+            log.warning("These will be overwritten during restore")
+            log.info("Use --force to skip this confirmation")
             
             if not typer.confirm("Do you want to overwrite existing configuration?"):
                 log.info("Restore cancelled by user")
@@ -131,17 +118,11 @@ def restore_stack_logic(
         
         if success:
             log.info("Restore completed successfully!")
-            
-            app_context.display.panel(
-                f"✅ Restore Completed Successfully\n\n"
-                f"📁 From: {backup_dir}\n"
-                f"📋 Restored: {', '.join(restore_items)}\n\n"
-                f"🚀 Next steps:\n"
-                f"   • Run 'ollama-stack start' to start services\n"
-                f"   • Run 'ollama-stack status' to check health",
-                "Restore Complete",
-                border_style="green"
-            )
+            log.info(f"From: {backup_dir}")
+            log.info(f"Restored: {', '.join(restore_items)}")
+            log.info("Next steps:")
+            log.info("  • Run 'ollama-stack start' to start services")
+            log.info("  • Run 'ollama-stack status' to check health")
             
             return True
         else:

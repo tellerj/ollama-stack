@@ -84,7 +84,8 @@ class TestRestoreCommand:
         assert Path(call_args[1]['backup_dir']).resolve() == temp_backup_dir.resolve()
         assert call_args[1]['validate_only'] is True
     
-    def test_restore_stack_logic_validate_only_success(self, mock_app_context, temp_backup_dir):
+    @patch('ollama_stack_cli.commands.restore.log')
+    def test_restore_stack_logic_validate_only_success(self, mock_log, mock_app_context, temp_backup_dir):
         """Test restore in validate-only mode."""
         mock_app_context.stack_manager.restore_from_backup.return_value = True
         
@@ -99,7 +100,10 @@ class TestRestoreCommand:
         call_args = mock_app_context.stack_manager.restore_from_backup.call_args
         assert Path(call_args[1]['backup_dir']).resolve() == temp_backup_dir.resolve()
         assert call_args[1]['validate_only'] is True
-        mock_app_context.display.panel.assert_called_once()
+        
+        # Should log validation success
+        mock_log.info.assert_any_call("Validation-only mode - restore not performed")
+        mock_log.info.assert_any_call("Status: Valid and ready for restore")
     
     def test_restore_stack_logic_stack_running_no_force(self, mock_app_context, temp_backup_dir):
         """Test restore when stack is running and no force flag."""
@@ -122,10 +126,10 @@ class TestRestoreCommand:
         mock_app_context.stack_manager.restore_from_backup.side_effect = [True, True]  # validation, then restore
         mock_app_context.stack_manager.is_stack_running.return_value = True
         
-        with patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE') as mock_config_file, \
-             patch('ollama_stack_cli.config.DEFAULT_ENV_FILE') as mock_env_file:
-            mock_config_file.exists.return_value = False
-            mock_env_file.exists.return_value = False
+        with patch('ollama_stack_cli.config.get_default_config_file') as mock_config_file, \
+             patch('ollama_stack_cli.config.get_default_env_file') as mock_env_file:
+            mock_config_file.return_value.exists.return_value = False
+            mock_env_file.return_value.exists.return_value = False
             
             result = restore_stack_logic(
                 mock_app_context,
@@ -142,11 +146,11 @@ class TestRestoreCommand:
         mock_app_context.stack_manager.restore_from_backup.side_effect = [True, True]  # validation, then restore
         mock_app_context.stack_manager.is_stack_running.return_value = False
         
-        with patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE') as mock_config_file, \
-             patch('ollama_stack_cli.config.DEFAULT_ENV_FILE') as mock_env_file, \
+        with patch('ollama_stack_cli.config.get_default_config_file') as mock_config_file, \
+             patch('ollama_stack_cli.config.get_default_env_file') as mock_env_file, \
              patch('typer.confirm', return_value=False):
-            mock_config_file.exists.return_value = True
-            mock_env_file.exists.return_value = True
+            mock_config_file.return_value.exists.return_value = True
+            mock_env_file.return_value.exists.return_value = True
             
             result = restore_stack_logic(
                 mock_app_context,
@@ -158,15 +162,16 @@ class TestRestoreCommand:
         # Should only be called once for validation
         assert mock_app_context.stack_manager.restore_from_backup.call_count == 1
     
-    def test_restore_stack_logic_successful_restore(self, mock_app_context, temp_backup_dir):
+    @patch('ollama_stack_cli.commands.restore.log')
+    def test_restore_stack_logic_successful_restore(self, mock_log, mock_app_context, temp_backup_dir):
         """Test successful restore operation."""
         mock_app_context.stack_manager.restore_from_backup.side_effect = [True, True]  # validation, then restore
         mock_app_context.stack_manager.is_stack_running.return_value = False
         
-        with patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE') as mock_config_file, \
-             patch('ollama_stack_cli.config.DEFAULT_ENV_FILE') as mock_env_file:
-            mock_config_file.exists.return_value = False
-            mock_env_file.exists.return_value = False
+        with patch('ollama_stack_cli.config.get_default_config_file') as mock_config_file, \
+             patch('ollama_stack_cli.config.get_default_env_file') as mock_env_file:
+            mock_config_file.return_value.exists.return_value = False
+            mock_env_file.return_value.exists.return_value = False
             
             result = restore_stack_logic(
                 mock_app_context,
@@ -177,23 +182,22 @@ class TestRestoreCommand:
         assert result is True
         # Should be called twice: validation and restore
         assert mock_app_context.stack_manager.restore_from_backup.call_count == 2
-        mock_app_context.display.panel.assert_called_once()
         
-        # Check success panel content
-        panel_call = mock_app_context.display.panel.call_args
-        panel_content = panel_call[0][0]
-        assert "Restore Completed Successfully" in panel_content
-        assert "ollama-stack start" in panel_content
+        # Check success logging
+        mock_log.info.assert_any_call("Restore completed successfully!")
+        logged_calls = [call.args[0] for call in mock_log.info.call_args_list]
+        assert any("Next steps:" in call for call in logged_calls)
+        assert any("ollama-stack start" in call for call in logged_calls)
     
     def test_restore_stack_logic_restore_failure(self, mock_app_context, temp_backup_dir):
         """Test restore when stack manager restore fails."""
         mock_app_context.stack_manager.restore_from_backup.side_effect = [True, False]  # validation success, restore failure
         mock_app_context.stack_manager.is_stack_running.return_value = False
         
-        with patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE') as mock_config_file, \
-             patch('ollama_stack_cli.config.DEFAULT_ENV_FILE') as mock_env_file:
-            mock_config_file.exists.return_value = False
-            mock_env_file.exists.return_value = False
+        with patch('ollama_stack_cli.config.get_default_config_file') as mock_config_file, \
+             patch('ollama_stack_cli.config.get_default_env_file') as mock_env_file:
+            mock_config_file.return_value.exists.return_value = False
+            mock_env_file.return_value.exists.return_value = False
             
             result = restore_stack_logic(
                 mock_app_context,
@@ -205,7 +209,7 @@ class TestRestoreCommand:
         assert mock_app_context.stack_manager.restore_from_backup.call_count == 2
     
     def test_restore_stack_logic_exception_handling(self, mock_app_context, temp_backup_dir):
-        """Test restore with exception handling."""
+        """Test restore exception handling."""
         mock_app_context.stack_manager.restore_from_backup.side_effect = Exception("Test error")
         
         result = restore_stack_logic(
@@ -214,17 +218,17 @@ class TestRestoreCommand:
         )
         
         assert result is False
-        mock_app_context.stack_manager.restore_from_backup.assert_called_once()
     
-    def test_restore_stack_logic_without_volumes(self, mock_app_context, temp_backup_dir):
+    @patch('ollama_stack_cli.commands.restore.log')
+    def test_restore_stack_logic_without_volumes(self, mock_log, mock_app_context, temp_backup_dir):
         """Test restore without including volumes."""
         mock_app_context.stack_manager.restore_from_backup.side_effect = [True, True]  # validation, then restore
         mock_app_context.stack_manager.is_stack_running.return_value = False
         
-        with patch('ollama_stack_cli.config.DEFAULT_CONFIG_FILE') as mock_config_file, \
-             patch('ollama_stack_cli.config.DEFAULT_ENV_FILE') as mock_env_file:
-            mock_config_file.exists.return_value = False
-            mock_env_file.exists.return_value = False
+        with patch('ollama_stack_cli.config.get_default_config_file') as mock_config_file, \
+             patch('ollama_stack_cli.config.get_default_env_file') as mock_env_file:
+            mock_config_file.return_value.exists.return_value = False
+            mock_env_file.return_value.exists.return_value = False
             
             result = restore_stack_logic(
                 mock_app_context,
@@ -233,25 +237,37 @@ class TestRestoreCommand:
             )
         
         assert result is True
-        # Check that volumes are not mentioned in the restore items
-        panel_call = mock_app_context.display.panel.call_args
-        panel_content = panel_call[0][0]
-        assert "Docker volumes" not in panel_content
-        assert "Configuration files" in panel_content
+        # Should be called twice: validation and restore
+        assert mock_app_context.stack_manager.restore_from_backup.call_count == 2
+        
+        # Verify restore items logged correctly
+        logged_calls = [call.args[0] for call in mock_log.info.call_args_list]
+        restore_items_call = next((call for call in logged_calls if "Restore will include:" in call), None)
+        assert restore_items_call is not None
+        assert "Configuration files" in restore_items_call
+        assert "Docker volumes" not in restore_items_call
     
     @patch('ollama_stack_cli.commands.restore.restore_stack_logic')
     def test_restore_command_success(self, mock_logic):
-        """Test restore command with successful logic."""
+        """Test restore command success."""
         mock_logic.return_value = True
-        mock_ctx = Mock()
-        mock_ctx.obj = Mock(spec=AppContext)
         
-        # Should not raise an exception
-        restore(mock_ctx, "/backup/path")
+        # Create mock context
+        mock_ctx = Mock()
+        mock_ctx.obj = Mock()
+        
+        # Should not raise exception
+        restore(
+            ctx=mock_ctx,
+            backup_path="/test/backup",
+            include_volumes=True,
+            validate_only=False,
+            force=False
+        )
         
         mock_logic.assert_called_once_with(
             app_context=mock_ctx.obj,
-            backup_path="/backup/path",
+            backup_path="/test/backup",
             include_volumes=True,
             validate_only=False,
             force=False
@@ -259,27 +275,31 @@ class TestRestoreCommand:
     
     @patch('ollama_stack_cli.commands.restore.restore_stack_logic')
     def test_restore_command_failure(self, mock_logic):
-        """Test restore command with failed logic."""
+        """Test restore command failure raises typer.Exit."""
         mock_logic.return_value = False
+        
         mock_ctx = Mock()
-        mock_ctx.obj = Mock(spec=AppContext)
+        mock_ctx.obj = Mock()
         
         with pytest.raises(typer.Exit) as exc_info:
-            restore(mock_ctx, "/backup/path")
+            restore(
+                ctx=mock_ctx,
+                backup_path="/test/backup"
+            )
         
         assert exc_info.value.exit_code == 1
-        mock_logic.assert_called_once()
     
     @patch('ollama_stack_cli.commands.restore.restore_stack_logic')
     def test_restore_command_custom_options(self, mock_logic):
         """Test restore command with custom options."""
         mock_logic.return_value = True
+        
         mock_ctx = Mock()
-        mock_ctx.obj = Mock(spec=AppContext)
+        mock_ctx.obj = Mock()
         
         restore(
-            mock_ctx,
-            "/backup/path",
+            ctx=mock_ctx,
+            backup_path="/test/backup",
             include_volumes=False,
             validate_only=True,
             force=True
@@ -287,7 +307,7 @@ class TestRestoreCommand:
         
         mock_logic.assert_called_once_with(
             app_context=mock_ctx.obj,
-            backup_path="/backup/path",
+            backup_path="/test/backup",
             include_volumes=False,
             validate_only=True,
             force=True

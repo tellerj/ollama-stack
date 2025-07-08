@@ -424,6 +424,9 @@ def create_test_backup_structure(backup_dir):
     import os
     import tarfile
     
+    # Ensure backup directory exists
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    
     # Create manifest with proper BackupManifest structure
     manifest = {
         "backup_id": "test-backup-12345",
@@ -577,6 +580,9 @@ def create_corrupted_backup(backup_dir):
     """Create a backup with corrupted manifest for testing error handling."""
     import json
     
+    # Ensure backup directory exists
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    
     # Create corrupted manifest
     manifest_path = backup_dir / "backup_manifest.json"
     with open(manifest_path, 'w') as f:
@@ -588,6 +594,9 @@ def create_corrupted_backup(backup_dir):
 def create_incomplete_backup(backup_dir):
     """Create a backup with missing components for testing validation."""
     import json
+    
+    # Ensure backup directory exists
+    backup_dir.mkdir(parents=True, exist_ok=True)
     
     # Create manifest but missing volume data
     manifest = {
