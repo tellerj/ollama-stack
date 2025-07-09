@@ -83,13 +83,26 @@ ollama-stack logs [service_name]
 ollama-stack update
 
 # Update only core services
-ollama-stack update --services-only
+ollama-stack update --services
 
 # Update only extensions
-ollama-stack update --extensions-only
+ollama-stack update --extensions
 
 # Update with progress details
 ollama-stack update --verbose
+```
+
+### Backup and Migration
+
+```bash
+# Create backup with volumes and configuration
+ollama-stack backup
+
+# Restore from backup
+ollama-stack restore ./backup-20240101-120000
+
+# Validate backup without restoring
+ollama-stack restore ./backup-20240101-120000 --validate-only
 ```
 
 ### Cleanup and Removal
@@ -150,16 +163,7 @@ curl -X POST http://localhost:8200/tools/web_search \
 
 ### Extensions
 
-Extensions add specialized capabilities:
-
-```bash
-# List available extensions
-ollama-stack extensions list
-
-# Enable and start an extension
-ollama-stack extensions enable dia-tts-mcp
-ollama-stack extensions start dia-tts-mcp
-```
+Extensions add specialized capabilities through the Model Context Protocol (MCP). Extension management commands are planned for future releases.
 
 ## Troubleshooting
 

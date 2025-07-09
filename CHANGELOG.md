@@ -16,13 +16,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - 
 
+## [v0.4.0] - 2025-01-XX
+
+### Added
+- **New Commands**: `backup` command for comprehensive stack backup, `restore` command for backup restoration
+- **Backup System**: Complete backup workflow with volume, configuration, and extension support
+- **Restore System**: Full restore workflow with validation and conflict resolution
+- **Backup Compression**: Optional compression for backup archives to reduce storage requirements
+- **Backup Descriptions**: Custom descriptions for backup identification and organization
+- **Backup Validation**: Comprehensive backup integrity checking with manifest verification
+- **Migration Support**: Configuration version migration with automatic backup creation
+- **Volume Backup**: Docker volume backup using container-based approach for data preservation
+- **Configuration Export**: Export and import of configuration files for migration scenarios
+- **Backup Manifest**: JSON manifest files with checksums for backup integrity verification
+- **Conflict Resolution**: Smart handling of conflicts with running stacks and existing configurations
+- **Validate-Only Mode**: Backup validation without restoration for safety and verification
+- **Custom Backup Locations**: Flexible backup output paths with user directory expansion
+
+### Changed
+- **Enhanced Stack Manager**: New `create_backup()` and `restore_from_backup()` methods for backup orchestration
+- **Docker Client Extensions**: Added `backup_volumes()`, `restore_volumes()`, `export_stack_state()`, and `export_compose_config()` methods
+- **Configuration Management**: Enhanced config import/export with validation and integrity checking
+- **Error Handling**: Improved error handling in backup/restore operations with detailed error reporting
+- **User Experience**: Enhanced backup/restore workflows with clear progress indicators and user guidance
+
+### Fixed
+- **Backup Integrity**: Robust backup validation to prevent corruption and ensure restore reliability
+- **Volume Handling**: Proper Docker volume backup and restoration using container-based approach
+- **Configuration Conflicts**: Smart conflict resolution for existing configurations during restore
+- **Path Handling**: Proper path resolution and user directory expansion for backup locations
+- **Error Recovery**: Enhanced error recovery in backup/restore operations with rollback capabilities
+
+### Technical
+- **Testing**: 567 lines of backup command unit tests + 314 lines of restore command unit tests
+- **Backup Architecture**: Container-based volume backup system with manifest-based integrity checking
+- **Migration Framework**: Version-aware configuration migration with automatic backup creation
+- **Safety Features**: Multiple validation steps and confirmation prompts for destructive operations
+- **Performance**: Optimized backup compression and efficient volume backup using Alpine containers
+
 ## [v0.3.0] - 2025-01-XX
 
 ### Added
 - **New Commands**: `install` command for fresh configuration setup, `update` command for stack component updates, `uninstall` command for complete resource cleanup
 - **Resource Management**: Comprehensive Docker resource discovery and cleanup with safety controls
 - **Configuration Lifecycle**: Fresh configuration directory creation in `~/.ollama-stack/` with secure key generation
-- **Selective Updates**: Update filtering with `--services-only` and `--extensions-only` flags
+- **Selective Updates**: Update filtering with `--services` and `--extensions` flags
 - **Update Orchestration**: Smart state management with stop → pull → restart workflow and inline updates for running stacks
 - **Secure Installation**: Cryptographically secure WebUI secret key generation (64-character keys)
 - **Volume Protection**: Safe uninstall with `--remove-volumes` flag to prevent accidental data loss
