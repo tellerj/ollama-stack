@@ -228,7 +228,7 @@ def ensure_docker_images():
         return
     
     try:
-        from .image_sandbox import load_test_images
+        from tests.integration.image_sandbox import load_test_images
         
         # Load images from cache at the start of the test session
         success = load_test_images()

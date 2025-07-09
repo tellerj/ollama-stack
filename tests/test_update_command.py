@@ -60,7 +60,7 @@ def test_update_command_stack_running_confirm_no(MockAppContext, mock_confirm):
     mock_confirm.return_value = False
     
     result = runner.invoke(app, ["update"])
-    assert result.exit_code == 1
+    assert result.exit_code == 0  # User cancellation is normal, not an error
     mock_app_context.stack_manager.is_stack_running.assert_called_once()
     mock_confirm.assert_called_once()
     # Should not proceed with any other operations
@@ -105,17 +105,12 @@ def test_update_command_conflicting_flags(MockAppContext, mock_app_context):
     """Tests that 'update --services --extensions' fails with error."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
-    mock_app_context.stack_manager.update_stack.return_value = False  # StackManager validates and returns False
     mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
     
     result = runner.invoke(app, ["update", "--services", "--extensions"])
-    assert result.exit_code == 1
-    mock_app_context.stack_manager.update_stack.assert_called_once_with(
-        services_only=True, 
-        extensions_only=True, 
-        force_restart=False,
-        called_from_start_restart=False
-    )
+    assert result.exit_code == 2  # Conflicting flags validation error
+    # Should not proceed with any other operations due to early validation
+    mock_app_context.stack_manager.update_stack.assert_not_called()
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_update_command_with_enabled_extensions(MockAppContext, mock_app_context):

@@ -148,7 +148,7 @@ def update_services_logic(
     app_context: AppContext, 
     services_only: bool = False, 
     extensions_only: bool = False
-) -> bool:
+) -> tuple[bool, bool]:
     """
     Business logic for updating services and extensions.
     
@@ -158,7 +158,9 @@ def update_services_logic(
         extensions_only: Only update enabled extensions
         
     Returns:
-        bool: True if update succeeded, False otherwise
+        tuple[bool, bool]: (success, user_cancelled)
+            - success: True if update succeeded, False if failed
+            - user_cancelled: True if user cancelled, False otherwise
     """
     ctx = app_context
     
@@ -175,7 +177,7 @@ def update_services_logic(
             force_restart = True
         else:
             log.info("Update cancelled")
-            return False
+            return False, True  # Failed due to user cancellation
     
     # Check for version transitions and handle them appropriately
     current_version = ctx.config.app_config.version
@@ -191,7 +193,7 @@ def update_services_logic(
                 log.error("Failed to create backup before version update")
                 if not typer.confirm("Continue without backup?"):
                     log.info("Update cancelled")
-                    return False
+                    return False, True  # Failed due to user cancellation
     
     # Delegate to StackManager for orchestration
     success = ctx.stack_manager.update_stack(
@@ -209,7 +211,7 @@ def update_services_logic(
         from ..config import save_config
         save_config(ctx.display, ctx.config.app_config)
     
-    return success
+    return success, False  # Success or failure, but not user cancellation
 
 
 def _is_major_version_update(current_version: str, target_version: str) -> bool:
@@ -262,11 +264,20 @@ def update(
     """
     app_context: AppContext = ctx.obj
     
-    success = update_services_logic(
+    # Validate conflicting flags
+    if services and extensions:
+        log.error("Cannot use both --services and --extensions flags together")
+        raise typer.Exit(2)
+    
+    success, user_cancelled = update_services_logic(
         app_context, 
         services_only=services, 
         extensions_only=extensions
     )
+    
+    if user_cancelled:
+        # User cancelled - this is normal, exit with code 0
+        return
     
     if not success:
         raise typer.Exit(1) 

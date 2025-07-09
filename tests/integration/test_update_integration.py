@@ -34,7 +34,7 @@ def test_update_pulls_latest_images(runner, pin_stack_version):
     assert start_result.exit_code == 0
     
     # Run update command
-    result = runner.invoke(app, ["update"])
+    result = runner.invoke(app, ["update"], input="y\n")
     assert result.exit_code == 0
     
     # Should show pulling behavior
@@ -63,13 +63,12 @@ def test_update_command_when_stack_stopped(runner):
     runner.invoke(app, ["stop"])
     
     # Run update command
-    result = runner.invoke(app, ["update"], input="y\n")
+    result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     
-    # Verify stack is running after update
-    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+    # Verify stack is still stopped after update (update doesn't start services)
     running_services = get_actual_running_services()
-    assert running_services == expected_components
+    assert running_services == set()  # Stack should remain stopped
 
 
 @pytest.mark.integration
@@ -77,13 +76,13 @@ def test_update_command_when_stack_stopped(runner):
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_services_only_flag(runner):
     """
-    Verifies that the --services-only flag updates only Docker services.
+    Verifies that the --services flag updates only Docker services.
     """
     # Start the stack
     runner.invoke(app, ["start"])
     
-    # Run update with services-only flag
-    result = runner.invoke(app, ["update", "--services-only"])
+    # Run update with services flag
+    result = runner.invoke(app, ["update", "--services"], input="y\n")
     assert result.exit_code == 0
     
     # Verify stack is still running
@@ -97,13 +96,13 @@ def test_update_command_services_only_flag(runner):
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_command_extensions_only_flag(runner):
     """
-    Verifies that the --extensions-only flag updates only extensions.
+    Verifies that the --extensions flag updates only extensions.
     """
     # Start the stack
     runner.invoke(app, ["start"])
     
-    # Run update with extensions-only flag
-    result = runner.invoke(app, ["update", "--extensions-only"])
+    # Run update with extensions flag
+    result = runner.invoke(app, ["update", "--extensions"], input="y\n")
     assert result.exit_code == 0
     
     # Verify stack is still running
@@ -119,11 +118,11 @@ def test_update_command_conflicting_flags(runner):
     """
     Verifies that conflicting flags are handled appropriately.
     """
-    result = runner.invoke(app, ["update", "--services-only", "--extensions-only"])
+    result = runner.invoke(app, ["update", "--services", "--extensions"])
     
     # Should exit with error for conflicting flags
-    assert result.exit_code != 0
-    assert "conflicting" in result.stdout.lower() or "cannot" in result.stdout.lower()
+    assert result.exit_code == 2
+    assert "cannot use both" in result.stdout.lower() or "conflicting" in result.stdout.lower()
 
 
 @pytest.mark.integration
@@ -305,8 +304,8 @@ def test_update_command_help_accessibility(runner):
     assert "extensions" in output_lower
     
     # Should show flag options
-    assert "--services-only" in result.stdout
-    assert "--extensions-only" in result.stdout
+    assert "--services" in result.stdout
+    assert "--extensions" in result.stdout
 
 
 @pytest.mark.integration
@@ -377,13 +376,13 @@ def test_update_maintains_container_state_consistency(runner):
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
 def test_update_services_only_excludes_extensions(runner):
     """
-    Verifies that --services-only flag excludes extension updates.
+    Verifies that --services flag excludes extension updates.
     """
     # Start the stack
     runner.invoke(app, ["start"])
     
     # Run update with services-only flag
-    result = runner.invoke(app, ["update", "--services-only"])
+    result = runner.invoke(app, ["update", "--services"], input="y\n")
     assert result.exit_code == 0
     
     # Should indicate services-only mode
@@ -659,9 +658,9 @@ def test_update_stack_state_consistency_across_operations(runner):
     
     # Perform multiple update operations
     operations = [
-        ["update", "--services-only"],
+                    ["update", "--services"],
         ["status"],
-        ["update", "--extensions-only"],
+                    ["update", "--extensions"],
         ["status"],
         ["update"],
     ]
@@ -706,7 +705,7 @@ def test_update_error_message_quality(runner):
         assert "exception" not in output_lower
     
     # Test with conflicting flags
-    result = runner.invoke(app, ["update", "--services-only", "--extensions-only"])
+    result = runner.invoke(app, ["update", "--services", "--extensions"])
     assert result.exit_code != 0
     
     # Should have clear error message about conflicting flags
