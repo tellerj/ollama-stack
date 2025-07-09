@@ -729,13 +729,14 @@ class StackManager:
             log.error(f"Resource cleanup failed: {e}")
             return False
 
-    def uninstall_stack(self, remove_volumes: bool = False, remove_config: bool = False, force: bool = False) -> bool:
+    def uninstall_stack(self, remove_volumes: bool = False, remove_config: bool = False, remove_images: bool = False, force: bool = False) -> bool:
         """
         Clean up all stack resources (containers, networks, images, and optionally volumes/config).
         
         Args:
             remove_volumes: Whether to remove volumes (destroys models, conversations, databases!)
             remove_config: Whether to remove configuration directory (~/.ollama-stack/)
+            remove_images: Whether to remove Docker images (requires re-downloading on next start)
             force: Skip all confirmation prompts
             
         Returns:
@@ -743,17 +744,30 @@ class StackManager:
         """
         try:
             # Step 1: Display warnings based on destructive operations
-            if remove_volumes and remove_config:
+            if remove_volumes and remove_config and remove_images:
+                log.warning("⚠️  DESTRUCTIVE OPERATION: This will remove ALL stack data, configuration, and images!")
+                log.warning("   • All AI models will be deleted (cannot be recovered)")
+                log.warning("   • All chat conversations will be deleted (cannot be recovered)")
+                log.warning("   • All configuration will be deleted")
+                log.warning("   • All Docker images will be deleted (requires re-downloading)")
+            elif remove_volumes and remove_config:
                 log.warning("⚠️  DESTRUCTIVE OPERATION: This will remove ALL stack data and configuration!")
                 log.warning("   • All AI models will be deleted (cannot be recovered)")
                 log.warning("   • All chat conversations will be deleted (cannot be recovered)")
                 log.warning("   • All configuration will be deleted")
+            elif remove_volumes and remove_images:
+                log.warning("⚠️  DESTRUCTIVE OPERATION: This will remove all stack data and images!")
+                log.warning("   • All AI models will be deleted (cannot be recovered)")
+                log.warning("   • All chat conversations will be deleted (cannot be recovered)")
+                log.warning("   • All Docker images will be deleted (requires re-downloading)")
             elif remove_volumes:
                 log.warning("⚠️  DESTRUCTIVE OPERATION: This will remove all stack data!")
                 log.warning("   • All AI models will be deleted (cannot be recovered)")
                 log.warning("   • All chat conversations will be deleted (cannot be recovered)")
+            elif remove_images:
+                log.info("Removing stack resources including Docker images (requires re-downloading on next start)")
             else:
-                log.info("Removing stack resources (preserving data volumes and configuration)")
+                log.info("Removing stack resources (preserving data volumes, configuration, and images)")
             
             # Step 2: Find all Docker resources for summary
             log.info("Discovering stack resources...")
@@ -763,6 +777,20 @@ class StackManager:
             total_resources = len(resources["containers"]) + len(resources["networks"]) 
             if remove_volumes:
                 total_resources += len(resources["volumes"])
+            if remove_images:
+                # Count images that would be removed (images used by stack containers)
+                if self.docker_client.client:
+                    try:
+                        stack_containers = self.docker_client.client.containers.list(
+                            all=True, 
+                            filters={"label": "ollama-stack.component"}
+                        )
+                        image_ids = set()
+                        for container in stack_containers:
+                            image_ids.add(container.image.id)
+                        total_resources += len(image_ids)
+                    except Exception:
+                        pass
             
             log.info(f"Found {len(resources['containers'])} containers, {len(resources['networks'])} networks, {len(resources['volumes'])} volumes")
             
@@ -796,10 +824,13 @@ class StackManager:
             if not self.cleanup_resources(remove_volumes=False, force=force):
                 log.warning("Failed to cleanup some containers/networks")
             
-            # Step 7: Remove Docker images
-            log.info("Removing Docker images...")
-            if not self.docker_client.remove_resources(remove_images=True, force=force):
-                log.warning("Failed to remove some Docker images")
+            # Step 7: Remove Docker images (only if requested)
+            if remove_images:
+                log.info("Removing Docker images...")
+                if not self.docker_client.remove_resources(remove_images=True, force=force):
+                    log.warning("Failed to remove some Docker images")
+            else:
+                log.info("Preserving Docker images (use --remove-images to remove)")
             
             # Step 8: Remove volumes if requested (with additional confirmation)
             if remove_volumes:
@@ -840,14 +871,22 @@ class StackManager:
             # Step 10: Display completion message
             log.info("Stack uninstall completed successfully")
             
-            if remove_volumes and remove_config:
-                log.info("All stack resources, data, and configuration have been removed")
+            if remove_volumes and remove_config and remove_images:
+                log.info("All stack resources, data, configuration, and images have been removed")
+            elif remove_volumes and remove_config:
+                log.info("All stack resources, data, and configuration have been removed (images preserved)")
+            elif remove_volumes and remove_images:
+                log.info("All stack resources, data, and images have been removed (configuration preserved)")
+            elif remove_config and remove_images:
+                log.info("All stack resources, configuration, and images have been removed (data volumes preserved)")
             elif remove_volumes:
-                log.info("All stack resources and data have been removed (configuration preserved)")
+                log.info("All stack resources and data have been removed (configuration and images preserved)")
             elif remove_config:
-                log.info("All stack resources and configuration have been removed (data volumes preserved)")
+                log.info("All stack resources and configuration have been removed (data volumes and images preserved)")
+            elif remove_images:
+                log.info("All stack resources and images have been removed (data and configuration preserved)")
             else:
-                log.info("All stack resources have been removed (data and configuration preserved)")
+                log.info("All stack resources have been removed (data, configuration, and images preserved)")
             
             log.info("To remove the CLI tool itself, run: pip uninstall ollama-stack-cli")
             

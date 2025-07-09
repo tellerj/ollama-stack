@@ -214,6 +214,38 @@ def clean_config_dir():
         shutil.rmtree(config_dir)
 
 @pytest.fixture(scope="session", autouse=True)
+def ensure_docker_images():
+    """
+    Ensure Docker images are available for testing, using cache when possible.
+    
+    This is a transparent optimization that loads images from local cache
+    instead of downloading from the internet, significantly speeding up
+    integration tests without changing their behavior.
+    """
+    if not _is_docker_available():
+        # If Docker isn't available, let individual tests handle it
+        yield
+        return
+    
+    try:
+        from .image_sandbox import load_test_images
+        
+        # Load images from cache at the start of the test session
+        success = load_test_images()
+        
+        if not success:
+            # If cache loading fails, tests will fall back to normal Docker behavior
+            # This ensures tests don't break if cache is unavailable
+            print("Warning: Failed to load cached Docker images, tests may be slower")
+        
+        yield
+        
+    except Exception as e:
+        # If anything goes wrong with caching, let tests proceed normally
+        print(f"Warning: Docker image cache unavailable ({e}), tests may be slower")
+        yield
+
+@pytest.fixture(scope="session", autouse=True)
 def cleanup_ollama_stack_artifacts():
     """
     After the entire integration test session, remove all persistent ollama-stack artifacts
@@ -343,3 +375,6 @@ def _is_docker_available() -> bool:
 def is_docker_available():
     """Check if Docker is available and running."""
     return _is_docker_available() 
+
+# Note: Docker image caching is now handled transparently by the
+# ensure_docker_images session fixture above 

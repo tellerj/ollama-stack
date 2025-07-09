@@ -490,27 +490,28 @@ class DockerClient:
             if remove_images:
                 log.info("Removing Docker images...")
                 try:
-                    # Get images used by our stack
-                    images = self.client.images.list(filters={"label": "ollama-stack.component"})
-                    for image in images:
-                        try:
-                            self.client.images.remove(image.id, force=force)
-                            log.debug(f"Removed image: {image.id}")
-                        except Exception as e:
-                            log.warning(f"Failed to remove image {image.id}: {e}")
-                            success = False
-                            
-                    # Also try to remove by compose file references
-                    log.info("Removing compose-referenced images...")
-                    compose_files = [self.config.docker_compose_file]
-                    base_cmd = ["docker-compose"]
-                    for file in compose_files:
-                        base_cmd.extend(["-f", file])
+                    # Get images used by our stack containers (not by label, but by actual usage)
+                    stack_containers = self.client.containers.list(
+                        all=True, 
+                        filters={"label": "ollama-stack.component"}
+                    )
                     
-                    rmi_cmd = base_cmd + ["down", "--rmi", "all"]
-                    process = subprocess.run(rmi_cmd, capture_output=True, text=True)
-                    if process.returncode != 0:
-                        log.warning(f"Failed to remove some images via compose: {process.stderr}")
+                    # Extract unique image IDs from containers
+                    image_ids = set()
+                    for container in stack_containers:
+                        image_ids.add(container.image.id)
+                    
+                    if image_ids:
+                        log.info(f"Found {len(image_ids)} stack images to remove")
+                        for image_id in image_ids:
+                            try:
+                                self.client.images.remove(image_id, force=force)
+                                log.debug(f"Removed image: {image_id}")
+                            except Exception as e:
+                                log.warning(f"Failed to remove image {image_id}: {e}")
+                                success = False
+                    else:
+                        log.info("No stack images found to remove")
                         
                 except Exception as e:
                     log.error(f"Failed to remove Docker images: {e}")

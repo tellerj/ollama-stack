@@ -11,7 +11,7 @@ runner = CliRunner()
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_uninstall_command_basic_default(MockAppContext, mock_app_context):
-    """Tests basic uninstall with no flags - preserves volumes and config."""
+    """Tests basic uninstall with no flags - preserves volumes, config, and images."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.uninstall_stack.return_value = True
     
@@ -19,7 +19,8 @@ def test_uninstall_command_basic_default(MockAppContext, mock_app_context):
     assert result.exit_code == 0
     mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
         remove_volumes=False,
-        remove_config=False, 
+        remove_config=False,
+        remove_images=False,
         force=False
     )
 
@@ -33,7 +34,8 @@ def test_uninstall_command_remove_volumes_only(MockAppContext, mock_app_context)
     assert result.exit_code == 0
     mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
         remove_volumes=True,
-        remove_config=False, 
+        remove_config=False,
+        remove_images=False,
         force=False
     )
 
@@ -47,7 +49,23 @@ def test_uninstall_command_remove_config_only(MockAppContext, mock_app_context):
     assert result.exit_code == 0
     mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
         remove_volumes=False,
-        remove_config=True, 
+        remove_config=True,
+        remove_images=False,
+        force=False
+    )
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_uninstall_command_remove_images_only(MockAppContext, mock_app_context):
+    """Tests uninstall with --remove-images flag only."""
+    MockAppContext.return_value = mock_app_context
+    mock_app_context.stack_manager.uninstall_stack.return_value = True
+    
+    result = runner.invoke(app, ["uninstall", "--remove-images"])
+    assert result.exit_code == 0
+    mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
+        remove_volumes=False,
+        remove_config=False,
+        remove_images=True,
         force=False
     )
 
@@ -61,13 +79,14 @@ def test_uninstall_command_force_only(MockAppContext, mock_app_context):
     assert result.exit_code == 0
     mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
         remove_volumes=False,
-        remove_config=False, 
+        remove_config=False,
+        remove_images=False,
         force=True
     )
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_uninstall_command_all_flag(MockAppContext, mock_app_context):
-    """Tests uninstall with --all flag - should enable both remove_volumes and remove_config."""
+    """Tests uninstall with --all flag - should enable remove_volumes, remove_config, and remove_images."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.uninstall_stack.return_value = True
     
@@ -76,6 +95,7 @@ def test_uninstall_command_all_flag(MockAppContext, mock_app_context):
     mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
         remove_volumes=True,  # Should be True due to --all flag
         remove_config=True,   # Should be True due to --all flag
+        remove_images=True,   # Should be True due to --all flag
         force=False
     )
 
@@ -90,6 +110,7 @@ def test_uninstall_command_all_flag_short_form(MockAppContext, mock_app_context)
     mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
         remove_volumes=True,  # Should be True due to -a flag
         remove_config=True,   # Should be True due to -a flag
+        remove_images=True,   # Should be True due to -a flag
         force=False
     )
 
@@ -101,29 +122,38 @@ def test_uninstall_command_all_combinations(MockAppContext, mock_app_context):
     
     # Test matrix of all flag combinations
     test_cases = [
-        # (command_args, expected_remove_volumes, expected_remove_config, expected_force)
-        ([], False, False, False),
-        (["--remove-volumes"], True, False, False),
-        (["--remove-config"], False, True, False),
-        (["--force"], False, False, True),
-        (["--remove-volumes", "--remove-config"], True, True, False),
-        (["--remove-volumes", "--force"], True, False, True),
-        (["--remove-config", "--force"], False, True, True),
-        (["--remove-volumes", "--remove-config", "--force"], True, True, True),
-        (["--all"], True, True, False),  # --all should set both volumes and config
-        (["--all", "--force"], True, True, True),
-        (["-a"], True, True, False),  # -a should work same as --all
-        (["-a", "--force"], True, True, True),
+        # (command_args, expected_remove_volumes, expected_remove_config, expected_remove_images, expected_force)
+        ([], False, False, False, False),
+        (["--remove-volumes"], True, False, False, False),
+        (["--remove-config"], False, True, False, False),
+        (["--remove-images"], False, False, True, False),
+        (["--force"], False, False, False, True),
+        (["--remove-volumes", "--remove-config"], True, True, False, False),
+        (["--remove-volumes", "--remove-images"], True, False, True, False),
+        (["--remove-config", "--remove-images"], False, True, True, False),
+        (["--remove-volumes", "--force"], True, False, False, True),
+        (["--remove-config", "--force"], False, True, False, True),
+        (["--remove-images", "--force"], False, False, True, True),
+        (["--remove-volumes", "--remove-config", "--remove-images"], True, True, True, False),
+        (["--remove-volumes", "--remove-config", "--force"], True, True, False, True),
+        (["--remove-volumes", "--remove-images", "--force"], True, False, True, True),
+        (["--remove-config", "--remove-images", "--force"], False, True, True, True),
+        (["--remove-volumes", "--remove-config", "--remove-images", "--force"], True, True, True, True),
+        (["--all"], True, True, True, False),  # --all should set volumes, config, and images
+        (["--all", "--force"], True, True, True, True),
+        (["-a"], True, True, True, False),  # -a should work same as --all
+        (["-a", "--force"], True, True, True, True),
     ]
     
-    for command_args, expected_volumes, expected_config, expected_force in test_cases:
+    for command_args, expected_volumes, expected_config, expected_images, expected_force in test_cases:
         mock_app_context.stack_manager.uninstall_stack.reset_mock()
         
         result = runner.invoke(app, ["uninstall"] + command_args)
         assert result.exit_code == 0, f"Failed for args: {command_args}"
         mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
             remove_volumes=expected_volumes,
-            remove_config=expected_config, 
+            remove_config=expected_config,
+            remove_images=expected_images,
             force=expected_force
         )
 
@@ -133,12 +163,13 @@ def test_uninstall_command_all_flag_overrides_individual_flags(MockAppContext, m
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.uninstall_stack.return_value = True
     
-    # Even if individual flags are False, --all should force both to True
+    # Even if individual flags are False, --all should force all to True
     result = runner.invoke(app, ["uninstall", "--all"])
     assert result.exit_code == 0
     mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
         remove_volumes=True,  # Forced by --all
         remove_config=True,   # Forced by --all
+        remove_images=True,   # Forced by --all
         force=False
     )
 
@@ -155,7 +186,8 @@ def test_uninstall_command_stack_manager_failure(MockAppContext, mock_app_contex
     assert result.exit_code == 1  # Should exit with error code
     mock_app_context.stack_manager.uninstall_stack.assert_called_once_with(
         remove_volumes=False,
-        remove_config=False, 
+        remove_config=False,
+        remove_images=False,
         force=False
     )
 
@@ -187,9 +219,10 @@ def test_uninstall_command_stack_manager_failure_with_flags(MockAppContext, mock
     test_cases = [
         ["--remove-volumes"],
         ["--remove-config"],
+        ["--remove-images"],
         ["--all"],
         ["--force"],
-        ["--remove-volumes", "--remove-config", "--force"]
+        ["--remove-volumes", "--remove-config", "--remove-images", "--force"]
     ]
     
     for command_args in test_cases:
@@ -213,10 +246,11 @@ def test_uninstall_logic_all_flag_processing(MockAppContext, mock_app_context):
     result = runner.invoke(app, ["uninstall", "--all"])
     assert result.exit_code == 0
     
-    # Verify that the call to uninstall_stack has both flags set to True
+    # Verify that the call to uninstall_stack has all flags set to True
     call_args = mock_app_context.stack_manager.uninstall_stack.call_args
     assert call_args.kwargs['remove_volumes'] == True
     assert call_args.kwargs['remove_config'] == True
+    assert call_args.kwargs['remove_images'] == True
     assert call_args.kwargs['force'] == False
 
 @patch('ollama_stack_cli.commands.uninstall.log')
@@ -230,7 +264,7 @@ def test_uninstall_logic_all_flag_logging(MockAppContext, mock_log, mock_app_con
     assert result.exit_code == 0
     
     # Verify debug log message was called
-    mock_log.debug.assert_called_with("--all flag enabled: setting remove_volumes=True, remove_config=True")
+    mock_log.debug.assert_called_with("--all flag enabled: setting remove_volumes=True, remove_config=True, remove_images=True")
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_uninstall_command_parameter_isolation(MockAppContext, mock_app_context):
@@ -250,6 +284,7 @@ def test_uninstall_command_parameter_isolation(MockAppContext, mock_app_context)
     last_call_args = mock_app_context.stack_manager.uninstall_stack.call_args
     assert last_call_args.kwargs['remove_volumes'] == False
     assert last_call_args.kwargs['remove_config'] == False
+    assert last_call_args.kwargs['remove_images'] == False
     assert last_call_args.kwargs['force'] == False
 
 @patch('ollama_stack_cli.main.AppContext')
@@ -277,6 +312,7 @@ def test_uninstall_command_boolean_flag_handling(MockAppContext, mock_app_contex
     call_args = mock_app_context.stack_manager.uninstall_stack.call_args
     assert call_args.kwargs['remove_volumes'] is True  # Boolean True, not string
     assert call_args.kwargs['remove_config'] is False  # Boolean False, not string
+    assert call_args.kwargs['remove_images'] is False  # Boolean False, not string
     assert call_args.kwargs['force'] is True  # Boolean True, not string
 
 @patch('ollama_stack_cli.main.AppContext')
@@ -288,6 +324,7 @@ def test_uninstall_command_help_text_accessibility(MockAppContext, mock_app_cont
     assert "Clean up all stack resources" in result.output
     assert "--remove-volumes" in result.output
     assert "--remove-config" in result.output
+    assert "--remove-images" in result.output
     assert "--all" in result.output
     assert "--force" in result.output
 
@@ -301,8 +338,9 @@ def test_uninstall_command_comprehensive_error_scenarios(MockAppContext, mock_ap
         (RuntimeError, "Docker daemon not running", []),
         (ConnectionError, "Network error", ["--remove-volumes"]),
         (PermissionError, "Permission denied", ["--remove-config"]),
-        (ValueError, "Invalid configuration", ["--all"]),
-        (OSError, "Filesystem error", ["--force"]),
+        (ValueError, "Invalid configuration", ["--remove-images"]),
+        (OSError, "Filesystem error", ["--all"]),
+        (KeyError, "Missing key", ["--force"]),
     ]
     
     for exception_type, error_message, command_args in error_scenarios:

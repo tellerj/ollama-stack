@@ -240,11 +240,16 @@ sequenceDiagram
 **Always Removed:**
 - Docker containers with `ollama-stack.component` label
 - Docker networks with `ollama-stack.component` label  
-- Docker images with `ollama-stack.component` label
 
 **Conditionally Removed:**
+- Docker images with `ollama-stack.component` label (with `--remove-images`)
 - Docker volumes (with `--remove-volumes`)
 - Configuration directory `~/.ollama-stack/` (with `--remove-config`)
+
+**Always Preserved by Default:**
+- Service Docker images (e.g., `ghcr.io/open-webui/open-webui:main`) to avoid 10-minute re-pull delays
+- Data volumes (models, conversations, databases)
+- Configuration files
 
 **Never Removed:**
 - The CLI tool itself (requires `pip uninstall ollama-stack-cli`)
@@ -261,7 +266,7 @@ from ..context import AppContext
 log = logging.getLogger(__name__)
 
 
-def uninstall_logic(app_context: AppContext, remove_volumes: bool = False, remove_config: bool = False, all_flag: bool = False, force: bool = False) -> bool:
+def uninstall_logic(app_context: AppContext, remove_volumes: bool = False, remove_config: bool = False, remove_images: bool = False, all_flag: bool = False, force: bool = False) -> bool:
     """
     Business logic for uninstalling stack resources.
     """
@@ -269,12 +274,14 @@ def uninstall_logic(app_context: AppContext, remove_volumes: bool = False, remov
     if all_flag:
         remove_volumes = True
         remove_config = True
-        log.debug("--all flag enabled: setting remove_volumes=True, remove_config=True")
+        remove_images = True
+        log.debug("--all flag enabled: setting remove_volumes=True, remove_config=True, remove_images=True")
     
     # Call stack manager to perform uninstall
     return app_context.stack_manager.uninstall_stack(
         remove_volumes=remove_volumes,
-        remove_config=remove_config, 
+        remove_config=remove_config,
+        remove_images=remove_images,
         force=force
     )
 
@@ -295,11 +302,18 @@ def uninstall(
             help="Also remove configuration directory (~/.ollama-stack/).",
         ),
     ] = False,
+    remove_images: Annotated[
+        bool,
+        typer.Option(
+            "--remove-images",
+            help="Also remove Docker images (requires re-downloading on next start).",
+        ),
+    ] = False,
     all_flag: Annotated[
         bool,
         typer.Option(
             "--all", "-a",
-            help="Remove everything (equivalent to --remove-volumes --remove-config).",
+            help="Remove everything (equivalent to --remove-volumes --remove-config --remove-images).",
         ),
     ] = False,
     force: Annotated[
@@ -310,13 +324,14 @@ def uninstall(
         ),
     ] = False,
 ):
-    """Clean up all stack resources (containers, networks, images, and optionally volumes/config)."""
+    """Clean up all stack resources (containers, networks, and optionally volumes/config/images)."""
     app_context: AppContext = ctx.obj
     
     success = uninstall_logic(
         app_context, 
         remove_volumes=remove_volumes,
         remove_config=remove_config,
+        remove_images=remove_images,
         all_flag=all_flag,
         force=force
     )

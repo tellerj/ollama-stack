@@ -923,10 +923,9 @@ def test_remove_resources_no_docker_client(mock_docker_from_env, mock_config, mo
     
     assert result is False
 
-@patch('subprocess.run')
 @patch('docker.from_env')
-def test_remove_resources_success_with_images(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
-    """Tests remove_resources successfully removes images."""
+def test_remove_resources_success_with_images(mock_docker_from_env, mock_config, mock_display):
+    """Tests remove_resources successfully removes only labeled images."""
     mock_docker_client = MagicMock()
     
     # Mock images with stack labels
@@ -937,27 +936,20 @@ def test_remove_resources_success_with_images(mock_docker_from_env, mock_subproc
     mock_docker_client.images.list.return_value = [mock_image1, mock_image2]
     mock_docker_from_env.return_value = mock_docker_client
 
-    # Mock subprocess for compose down --rmi all
-    mock_subprocess_run.return_value = MagicMock(returncode=0)
-
     client = DockerClient(config=mock_config, display=mock_display)
     
     result = client.remove_resources(remove_images=True, force=False)
     
     assert result is True
     
-    # Verify images were removed
-    mock_docker_client.images.list.assert_called_with(filters={"label": "ollama-stack.component"})
+    # Verify only labeled images were queried and removed
+    mock_docker_client.images.list.assert_called_once_with(filters={"label": "ollama-stack.component"})
     mock_docker_client.images.remove.assert_any_call("image1", force=False)
     mock_docker_client.images.remove.assert_any_call("image2", force=False)
-    
-    # Verify compose down --rmi all was called
-    expected_cmd = ["docker-compose", "-f", "base.yml", "down", "--rmi", "all"]
-    mock_subprocess_run.assert_called_with(expected_cmd, capture_output=True, text=True)
+    assert mock_docker_client.images.remove.call_count == 2
 
-@patch('subprocess.run')
 @patch('docker.from_env')
-def test_remove_resources_success_without_images(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+def test_remove_resources_success_without_images(mock_docker_from_env, mock_config, mock_display):
     """Tests remove_resources when remove_images=False."""
     mock_docker_client = MagicMock()
     mock_docker_from_env.return_value = mock_docker_client
@@ -972,9 +964,8 @@ def test_remove_resources_success_without_images(mock_docker_from_env, mock_subp
     mock_docker_client.images.list.assert_not_called()
     mock_docker_client.images.remove.assert_not_called()
 
-@patch('subprocess.run')
 @patch('docker.from_env')
-def test_remove_resources_image_removal_failure(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
+def test_remove_resources_image_removal_failure(mock_docker_from_env, mock_config, mock_display):
     """Tests remove_resources handles image removal failures gracefully."""
     mock_docker_client = MagicMock()
     
@@ -990,7 +981,6 @@ def test_remove_resources_image_removal_failure(mock_docker_from_env, mock_subpr
         None  # Second removal succeeds
     ]
     mock_docker_from_env.return_value = mock_docker_client
-    mock_subprocess_run.return_value = MagicMock(returncode=0)
 
     client = DockerClient(config=mock_config, display=mock_display)
     
@@ -1002,36 +992,25 @@ def test_remove_resources_image_removal_failure(mock_docker_from_env, mock_subpr
     # But should continue and try to remove other images
     assert mock_docker_client.images.remove.call_count == 2
 
-@patch('subprocess.run')
 @patch('docker.from_env')
-def test_remove_resources_compose_command_failure(mock_docker_from_env, mock_subprocess_run, mock_config, mock_display):
-    """Tests remove_resources handles compose command failure."""
+def test_remove_resources_compose_command_failure(mock_docker_from_env, mock_config, mock_display):
+    """Tests remove_resources when no images are found (compose command no longer used)."""
     mock_docker_client = MagicMock()
     mock_docker_client.images.list.return_value = []
     mock_docker_from_env.return_value = mock_docker_client
 
-    # Make compose command fail
-    mock_subprocess_run.return_value = MagicMock(returncode=1, stderr="Compose error")
-
     client = DockerClient(config=mock_config, display=mock_display)
     
     result = client.remove_resources(remove_images=True)
     
-    # Should still return True since we only warn about compose failures
+    # Should return True when no images are found
     assert result is True
-
-@patch('docker.from_env')
-def test_remove_resources_exception_handling(mock_docker_from_env, mock_config, mock_display):
-    """Tests remove_resources handles exceptions during image listing."""
-    mock_docker_client = MagicMock()
-    mock_docker_client.images.list.side_effect = Exception("Docker API error")
-    mock_docker_from_env.return_value = mock_docker_client
-
-    client = DockerClient(config=mock_config, display=mock_display)
     
-    result = client.remove_resources(remove_images=True)
-    
-    assert result is False
+    # Verify images were queried but none were removed
+    mock_docker_client.images.list.assert_called_once_with(filters={"label": "ollama-stack.component"})
+    mock_docker_client.images.remove.assert_not_called()
+
+
 
 @patch('subprocess.run')
 @patch('docker.from_env')
