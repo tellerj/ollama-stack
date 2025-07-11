@@ -298,12 +298,6 @@ def isolated_test_environment(tmp_path, monkeypatch):
     config_dir = tmp_path / ".ollama-stack"
     config_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create .env file with correct project name
-    env_file = config_dir / ".env"
-    with open(env_file, "w") as f:
-        f.write("PROJECT_NAME=ollama-stack\n")
-        f.write("WEBUI_SECRET_KEY=test-secret-key\n")
-    
     # Set env var so CLI uses this config dir
     monkeypatch.setenv("OLLAMA_STACK_CONFIG_DIR", str(config_dir))
     

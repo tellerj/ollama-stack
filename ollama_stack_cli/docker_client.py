@@ -47,16 +47,7 @@ class DockerClient:
         if compose_files is None:
             compose_files = [self.config.docker_compose_file]
         
-        base_cmd = ["docker-compose"]
-        # Set the project name explicitly to ensure consistency
-        project_name = self.config.project_name
-        base_cmd.extend(["-p", project_name])
-        for file in compose_files:
-            base_cmd.extend(["-f", file])
-        
-        full_cmd = base_cmd + command
-        
-        # Load environment variables from .env file
+        # Load environment variables from .env file first
         env = os.environ.copy()
         env_file = get_default_env_file()
         if env_file.exists():
@@ -64,6 +55,18 @@ class DockerClient:
             env_vars = dotenv_values(env_file)
             env.update(env_vars)
         
+        base_cmd = ["docker-compose"]
+        # Use PROJECT_NAME from environment if available, otherwise fall back to config
+        project_name = env.get("PROJECT_NAME", self.config.project_name)
+        base_cmd.extend(["-p", project_name])
+        for file in compose_files:
+            base_cmd.extend(["-f", file])
+        
+        full_cmd = base_cmd + command
+        
+        # Set working directory to the directory containing the first compose file
+        compose_dir = os.path.dirname(os.path.abspath(compose_files[0]))
+
         process = subprocess.Popen(
             full_cmd,
             stdout=subprocess.PIPE,
@@ -72,6 +75,7 @@ class DockerClient:
             bufsize=1,
             encoding='utf-8',
             env=env,
+            cwd=compose_dir,  # Run from compose file directory
         )
         
         output_lines = []
