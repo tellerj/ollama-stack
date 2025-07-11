@@ -6,7 +6,7 @@ A local AI development environment with Ollama, Open WebUI, and extensible tool 
 
 - [Docker](https://www.docker.com/products/docker-desktop/) running
 - For Apple Silicon: [Ollama](https://ollama.ai/) installed 
-- For NVIDIA: GPU drivers and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+- [Optional] For NVIDIA: GPU drivers and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
 
 ## Installation
 
@@ -18,10 +18,9 @@ cd ollama-stack
 # Install CLI tool
 ./install-ollama-stack.sh             # macOS/Linux
 .\install-ollama-stack.ps1            # Windows
-# If Windows blocks execution: powershell -ExecutionPolicy Bypass -File install-ollama-stack.ps1
 
-# Initialize configuration
-ollama-stack install
+# If Windows blocks execution: 
+powershell -ExecutionPolicy Bypass -File install-ollama-stack.ps1
 ```
 
 ## Quick Start
@@ -43,6 +42,8 @@ ollama-stack stop
 Access the web interface at `http://localhost:8080`
 
 ## Commands
+
+![Ollama Stack](./public/ollama-stack.png)
 
 ### Setup and Configuration
 
@@ -92,7 +93,7 @@ ollama-stack update --extensions
 ollama-stack update --verbose
 ```
 
-### Backup and Migration
+### Backup and Restore
 
 ```bash
 # Create backup with volumes and configuration

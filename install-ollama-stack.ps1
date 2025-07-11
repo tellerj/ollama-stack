@@ -3,6 +3,16 @@
 
 $ErrorActionPreference = "Stop"
 
+# Print ASCII art logo
+Write-Host ""
+Write-Host " ██████╗ ██╗     ██╗      █████╗ ███╗   ███╗ █████╗    ███████╗████████╗ █████╗  ██████╗██╗  ██╗" -ForegroundColor Cyan
+Write-Host "██╔═══██╗██║     ██║     ██╔══██╗████╗ ████║██╔══██╗   ██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝" -ForegroundColor Cyan
+Write-Host "██║   ██║██║     ██║     ███████║██╔████╔██║███████║   ███████╗   ██║   ███████║██║     █████╔╝ " -ForegroundColor Cyan
+Write-Host "██║   ██║██║     ██║     ██╔══██║██║╚██╔╝██║██╔══██║   ╚════██║   ██║   ██╔══██║██║     ██╔═██╗ " -ForegroundColor Cyan
+Write-Host "╚██████╔╝███████╗███████╗██║  ██║██║ ╚═╝ ██║██║  ██║   ███████║   ██║   ██║  ██║╚██████╗██║  ██╗" -ForegroundColor Cyan
+Write-Host " ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝   ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝" -ForegroundColor Cyan
+Write-Host ""
+
 Write-Host "🚀 Installing Ollama Stack CLI..." -ForegroundColor Green
 
 # Check if Python is available
@@ -39,10 +49,53 @@ try {
     exit 1
 }
 
-# Install the package in editable mode
+# Prompt user for installation type
+Write-Host ""
+Write-Host "📦 Installation Type Selection:" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "🔧 Development Installation:" -ForegroundColor Yellow
+Write-Host "   - Creates a link to the source code" -ForegroundColor Gray
+Write-Host "   - Changes to ./ollama_stack_cli/ modules will affect your installation" -ForegroundColor Gray
+Write-Host "   - Perfect for developers or if you want to modify the tool" -ForegroundColor Gray
+Write-Host ""
+Write-Host "🏭 Production Installation:" -ForegroundColor Yellow
+Write-Host "   - Creates a standalone copy of the tool" -ForegroundColor Gray
+Write-Host "   - No link to source code - changes won't affect your installation" -ForegroundColor Gray
+Write-Host "   - Recommended for most users" -ForegroundColor Gray
+Write-Host ""
+Write-Host "🗑️  Uninstalling:" -ForegroundColor Yellow
+Write-Host "   - In either case, you can run 'ollama-stack uninstall' to clean up the tool's installation" -ForegroundColor Gray
+Write-Host "   - Then use your system's package manager ('pip uninstall ollama-stack-cli') to completely remove it" -ForegroundColor Gray
+Write-Host ""
+
+do {
+    $installType = Read-Host "Choose installation type (dev/prod) [default: prod]"
+    if ([string]::IsNullOrWhiteSpace($installType)) {
+        $installType = "prod"
+    }
+    
+    switch ($installType.ToLower()) {
+        { $_ -in @("dev", "development", "d") } {
+            Write-Host "🔧 Installing in development mode..." -ForegroundColor Green
+            $installCmd = "python -m pip install -e . --user"
+            $validChoice = $true
+        }
+        { $_ -in @("prod", "production", "p") } {
+            Write-Host "🏭 Installing in production mode..." -ForegroundColor Green
+            $installCmd = "python -m pip install . --user"
+            $validChoice = $true
+        }
+        default {
+            Write-Host "Please enter 'dev' or 'prod'" -ForegroundColor Red
+            $validChoice = $false
+        }
+    }
+} while (-not $validChoice)
+
+# Install the package
 Write-Host "📦 Installing ollama-stack CLI tool..." -ForegroundColor Cyan
 try {
-    python -m pip install -e . --user
+    Invoke-Expression $installCmd
 } catch {
     Write-Host "❌ Error: Failed to install ollama-stack" -ForegroundColor Red
     Write-Host "   Make sure you're running this script from the ollama-stack directory." -ForegroundColor Yellow
@@ -55,9 +108,10 @@ try {
     Write-Host "✅ Installation successful!" -ForegroundColor Green
     Write-Host ""
     Write-Host "🎉 You can now use the 'ollama-stack' command:" -ForegroundColor Green
-    Write-Host "   ollama-stack start    # Start the stack"
-    Write-Host "   ollama-stack status   # Check status"
-    Write-Host "   ollama-stack --help   # Show all commands"
+    Write-Host "   ollama-stack install   # First-time setup and configuration" -ForegroundColor Gray
+    Write-Host "   ollama-stack start     # Start the stack" -ForegroundColor Gray
+    Write-Host "   ollama-stack status    # Check status" -ForegroundColor Gray
+    Write-Host "   ollama-stack --help    # Show all commands" -ForegroundColor Gray
 } catch {
     Write-Host "⚠️  Installation completed, but 'ollama-stack' command not found in PATH." -ForegroundColor Yellow
     Write-Host "   You may need to restart your terminal or add the Scripts directory to your PATH." -ForegroundColor Yellow
@@ -66,6 +120,7 @@ try {
 
 Write-Host ""
 Write-Host "📖 Next steps:" -ForegroundColor Cyan
-Write-Host "   1. Ensure Docker Desktop is running"
-Write-Host "   2. Run 'ollama-stack start' to start the stack"
-Write-Host "   3. Visit http://localhost:8080 for the web interface" 
+Write-Host "   1. Ensure Docker Desktop is running" -ForegroundColor Gray
+Write-Host "   2. Run 'ollama-stack install' to generate configuration and environment settings" -ForegroundColor Gray
+Write-Host "   3. Run 'ollama-stack start' to start the stack" -ForegroundColor Gray
+Write-Host "   4. Visit http://localhost:8080 for the web interface" -ForegroundColor Gray 

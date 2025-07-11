@@ -17,7 +17,7 @@ import psutil
 from typing import List, Optional
 
 # Import polling functions from helpers
-from tests.integration.helpers import (
+from ollama_stack_cli.tests.integration.helpers import (
     poll_for_process_exit,
     poll_for_container_stop, 
     poll_for_file_deletion,
@@ -41,7 +41,7 @@ HEALTH_CHECK_URLS = {
 
 def _force_stop_all_stack_services():
     """Force stop all stack services including Docker containers and native processes."""
-    from tests.integration.helpers import stop_native_ollama_if_running
+    from ollama_stack_cli.tests.integration.helpers import stop_native_ollama_if_running
     
     # Stop via CLI first
     runner = CliRunner()
@@ -228,7 +228,7 @@ def ensure_docker_images():
         return
     
     try:
-        from tests.integration.image_sandbox import load_test_images
+        from ollama_stack_cli.tests.integration.image_sandbox import load_test_images
         
         # Load images from cache at the start of the test session
         success = load_test_images()

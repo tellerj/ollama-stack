@@ -925,15 +925,15 @@ def test_remove_resources_no_docker_client(mock_docker_from_env, mock_config, mo
 
 @patch('docker.from_env')
 def test_remove_resources_success_with_images(mock_docker_from_env, mock_config, mock_display):
-    """Tests remove_resources successfully removes only labeled images."""
+    """Tests remove_resources successfully removes images from stack containers."""
     mock_docker_client = MagicMock()
     
-    # Mock images with stack labels
-    mock_image1 = MagicMock()
-    mock_image1.id = "image1"
-    mock_image2 = MagicMock()
-    mock_image2.id = "image2"
-    mock_docker_client.images.list.return_value = [mock_image1, mock_image2]
+    # Mock containers that use our images
+    mock_container1 = MagicMock()
+    mock_container1.image.id = "image1"
+    mock_container2 = MagicMock()
+    mock_container2.image.id = "image2"
+    mock_docker_client.containers.list.return_value = [mock_container1, mock_container2]
     mock_docker_from_env.return_value = mock_docker_client
 
     client = DockerClient(config=mock_config, display=mock_display)
@@ -942,8 +942,11 @@ def test_remove_resources_success_with_images(mock_docker_from_env, mock_config,
     
     assert result is True
     
-    # Verify only labeled images were queried and removed
-    mock_docker_client.images.list.assert_called_once_with(filters={"label": "ollama-stack.component"})
+    # Verify containers were queried and images were removed
+    mock_docker_client.containers.list.assert_called_once_with(
+        all=True, 
+        filters={"label": "ollama-stack.component"}
+    )
     mock_docker_client.images.remove.assert_any_call("image1", force=False)
     mock_docker_client.images.remove.assert_any_call("image2", force=False)
     assert mock_docker_client.images.remove.call_count == 2
@@ -969,11 +972,12 @@ def test_remove_resources_image_removal_failure(mock_docker_from_env, mock_confi
     """Tests remove_resources handles image removal failures gracefully."""
     mock_docker_client = MagicMock()
     
-    mock_image1 = MagicMock()
-    mock_image1.id = "image1"
-    mock_image2 = MagicMock()
-    mock_image2.id = "image2"
-    mock_docker_client.images.list.return_value = [mock_image1, mock_image2]
+    # Mock containers that use our images
+    mock_container1 = MagicMock()
+    mock_container1.image.id = "image1"
+    mock_container2 = MagicMock()
+    mock_container2.image.id = "image2"
+    mock_docker_client.containers.list.return_value = [mock_container1, mock_container2]
     
     # Make first image removal fail
     mock_docker_client.images.remove.side_effect = [
@@ -994,20 +998,23 @@ def test_remove_resources_image_removal_failure(mock_docker_from_env, mock_confi
 
 @patch('docker.from_env')
 def test_remove_resources_compose_command_failure(mock_docker_from_env, mock_config, mock_display):
-    """Tests remove_resources when no images are found (compose command no longer used)."""
+    """Tests remove_resources when no containers are found."""
     mock_docker_client = MagicMock()
-    mock_docker_client.images.list.return_value = []
+    mock_docker_client.containers.list.return_value = []
     mock_docker_from_env.return_value = mock_docker_client
 
     client = DockerClient(config=mock_config, display=mock_display)
     
     result = client.remove_resources(remove_images=True)
     
-    # Should return True when no images are found
+    # Should return True when no containers are found
     assert result is True
     
-    # Verify images were queried but none were removed
-    mock_docker_client.images.list.assert_called_once_with(filters={"label": "ollama-stack.component"})
+    # Verify containers were queried but none were removed
+    mock_docker_client.containers.list.assert_called_once_with(
+        all=True, 
+        filters={"label": "ollama-stack.component"}
+    )
     mock_docker_client.images.remove.assert_not_called()
 
 
@@ -1193,32 +1200,30 @@ def test_pull_images_with_progress_mixed_output_levels(mock_docker_from_env, moc
 def test_remove_resources_force_removal(mock_docker_from_env, mock_config, mock_display):
     """Tests remove_resources with force=True."""
     mock_docker_client = MagicMock()
-    mock_image = MagicMock()
-    mock_image.id = "image1"
-    mock_docker_client.images.list.return_value = [mock_image]
+    
+    # Mock container that uses our image
+    mock_container1 = MagicMock()
+    mock_container1.image.id = "image1"
+    mock_docker_client.containers.list.return_value = [mock_container1]
     mock_docker_from_env.return_value = mock_docker_client
 
     client = DockerClient(config=mock_config, display=mock_display)
     
-    with patch('subprocess.run') as mock_subprocess_run:
-        mock_subprocess_run.return_value = MagicMock(returncode=0)
-        result = client.remove_resources(remove_images=True, force=True)
+    result = client.remove_resources(remove_images=True, force=True)
     
     assert result is True
     mock_docker_client.images.remove.assert_called_with("image1", force=True)
 
 @patch('docker.from_env')
 def test_remove_resources_no_images_found(mock_docker_from_env, mock_config, mock_display):
-    """Tests remove_resources when no images with stack labels exist."""
+    """Tests remove_resources when no containers with stack labels exist."""
     mock_docker_client = MagicMock()
-    mock_docker_client.images.list.return_value = []  # No images
+    mock_docker_client.containers.list.return_value = []  # No containers
     mock_docker_from_env.return_value = mock_docker_client
 
     client = DockerClient(config=mock_config, display=mock_display)
     
-    with patch('subprocess.run') as mock_subprocess_run:
-        mock_subprocess_run.return_value = MagicMock(returncode=0)
-        result = client.remove_resources(remove_images=True)
+    result = client.remove_resources(remove_images=True)
     
     assert result is True
     # Should not attempt to remove any images

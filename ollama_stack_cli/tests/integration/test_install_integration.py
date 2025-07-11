@@ -6,7 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 from ollama_stack_cli.main import app
 
-from tests.integration.helpers import (
+from ollama_stack_cli.tests.integration.helpers import (
     is_docker_available,
     get_actual_running_services,
     extract_secret_key_from_env,

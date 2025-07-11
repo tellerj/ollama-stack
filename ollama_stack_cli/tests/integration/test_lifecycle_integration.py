@@ -4,7 +4,7 @@ import shutil
 from typer.testing import CliRunner
 from ollama_stack_cli.main import app
 
-from tests.integration.helpers import (
+from ollama_stack_cli.tests.integration.helpers import (
     is_docker_available,
     get_running_stack_components,
     get_actual_running_services,

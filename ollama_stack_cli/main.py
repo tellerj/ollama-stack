@@ -29,7 +29,7 @@ app.command()(uninstall)
 app.command()(backup)
 app.command()(restore)
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
     verbose: Annotated[
@@ -45,7 +45,32 @@ def main(
     Initialize the AppContext and attach it to the Typer context.
     """
     ctx.obj = AppContext(verbose=verbose)
-
+    # Only print the logo if no subcommand and no options (bare invocation)
+    if ctx.invoked_subcommand is None and not ctx.args:
+        from rich.console import Console
+        import subprocess
+        import sys
+        console = Console()
+        logo = """
+ ██████╗ ██╗     ██╗      █████╗ ███╗   ███╗ █████╗    ███████╗████████╗ █████╗  ██████╗██╗  ██╗
+██╔═══██╗██║     ██║     ██╔══██╗████╗ ████║██╔══██╗   ██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
+██║   ██║██║     ██║     ███████║██╔████╔██║███████║   ███████╗   ██║   ███████║██║     █████╔╝ 
+██║   ██║██║     ██║     ██╔══██║██║╚██╔╝██║██╔══██║   ╚════██║   ██║   ██╔══██║██║     ██╔═██╗ 
+╚██████╔╝███████╗███████╗██║  ██║██║ ╚═╝ ██║██║  ██║   ███████║   ██║   ██║  ██║╚██████╗██║  ██╗
+ ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝   ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝
+"""
+        console.print(logo, style="cyan")
+        console.print(
+            "\nA complete local AI development environment with privacy-focused, locally-hosted AI capabilities.",
+            style="dim",
+        )
+        console.print(
+            "Manage Ollama, Open WebUI, MCP Proxy, and extensions with a unified CLI interface.\n",
+            style="dim",
+        )
+        # Invoke help command
+        subprocess.run([sys.executable, "-m", "ollama_stack_cli.main", "--help"])
+        raise typer.Exit()
 
 if __name__ == "__main__":
     app()

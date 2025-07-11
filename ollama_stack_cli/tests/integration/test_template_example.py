@@ -15,7 +15,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 from ollama_stack_cli.main import app
 
-from tests.integration.helpers import (
+from ollama_stack_cli.tests.integration.helpers import (
     ensure_clean_test_environment,
     cleanup_test_artifacts,
     verify_clean_environment,
