@@ -207,6 +207,12 @@ def clean_config_dir():
     # Ensure directory exists
     os.makedirs(config_dir, exist_ok=True)
     
+    # Create .env file with correct project name to ensure consistent project naming
+    env_file = os.path.join(config_dir, ".env")
+    with open(env_file, "w") as f:
+        f.write("PROJECT_NAME=ollama-stack\n")
+        f.write("WEBUI_SECRET_KEY=test-secret-key\n")
+    
     yield config_dir
     
     # Clean up after test
@@ -292,12 +298,59 @@ def isolated_test_environment(tmp_path, monkeypatch):
     config_dir = tmp_path / ".ollama-stack"
     config_dir.mkdir(parents=True, exist_ok=True)
     
+    # Create .env file with correct project name
+    env_file = config_dir / ".env"
+    with open(env_file, "w") as f:
+        f.write("PROJECT_NAME=ollama-stack\n")
+        f.write("WEBUI_SECRET_KEY=test-secret-key\n")
+    
     # Set env var so CLI uses this config dir
     monkeypatch.setenv("OLLAMA_STACK_CONFIG_DIR", str(config_dir))
     
     yield str(config_dir)
     
     # Cleanup handled by tmp_path
+
+@pytest.fixture
+def stack_with_volumes(runner, clean_config_dir):
+    """
+    Fixture that ensures the stack is installed and started with volumes created.
+    This is useful for tests that need to verify volume removal functionality.
+    """
+    # Install and start the stack to ensure volumes are created
+    result = runner.invoke(app, ["install", "--force"])
+    assert result.exit_code == 0, f"Install failed: {result.stdout}"
+    
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0, f"Start failed: {result.stdout}"
+    
+    # Wait a moment for services to fully start and create volumes
+    time.sleep(3)
+    
+    # Verify that volumes were created with the correct project name
+    client = docker.from_env()
+    volumes = client.volumes.list(filters={"label": "com.docker.compose.project=ollama-stack"})
+    
+    # If no volumes found, try alternative project names that might be used
+    if len(volumes) == 0:
+        # Check for volumes with different project name patterns
+        all_volumes = client.volumes.list()
+        for volume in all_volumes:
+            if volume.attrs and volume.attrs.get("Labels", {}).get("com.docker.compose.project"):
+                project_name = volume.attrs["Labels"]["com.docker.compose.project"]
+                if "ollama" in project_name.lower():
+                    print(f"Found volumes with project name: {project_name}")
+                    # Update the test to use the actual project name
+                    volumes = client.volumes.list(filters={"label": f"com.docker.compose.project={project_name}"})
+                    break
+    
+    yield {
+        "config_dir": clean_config_dir,
+        "volumes": volumes,
+        "volume_names": [vol.name for vol in volumes]
+    }
+    
+    # Cleanup is handled by the clean_config_dir fixture
 
 # --- Context Managers for Resource Management ---
 

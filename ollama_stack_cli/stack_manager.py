@@ -638,10 +638,11 @@ class StackManager:
             
             # Find volumes - use Docker Compose project label for volumes since that's how they're actually labeled
             if label_key == "ollama-stack.component":
-                # For stack resources, look for Docker Compose volumes
-                volume_filters = {"label": "com.docker.compose.project=ollama-stack"}
+                # For stack resources, look for Docker Compose volumes with the configured project name
+                project_name = self.config.project_name
+                volume_filters = {"label": f"com.docker.compose.project={project_name}"}
                 volumes = self.docker_client.client.volumes.list(filters=volume_filters)
-                log.debug(f"Found {len(volumes)} volumes with Docker Compose project label")
+                log.debug(f"Found {len(volumes)} volumes with Docker Compose project label '{project_name}'")
             else:
                 # For other use cases, use the provided label
                 volumes = self.docker_client.client.volumes.list(filters=filter_dict)
@@ -683,11 +684,10 @@ class StackManager:
             
             cleaned_count = 0
             
-            # Clean up stopped containers
-            stopped_containers = [c for c in resources["containers"] if c.status != "running"]
-            if stopped_containers:
-                log.info(f"Removing {len(stopped_containers)} stopped containers...")
-                for container in stopped_containers:
+            # Clean up ALL containers (not just stopped ones) to ensure volume references are removed
+            if resources["containers"]:
+                log.info(f"Removing {len(resources['containers'])} containers...")
+                for container in resources["containers"]:
                     try:
                         container.remove(force=force)
                         log.debug(f"Removed container: {container.name}")
@@ -708,6 +708,7 @@ class StackManager:
                         log.warning(f"Failed to remove network {network.name}: {e}")
             
             # Clean up volumes if requested (DANGEROUS!)
+            # Note: Volumes must be removed AFTER containers to avoid "in use" errors
             if remove_volumes:
                 volumes = resources["volumes"]
                 if volumes:
@@ -823,7 +824,7 @@ class StackManager:
             
             # Step 6: Remove containers and networks 
             log.info("Removing containers and networks...")
-            if not self.cleanup_resources(remove_volumes=False, force=force):
+            if not self.cleanup_resources(remove_volumes=remove_volumes, force=force):
                 log.warning("Failed to cleanup some containers/networks")
             
             # Step 7: Remove Docker images (only if requested)
@@ -834,27 +835,9 @@ class StackManager:
             else:
                 log.info("Preserving Docker images (use --remove-images to remove)")
             
-            # Step 8: Remove volumes if requested (with additional confirmation)
-            if remove_volumes:
-                if not force:
-                    log.warning("🚨 FINAL WARNING: About to delete all data volumes!")
-                    # TODO: Add additional confirmation prompt
-                
-                log.warning("Removing data volumes - THIS WILL DELETE ALL DATA!")
-                volumes = resources["volumes"]
-                removed_volumes = 0
-                for volume in volumes:
-                    try:
-                        volume.remove(force=force)
-                        log.debug(f"Removed volume: {volume.name}")
-                        removed_volumes += 1
-                    except Exception as e:
-                        log.warning(f"Failed to remove volume {volume.name}: {e}")
-                
-                if removed_volumes > 0:
-                    log.warning(f"Removed {removed_volumes} data volumes")
+            # Step 8: Volume removal is now handled in cleanup_resources
             
-            # Step 9: Remove configuration directory if requested
+            # Step 8: Remove configuration directory if requested
             if remove_config:
                 log.info("Removing configuration directory...")
                 try:
@@ -870,7 +853,7 @@ class StackManager:
                 except Exception as e:
                     log.warning(f"Failed to remove configuration directory: {e}")
             
-            # Step 10: Display completion message
+            # Step 9: Display completion message
             log.info("Stack uninstall completed successfully")
             
             if remove_volumes and remove_config and remove_images:

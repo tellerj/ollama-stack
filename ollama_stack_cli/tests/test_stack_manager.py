@@ -17,6 +17,7 @@ def mock_config():
     """Fixture for a mocked AppConfig object."""
     config = MagicMock(spec=AppConfig)
     config.docker_compose_file = "docker-compose.yml"
+    config.project_name = "ollama-stack"
     config.platform = {
         "apple": PlatformConfig(compose_file="docker-compose.apple.yml"),
         "nvidia": PlatformConfig(compose_file="docker-compose.nvidia.yml"),
@@ -1012,6 +1013,19 @@ def test_find_resources_by_label_successful_search(stack_manager, mock_docker_cl
     assert result["containers"][0] == mock_container
     assert result["volumes"][0] == mock_volume
     assert result["networks"][0] == mock_network
+    
+    # Verify the correct filters were used
+    mock_docker_client.client.containers.list.assert_called_once_with(
+        all=True, 
+        filters={"label": "ollama-stack.component"}
+    )
+    # For volumes with ollama-stack.component label, we use Docker Compose project label
+    mock_docker_client.client.volumes.list.assert_called_once_with(
+        filters={"label": "com.docker.compose.project=ollama-stack"}
+    )
+    mock_docker_client.client.networks.list.assert_called_once_with(
+        filters={"label": "ollama-stack.component"}
+    )
 
 def test_find_resources_by_label_with_value(stack_manager, mock_docker_client):
     """Tests find_resources_by_label with specific label value."""
@@ -1153,7 +1167,7 @@ def test_cleanup_resources_handles_individual_failures(stack_manager):
     mock_success_container.remove.assert_called_once_with(force=False)
 
 def test_cleanup_resources_running_containers_skipped(stack_manager):
-    """Tests cleanup_resources skips running containers."""
+    """Tests cleanup_resources removes all containers (including running ones) to ensure volume references are removed."""
     mock_running_container = MagicMock()
     mock_running_container.status = "running"
     mock_running_container.name = "running-container"
@@ -1173,7 +1187,8 @@ def test_cleanup_resources_running_containers_skipped(stack_manager):
     result = stack_manager.cleanup_resources()
     
     assert result is True
-    mock_running_container.remove.assert_not_called()
+    # Now we remove ALL containers (including running ones) to ensure volume references are removed
+    mock_running_container.remove.assert_called_once_with(force=False)
     mock_stopped_container.remove.assert_called_once_with(force=False)
 
 def test_cleanup_resources_exception_handling(stack_manager):
@@ -1264,6 +1279,8 @@ def test_uninstall_stack_remove_all(stack_manager, mock_docker_client):
         result = stack_manager.uninstall_stack(remove_volumes=True, remove_config=True, remove_images=True, force=True)
         
         assert result is True
+        # Verify cleanup_resources was called with correct parameters for volume removal
+        stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=True, force=True)
         mock_docker_client.remove_resources.assert_called_once_with(remove_images=True, force=True)
 
 def test_uninstall_stack_remove_images_only(stack_manager, mock_docker_client):
@@ -1381,10 +1398,9 @@ def test_uninstall_stack_individual_volume_removal_failures(stack_manager, mock_
     result = stack_manager.uninstall_stack(remove_volumes=True, force=True)
     
     assert result is True
-    # Should attempt to remove all volumes despite individual failures
-    mock_volume1.remove.assert_called_once_with(force=True)
-    mock_volume2.remove.assert_called_once_with(force=True)
-    mock_volume3.remove.assert_called_once_with(force=True)
+    # Verify cleanup_resources was called with correct parameters for volume removal
+    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=True, force=True)
+    # The actual volume removal now happens in cleanup_resources, not directly in uninstall_stack
 
 def test_uninstall_stack_config_directory_removal_failure(stack_manager, mock_docker_client):
     """Tests uninstall_stack handles config directory removal failure gracefully."""
@@ -1447,9 +1463,9 @@ def test_uninstall_stack_large_resource_set(stack_manager, mock_docker_client):
     result = stack_manager.uninstall_stack(remove_volumes=True)
     
     assert result is True
-    # Should attempt to remove all volumes
-    for volume in volumes:
-        volume.remove.assert_called_once_with(force=False)
+    # Verify cleanup_resources was called with correct parameters for volume removal
+    stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=True, force=False)
+    # The actual volume removal now happens in cleanup_resources, not directly in uninstall_stack
 
 def test_uninstall_stack_partial_resource_types(stack_manager, mock_docker_client):
     """Tests uninstall_stack when only some resource types are found."""
@@ -3381,7 +3397,9 @@ def test_uninstall_stack_remove_all(mock_get_config_dir, mock_stack_get_config_d
         mock_docker_client.remove_resources = MagicMock(return_value=True)
         result = stack_manager.uninstall_stack(remove_volumes=True, remove_config=True, force=True)
         assert result is True
-        mock_volume.remove.assert_called_once_with(force=True)
+        # Verify cleanup_resources was called with correct parameters for volume removal
+        stack_manager.cleanup_resources.assert_called_once_with(remove_volumes=True, force=True)
+        # The actual volume removal now happens in cleanup_resources, not directly in uninstall_stack
         mock_rmtree.assert_called_once_with(tmp_path)
 
 

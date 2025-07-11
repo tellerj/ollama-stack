@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch, call, mock_open
+from unittest.mock import MagicMock, patch, call, mock_open, ANY
 import pytest
 import docker
 import subprocess
@@ -23,6 +23,7 @@ def mock_config():
     """Fixture to create a mocked AppConfig object."""
     config = MagicMock(spec=AppConfig)
     config.docker_compose_file = "base.yml"
+    config.project_name = "ollama-stack"
     config.platform = {
         "apple": PlatformConfig(compose_file="apple.yml"),
         "nvidia": PlatformConfig(compose_file="nvidia.yml"),
@@ -98,14 +99,15 @@ def test_run_compose_command_success(mock_docker_from_env, mock_popen, mock_conf
     
     assert result is True
     mock_popen.assert_called_once()
-    expected_cmd = ["docker-compose", "-f", "docker-compose.yml", "up", "-d"]
+    expected_cmd = ["docker-compose", "-p", "ollama-stack", "-f", "docker-compose.yml", "up", "-d"]
     mock_popen.assert_called_with(
         expected_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-        encoding='utf-8'
+        encoding='utf-8',
+        env=ANY  # Environment is now loaded from .env file
     )
 
 @patch('subprocess.Popen')
@@ -124,6 +126,7 @@ def test_run_compose_command_multiple_files(mock_docker_from_env, mock_popen, mo
     
     expected_cmd = [
         "docker-compose", 
+        "-p", "ollama-stack",
         "-f", "docker-compose.yml", 
         "-f", "docker-compose.override.yml", 
         "up", "-d"
@@ -134,7 +137,8 @@ def test_run_compose_command_multiple_files(mock_docker_from_env, mock_popen, mo
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-        encoding='utf-8'
+        encoding='utf-8',
+        env=ANY  # Environment is now loaded from .env file
     )
 
 @patch('subprocess.Popen')
@@ -151,6 +155,18 @@ def test_run_compose_command_down_not_found_success(mock_docker_from_env, mock_p
     result = client._run_compose_command(["down"])
     
     assert result is True  # Should return True for "not found" on down
+    
+    # Verify the command was called with project name and environment
+    expected_cmd = ["docker-compose", "-p", "ollama-stack", "-f", "base.yml", "down"]
+    mock_popen.assert_called_with(
+        expected_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        encoding='utf-8',
+        env=ANY  # Environment is now loaded from .env file
+    )
 
 @patch('subprocess.Popen')
 @patch('docker.from_env')
@@ -166,6 +182,18 @@ def test_run_compose_command_failure_logging(mock_docker_from_env, mock_popen, m
     result = client._run_compose_command(["up", "-d"])
     
     assert result is False
+    
+    # Verify the command was called with project name and environment
+    expected_cmd = ["docker-compose", "-p", "ollama-stack", "-f", "base.yml", "up", "-d"]
+    mock_popen.assert_called_with(
+        expected_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        encoding='utf-8',
+        env=ANY  # Environment is now loaded from .env file
+    )
 
 @patch('docker.from_env')  
 def test_pull_images_calls_compose_pull(mock_docker_from_env, mock_config, mock_display):

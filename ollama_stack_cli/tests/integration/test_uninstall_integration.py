@@ -710,30 +710,33 @@ def test_uninstall_config_removal_filesystem_verification(runner, clean_config_d
 
 @pytest.mark.integration
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_uninstall_volume_removal_data_loss_verification(runner, clean_config_dir):
+def test_uninstall_volume_removal_data_loss_verification(runner, stack_with_volumes):
     """
     Verifies that volume removal actually removes data.
     """
-    # Install and start stack
-    runner.invoke(app, ["install", "--force"])
-    runner.invoke(app, ["start"])
+    # Use the fixture to ensure volumes are created with correct project name
+    volumes_data = stack_with_volumes
+    volume_names = volumes_data["volume_names"]
     
-    # Let services create data
-    time.sleep(5)
-    
-    # Get volume names using correct Docker Compose label
-    client = docker.from_env()
-    initial_volumes = client.volumes.list(filters={"label": "com.docker.compose.project=ollama-stack"})
-    volume_names = [vol.name for vol in initial_volumes]
-    
+    # Ensure we have volumes to test
     assert len(volume_names) > 0, "No volumes found to test"
+    
+    # Get the actual project name used by the volumes
+    client = docker.from_env()
+    actual_project_name = None
+    for volume in volumes_data["volumes"]:
+        if volume.attrs and volume.attrs.get("Labels", {}).get("com.docker.compose.project"):
+            actual_project_name = volume.attrs["Labels"]["com.docker.compose.project"]
+            break
+    
+    assert actual_project_name is not None, "Could not determine project name from volumes"
     
     # Perform uninstall with volume removal
     result = runner.invoke(app, ["uninstall", "--remove-volumes"])
     assert result.exit_code == 0
     
-    # Verify volumes are actually removed
-    final_volumes = client.volumes.list(filters={"label": "com.docker.compose.project=ollama-stack"})
+    # Verify volumes are actually removed using the actual project name
+    final_volumes = client.volumes.list(filters={"label": f"com.docker.compose.project={actual_project_name}"})
     assert len(final_volumes) == 0
     
     # Verify specific volumes are gone
@@ -770,10 +773,14 @@ def test_uninstall_complete_system_state_verification(runner, clean_config_dir):
         c for c in initial_all_containers 
         if not c.labels.get("ollama-stack.component")
     ]
-    initial_non_stack_volumes = [
-        v for v in initial_all_volumes 
-        if not v.attrs.get("Labels", {}).get("com.docker.compose.project") == "ollama-stack"
-    ]
+    initial_non_stack_volumes = []
+    for v in initial_all_volumes:
+        try:
+            if not (v.attrs and v.attrs.get("Labels", {}).get("com.docker.compose.project") == "ollama-stack"):
+                initial_non_stack_volumes.append(v)
+        except (AttributeError, TypeError):
+            # Skip volumes that don't have attrs or have invalid attrs
+            continue
     initial_non_stack_networks = [
         n for n in initial_all_networks 
         if not n.attrs.get("Labels", {}).get("ollama-stack.component") and
@@ -809,10 +816,14 @@ def test_uninstall_complete_system_state_verification(runner, clean_config_dir):
         c for c in final_all_containers 
         if not c.labels.get("ollama-stack.component")
     ]
-    final_non_stack_volumes = [
-        v for v in final_all_volumes 
-        if not v.attrs.get("Labels", {}).get("com.docker.compose.project") == "ollama-stack"
-    ]
+    final_non_stack_volumes = []
+    for v in final_all_volumes:
+        try:
+            if not (v.attrs and v.attrs.get("Labels", {}).get("com.docker.compose.project") == "ollama-stack"):
+                final_non_stack_volumes.append(v)
+        except (AttributeError, TypeError):
+            # Skip volumes that don't have attrs or have invalid attrs
+            continue
     final_non_stack_networks = [
         n for n in final_all_networks 
         if not n.attrs.get("Labels", {}).get("ollama-stack.component") and

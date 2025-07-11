@@ -6,10 +6,12 @@ import urllib.error
 import logging
 import socket
 import sys
+import os
 from pathlib import Path
 from typing import Optional, Dict, List
 from .schemas import AppConfig
 from .display import Display
+from .config import get_default_env_file, get_default_config_dir
 
 from .schemas import (
     AppConfig,
@@ -46,10 +48,21 @@ class DockerClient:
             compose_files = [self.config.docker_compose_file]
         
         base_cmd = ["docker-compose"]
+        # Set the project name explicitly to ensure consistency
+        project_name = self.config.project_name
+        base_cmd.extend(["-p", project_name])
         for file in compose_files:
             base_cmd.extend(["-f", file])
         
         full_cmd = base_cmd + command
+        
+        # Load environment variables from .env file
+        env = os.environ.copy()
+        env_file = get_default_env_file()
+        if env_file.exists():
+            from dotenv import dotenv_values
+            env_vars = dotenv_values(env_file)
+            env.update(env_vars)
         
         process = subprocess.Popen(
             full_cmd,
@@ -58,6 +71,7 @@ class DockerClient:
             text=True,
             bufsize=1,
             encoding='utf-8',
+            env=env,
         )
         
         output_lines = []
