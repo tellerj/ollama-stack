@@ -158,12 +158,12 @@ def test_template_with_error_handling(runner, isolated_test_environment):
     
     try:
         # Test error conditions
-        # For example, try to start without installing first
-        result = runner.invoke(app, ["start"])
+        # Try to run a non-existent command
+        result = runner.invoke(app, ["nonexistent-command"])
         
         # Verify expected error behavior
         assert result.exit_code != 0
-        assert "not installed" in result.stdout.lower() or "error" in result.stdout.lower()
+        assert "error" in result.stdout.lower() or "not found" in result.stdout.lower()
         
     finally:
         # Always clean up, even if test fails

@@ -100,15 +100,15 @@ def test_run_compose_command_success(mock_docker_from_env, mock_popen, mock_conf
     assert result is True
     mock_popen.assert_called_once()
     expected_cmd = ["docker-compose", "-p", "ollama-stack", "-f", "docker-compose.yml", "up", "-d"]
-    mock_popen.assert_called_with(
-        expected_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        encoding='utf-8',
-        env=ANY  # Environment is now loaded from .env file
-    )
+    # Verify the call was made with the expected command and parameters
+    call_args = mock_popen.call_args
+    assert call_args[0][0] == expected_cmd  # First positional arg is the command
+    assert call_args[1]['stdout'] == subprocess.PIPE
+    assert call_args[1]['stderr'] == subprocess.STDOUT
+    assert call_args[1]['text'] is True
+    assert call_args[1]['bufsize'] == 1
+    assert call_args[1]['encoding'] == 'utf-8'
+    assert 'env' in call_args[1]  # Environment should be passed
 
 @patch('subprocess.Popen')
 @patch('docker.from_env')
@@ -131,15 +131,15 @@ def test_run_compose_command_multiple_files(mock_docker_from_env, mock_popen, mo
         "-f", "docker-compose.override.yml", 
         "up", "-d"
     ]
-    mock_popen.assert_called_with(
-        expected_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        encoding='utf-8',
-        env=ANY  # Environment is now loaded from .env file
-    )
+    # Verify the call was made with the expected command and parameters
+    call_args = mock_popen.call_args
+    assert call_args[0][0] == expected_cmd  # First positional arg is the command
+    assert call_args[1]['stdout'] == subprocess.PIPE
+    assert call_args[1]['stderr'] == subprocess.STDOUT
+    assert call_args[1]['text'] is True
+    assert call_args[1]['bufsize'] == 1
+    assert call_args[1]['encoding'] == 'utf-8'
+    assert 'env' in call_args[1]  # Environment should be passed
 
 @patch('subprocess.Popen')
 @patch('docker.from_env')
@@ -158,15 +158,15 @@ def test_run_compose_command_down_not_found_success(mock_docker_from_env, mock_p
     
     # Verify the command was called with project name and environment
     expected_cmd = ["docker-compose", "-p", "ollama-stack", "-f", "base.yml", "down"]
-    mock_popen.assert_called_with(
-        expected_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        encoding='utf-8',
-        env=ANY  # Environment is now loaded from .env file
-    )
+    # Verify the call was made with the expected command and parameters
+    call_args = mock_popen.call_args
+    assert call_args[0][0] == expected_cmd  # First positional arg is the command
+    assert call_args[1]['stdout'] == subprocess.PIPE
+    assert call_args[1]['stderr'] == subprocess.STDOUT
+    assert call_args[1]['text'] is True
+    assert call_args[1]['bufsize'] == 1
+    assert call_args[1]['encoding'] == 'utf-8'
+    assert 'env' in call_args[1]  # Environment should be passed
 
 @patch('subprocess.Popen')
 @patch('docker.from_env')
@@ -185,15 +185,15 @@ def test_run_compose_command_failure_logging(mock_docker_from_env, mock_popen, m
     
     # Verify the command was called with project name and environment
     expected_cmd = ["docker-compose", "-p", "ollama-stack", "-f", "base.yml", "up", "-d"]
-    mock_popen.assert_called_with(
-        expected_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        encoding='utf-8',
-        env=ANY  # Environment is now loaded from .env file
-    )
+    # Verify the call was made with the expected command and parameters
+    call_args = mock_popen.call_args
+    assert call_args[0][0] == expected_cmd  # First positional arg is the command
+    assert call_args[1]['stdout'] == subprocess.PIPE
+    assert call_args[1]['stderr'] == subprocess.STDOUT
+    assert call_args[1]['text'] is True
+    assert call_args[1]['bufsize'] == 1
+    assert call_args[1]['encoding'] == 'utf-8'
+    assert 'env' in call_args[1]  # Environment should be passed
 
 @patch('docker.from_env')  
 def test_pull_images_calls_compose_pull(mock_docker_from_env, mock_config, mock_display):

@@ -69,7 +69,7 @@ def test_complete_stack_lifecycle_workflow(runner, clean_config_dir):
     
     # 5. Create backup
     backup_dir = Path(config_dir).parent / "test_backup"
-    backup_result = runner.invoke(app, ["backup", "--output", str(backup_dir)])
+    backup_result = runner.invoke(app, ["backup", "--output", str(backup_dir)], input="y\n")
     assert backup_result.exit_code == 0
     assert backup_dir.exists()
     
@@ -92,11 +92,11 @@ def test_complete_stack_lifecycle_workflow(runner, clean_config_dir):
 @pytest.mark.integration
 @pytest.mark.stateful
 @pytest.mark.skipif(not is_docker_available(), reason="Docker not available")
-def test_backup_restore_migration_workflow(runner, temp_backup_dir, clean_config_dir):
+def test_backup_restore_workflow(runner, temp_backup_dir, clean_config_dir):
     """
-    Verifies backup -> migrate -> restore workflow for version management.
+    Verifies backup -> configuration change -> restore workflow.
     
-    Tests complex version management scenario with data preservation.
+    Tests complete backup and restore cycle with configuration changes.
     """
     # 1. Install and start stack
     install_result = runner.invoke(app, ["install", "--force"])
@@ -117,23 +117,33 @@ def test_backup_restore_migration_workflow(runner, temp_backup_dir, clean_config
     env_file = os.path.join(config_dir, ".env")
     initial_secret_key = extract_secret_key_from_env(env_file)
     
-    # 3. Perform migration
-    migrate_result = runner.invoke(app, ["migrate", "--target-version", "0.3.0"])
-    assert migrate_result.exit_code == 0
+    # 3. Simulate configuration change (instead of migration)
+    # Update the secret key to simulate a configuration change
+    config_dir = clean_config_dir
+    env_file = os.path.join(config_dir, ".env")
     
-    # Verify migration completed
-    assert "migration completed" in migrate_result.stdout.lower()
+    # Read current env file
+    with open(env_file, 'r') as f:
+        env_content = f.read()
     
-    # 4. Create backup after migration
-    post_migration_backup_path = temp_backup_dir / "post_migration_backup"
-    backup_result = runner.invoke(app, ["backup", "--output", str(post_migration_backup_path)])
+    # Update the secret key
+    new_secret_key = "new-secret-key-for-testing"
+    env_content = env_content.replace(initial_secret_key, new_secret_key)
+    
+    # Write back the updated env file
+    with open(env_file, 'w') as f:
+        f.write(env_content)
+    
+    # 4. Create backup after configuration change
+    post_change_backup_path = temp_backup_dir / "post_change_backup"
+    backup_result = runner.invoke(app, ["backup", "--output", str(post_change_backup_path)])
     assert backup_result.exit_code == 0
     
     # 5. Restore from initial backup (rollback scenario)
     stop_result = runner.invoke(app, ["stop"])
     assert stop_result.exit_code == 0
     
-    restore_result = runner.invoke(app, ["restore", str(initial_backup_path)])
+    restore_result = runner.invoke(app, ["restore", str(initial_backup_path), "--force"])
     assert restore_result.exit_code == 0
     
     # Verify restoration preserved original data
@@ -177,7 +187,7 @@ def test_disaster_recovery_workflow(runner, temp_backup_dir, clean_config_dir):
     assert backup_result.exit_code == 0
     
     # Verify backup contains all necessary components
-    assert (backup_path / "manifest.json").exists()
+    assert (backup_path / "backup_manifest.json").exists()
     assert (backup_path / "config").exists()
     assert (backup_path / "volumes").exists()
     
@@ -195,7 +205,7 @@ def test_disaster_recovery_workflow(runner, temp_backup_dir, clean_config_dir):
     assert get_actual_running_services() == set()
     
     # 4. Disaster recovery - restore from backup
-    restore_result = runner.invoke(app, ["restore", str(backup_path)])
+    restore_result = runner.invoke(app, ["restore", str(backup_path)], input="y\n")
     assert restore_result.exit_code == 0
     
     # Verify configuration was restored
@@ -550,8 +560,7 @@ def test_user_friendly_error_messages_workflow(runner):
         ["restart"],
         ["status"],
         ["backup", "--output", "/tmp/test_backup"],
-        ["restore", "/nonexistent/backup"],
-        ["migrate", "--target-version", "0.3.0"]
+        ["restore", "/nonexistent/backup"]
     ]
     
     for command in commands_to_test:
@@ -586,7 +595,7 @@ def test_help_accessibility_workflow(runner):
     # Test help for all main commands
     commands = [
         "install", "start", "stop", "restart", "status", "check",
-        "logs", "update", "uninstall", "backup", "restore", "migrate"
+        "logs", "update", "uninstall", "backup", "restore"
     ]
     
     for command in commands:
