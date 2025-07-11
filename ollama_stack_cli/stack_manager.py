@@ -83,13 +83,15 @@ class StackManager:
     def get_compose_files(self) -> list[str]:
         """
         Determines the appropriate docker-compose files to use based on platform.
-        Returns files for DockerClient to use, doesn't invoke commands directly.
+        Returns absolute paths to files for DockerClient to use.
         """
-        compose_files = [self.config.docker_compose_file]
+        from .config import get_compose_file_path
+        
+        compose_files = [str(get_compose_file_path(self.config.docker_compose_file))]
         
         platform_config = self.config.platform.get(self.platform)
         if platform_config:
-            compose_files.append(platform_config.compose_file)
+            compose_files.append(str(get_compose_file_path(platform_config.compose_file)))
             log.info(f"Using platform-specific compose file: {platform_config.compose_file}")
         
         return compose_files

@@ -41,6 +41,13 @@ dev = [
 [tool.setuptools]
 packages = ["ollama_stack_cli"]
 
+[tool.setuptools.package-data]
+ollama_stack_cli = [
+    "docker-compose.yml",
+    "docker-compose.apple.yml",
+    "docker-compose.nvidia.yml"
+]
+
 [tool.black]
 line-length = 88
 target-version = ['py38']
@@ -53,4 +60,6 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 markers = [
     "integration: marks tests as integration tests (requires a running Docker daemon)",
+    "stateful: marks tests that modify system state",
+    "stateless: marks tests that don't modify system state",
 ] 

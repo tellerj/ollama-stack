@@ -23,7 +23,7 @@ from ollama_stack_cli.tests.integration.helpers import (
     get_system_resource_usage,
     create_large_test_data,
     wait_for_stack_to_stop,
-    TestArtifactTracker,
+    ArtifactTracker,
 )
 
 # --- Real Backup Operation Tests ---

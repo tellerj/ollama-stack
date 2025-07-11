@@ -23,7 +23,7 @@ from ollama_stack_cli.tests.integration.helpers import (
     extract_secret_key_from_env,
     get_system_resource_usage,
     simulate_disk_full_scenario,
-    TestArtifactTracker,
+    ArtifactTracker,
 )
 
 # --- Real Restore Operation Tests ---

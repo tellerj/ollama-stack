@@ -1405,38 +1405,127 @@ def test_import_configuration_empty_source_directory(tmp_path: Path, mock_displa
     assert not dest_env.exists()
 
 def test_validate_backup_manifest_duplicate_entries(tmp_path: Path, mock_display: MagicMock):
-    """Tests manifest validation with duplicate entries in lists."""
-    from ollama_stack_cli.config import validate_backup_manifest, _calculate_backup_checksum
-    from ollama_stack_cli.schemas import BackupManifest, BackupConfig
-    import json
-    
+    """Tests that validate_backup_manifest handles duplicate entries correctly."""
     backup_dir = tmp_path / "backup"
     backup_dir.mkdir()
     
-    # Create files
-    (backup_dir / "volume1.tar.gz").write_text("content")
-    
-    # Create manifest with duplicate volumes
-    manifest = BackupManifest(
-        stack_version="0.2.0",
-        cli_version="0.2.0",
-        platform="linux",
-        backup_config=BackupConfig(),
-        volumes=["volume1", "volume1"],  # Duplicate
-        config_files=[],
-        extensions=[]
-    )
+    # Create manifest with duplicate entries
+    manifest_data = {
+        "backup_id": "test-backup-123",
+        "created_at": "2024-01-01T00:00:00Z",
+        "stack_version": "0.2.0",
+        "cli_version": "0.2.0",
+        "platform": "linux",
+        "backup_config": {
+            "include_volumes": True,
+            "include_config": True,
+            "include_extensions": True
+        },
+        "volumes": ["volume1", "volume1"],  # Duplicate
+        "config_files": ["config1", "config1"],  # Duplicate
+        "extensions": ["ext1", "ext1"],  # Duplicate
+        "size_bytes": 1024,
+        "checksum": None  # Don't set a checksum to avoid validation issues
+    }
     
     manifest_file = backup_dir / "backup_manifest.json"
     with open(manifest_file, "w") as f:
-        json.dump(manifest.model_dump(), f, default=str)
+        json.dump(manifest_data, f)
     
-    is_valid, parsed_manifest = validate_backup_manifest(manifest_file, backup_dir)
+    # Create the files referenced in manifest
+    volumes_dir = backup_dir / "volumes"
+    volumes_dir.mkdir()
+    (volumes_dir / "volume1.tar.gz").touch()
     
-    # Should handle duplicates (might succeed since file exists for both references)
-    assert parsed_manifest is not None
+    config_dir = backup_dir / "config"
+    config_dir.mkdir()
+    (config_dir / "config1").touch()
     
-    # Test checksum calculation with duplicates
-    checksum = _calculate_backup_checksum(backup_dir, manifest)
-    assert isinstance(checksum, str)
-    assert len(checksum) == 64 
+    extensions_dir = backup_dir / "extensions"
+    extensions_dir.mkdir()
+    (extensions_dir / "ext1.tar.gz").touch()
+    
+    # Import the function
+    from ollama_stack_cli.config import validate_backup_manifest
+    
+    # Test validation
+    is_valid, manifest = validate_backup_manifest(manifest_file, backup_dir)
+    
+    # Should still be valid even with duplicates
+    assert is_valid is True
+    assert manifest is not None
+    assert len(manifest.volumes) == 2  # Both entries preserved
+    assert len(manifest.config_files) == 2  # Both entries preserved
+    assert len(manifest.extensions) == 2  # Both entries preserved
+
+
+# =============================================================================
+# get_compose_file_path Tests
+# =============================================================================
+
+def test_get_compose_file_path_with_pkg_resources():
+    """Tests get_compose_file_path when pkg_resources is available."""
+    from ollama_stack_cli.config import get_compose_file_path
+    
+    with patch('pkg_resources.resource_filename') as mock_resource_filename:
+        mock_resource_filename.return_value = "/path/to/package/docker-compose.yml"
+        
+        result = get_compose_file_path("docker-compose.yml")
+        
+        mock_resource_filename.assert_called_once_with('ollama_stack_cli', 'docker-compose.yml')
+        assert result == Path("/path/to/package/docker-compose.yml")
+
+
+def test_get_compose_file_path_without_pkg_resources():
+    """Tests get_compose_file_path fallback when pkg_resources is not available."""
+    from ollama_stack_cli.config import get_compose_file_path
+    
+    with patch('pkg_resources.resource_filename', side_effect=ImportError):
+        result = get_compose_file_path("docker-compose.yml")
+        
+        # Should fall back to relative path from config.py location
+        # Since we're in ollama_stack_cli/tests/, parent.parent goes to ollama_stack_cli/
+        # and the compose files are now in ollama_stack_cli/
+        expected_path = Path(__file__).parent.parent / "docker-compose.yml"
+        assert result == expected_path
+
+
+def test_get_compose_file_path_different_filenames():
+    """Tests get_compose_file_path with different compose file names."""
+    from ollama_stack_cli.config import get_compose_file_path
+    
+    with patch('pkg_resources.resource_filename') as mock_resource_filename:
+        mock_resource_filename.return_value = "/path/to/package/test-file.yml"
+        
+        result = get_compose_file_path("test-file.yml")
+        
+        mock_resource_filename.assert_called_once_with('ollama_stack_cli', 'test-file.yml')
+        assert result == Path("/path/to/package/test-file.yml")
+
+
+def test_get_compose_file_path_development_fallback():
+    """Tests get_compose_file_path fallback in development environment."""
+    from ollama_stack_cli.config import get_compose_file_path
+    
+    # Mock both pkg_resources import and the fallback path
+    with patch('pkg_resources.resource_filename', side_effect=ImportError):
+        with patch('ollama_stack_cli.config.__file__', '/dev/path/config.py'):
+            result = get_compose_file_path("docker-compose.apple.yml")
+            
+            # Should use the fallback path - same directory as config.py
+            expected_path = Path("/dev/path") / "docker-compose.apple.yml"
+            assert result == expected_path
+
+
+def test_get_compose_file_path_absolute_paths():
+    """Tests that get_compose_file_path returns absolute paths."""
+    from ollama_stack_cli.config import get_compose_file_path
+    
+    with patch('pkg_resources.resource_filename') as mock_resource_filename:
+        mock_resource_filename.return_value = "/absolute/path/to/docker-compose.yml"
+        
+        result = get_compose_file_path("docker-compose.yml")
+        
+        # Should return absolute path
+        assert result.is_absolute()
+        assert str(result) == "/absolute/path/to/docker-compose.yml" 

@@ -18,7 +18,7 @@ from ollama_stack_cli.tests.integration.helpers import (
     wait_for_stack_to_stop,
     extract_secret_key_from_env,
     get_system_resource_usage,
-    TestArtifactTracker,
+    ArtifactTracker,
 )
 
 # --- Complete Lifecycle Workflow Tests ---

@@ -21,7 +21,7 @@ from ollama_stack_cli.tests.integration.helpers import (
     IS_APPLE_SILICON,
     EXPECTED_ALL_COMPONENTS,
     EXPECTED_DOCKER_COMPONENTS,
-    TestArtifactTracker,
+    ArtifactTracker,
 )
 from ollama_stack_cli.config import get_default_config_dir
 

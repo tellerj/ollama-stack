@@ -31,7 +31,7 @@ HEALTH_CHECK_URLS = {
 
 # --- Test Artifact Tracking ---
 
-class TestArtifactTracker:
+class ArtifactTracker:
     """Tracks test artifacts for automatic cleanup."""
     
     def __init__(self):

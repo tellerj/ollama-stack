@@ -24,6 +24,23 @@ def get_default_env_file():
 def get_default_config_file():
     return get_default_config_dir() / ".ollama-stack.json"
 
+def get_compose_file_path(filename: str) -> Path:
+    """
+    Get the path to a compose file from the installed package.
+    
+    Args:
+        filename: Name of the compose file (e.g., 'docker-compose.yml')
+        
+    Returns:
+        Path to the compose file in the installed package
+    """
+    try:
+        import pkg_resources
+        return Path(pkg_resources.resource_filename('ollama_stack_cli', filename))
+    except ImportError:
+        # Fallback for development environment
+        return Path(__file__).parent / filename
+
 
 def load_config(
     display: Display,

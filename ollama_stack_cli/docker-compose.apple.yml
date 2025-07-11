@@ -1,0 +1,25 @@
+# docker-compose.apple.yml
+# Override file for Apple Silicon Macs.
+# Disables Docker Ollama service and points webui to native Ollama running on the host.
+
+services:
+  # Disable ollama service in Docker - rely on native macOS app
+  ollama:
+    profiles: ["disabled-for-apple"]
+    image: alpine:latest
+    command: ["echo", "Ollama disabled for Apple Silicon - using native macOS app"]
+
+  # Modify webui to connect to native Ollama on the host
+  webui:
+    environment:
+      # Override: Point to host machine's Ollama instance  
+      - OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+      # Inherit from base: Secret key for user session persistence
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      # Disable all embedding functionality to prevent internet downloads
+      - EMBEDDING_MODEL=none
+      - USE_EMBEDDING_MODEL_DOCKER=none
+      - RAG_EMBEDDING_MODEL=none
+
+  # MCP Proxy uses its base configuration from docker-compose.yml
+  # No override needed for Apple Silicon 

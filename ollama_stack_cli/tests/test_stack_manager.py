@@ -16,10 +16,10 @@ def mock_display():
 def mock_config():
     """Fixture for a mocked AppConfig object."""
     config = MagicMock(spec=AppConfig)
-    config.docker_compose_file = "base.yml"
+    config.docker_compose_file = "docker-compose.yml"
     config.platform = {
-        "apple": PlatformConfig(compose_file="apple.yml"),
-        "nvidia": PlatformConfig(compose_file="nvidia.yml"),
+        "apple": PlatformConfig(compose_file="docker-compose.apple.yml"),
+        "nvidia": PlatformConfig(compose_file="docker-compose.nvidia.yml"),
     }
     # Provide a dictionary of service names as the StackManager will iterate over them
     config.services = {
@@ -281,15 +281,19 @@ def test_get_compose_files_apple(stack_manager):
     
     files = stack_manager.get_compose_files()
     
-    assert files == ['docker-compose.yml', 'docker-compose.apple.yml']
+    # Now returns absolute paths, so check that they contain the expected filenames
+    assert len(files) == 2
+    assert any('docker-compose.yml' in str(f) for f in files)
+    assert any('docker-compose.apple.yml' in str(f) for f in files)
 
 def test_get_compose_files_cpu(stack_manager):
     """Tests get_compose_files for CPU platform."""
     stack_manager.platform = 'cpu'
     
-    # Base compose file should be used
+    # Default compose file should be used
     compose_files = stack_manager.get_compose_files()
-    assert compose_files == ["base.yml"]
+    assert len(compose_files) == 1
+    assert any('docker-compose.yml' in str(f) for f in compose_files)
 
 
 # Service Running Detection Tests
@@ -1596,24 +1600,26 @@ def test_uninstall_stack_no_resources_but_remove_config(stack_manager, mock_dock
 def test_get_compose_files_no_platform_config(stack_manager):
     """Tests get_compose_files when platform config doesn't exist."""
     stack_manager.platform = 'unknown_platform'
-    stack_manager.config.docker_compose_file = 'base.yml'
+    stack_manager.config.docker_compose_file = 'docker-compose.yml'
     stack_manager.config.platform = {}
     
     files = stack_manager.get_compose_files()
     
-    # Should only return base compose file
-    assert files == ['base.yml']
+    # Should only return default compose file (now as absolute path)
+    assert len(files) == 1
+    assert any('docker-compose.yml' in str(f) for f in files)
 
 def test_get_compose_files_none_platform_config(stack_manager):
     """Tests get_compose_files when platform config is None."""
     stack_manager.platform = 'cpu'
-    stack_manager.config.docker_compose_file = 'base.yml'
+    stack_manager.config.docker_compose_file = 'docker-compose.yml'
     stack_manager.config.platform = {'cpu': None}
     
     files = stack_manager.get_compose_files()
     
-    # Should only return base compose file
-    assert files == ['base.yml']
+    # Should only return default compose file (now as absolute path)
+    assert len(files) == 1
+    assert any('docker-compose.yml' in str(f) for f in files)
 
 def test_configure_services_for_platform_no_ollama_service(stack_manager):
     """Tests configure_services_for_platform when 'ollama' service is not in config."""
