@@ -4,6 +4,7 @@ import pytest
 import sys
 import typer
 from unittest.mock import call
+import logging as log
 
 from ollama_stack_cli.main import app, main
 
@@ -239,37 +240,51 @@ class TestTyperBehaviorAndEdgeCases:
         # Typer/Click outputs errors to stdout in test mode
         assert "no such option" in result.output.lower() or "invalid" in result.output.lower()
     
-    def test_empty_command_line(self):
-        """Test running with no commands shows help or missing command error."""
-        result = runner.invoke(app, [])
-        # Typer behavior: may show help or missing command error
-        assert result.exit_code != 0
-        # Either missing command or help should be shown in output
-        assert "missing command" in result.output.lower() or "usage:" in result.output.lower()
-
-
-class TestCallbackFunctionDirectly:
-    """Test the main callback function directly."""
-    
     @patch('ollama_stack_cli.main.AppContext')
-    def test_main_callback_behavior(self, MockAppContext):
-        """Test that the main callback properly initializes and attaches AppContext."""
-        mock_app_context = MagicMock()
-        MockAppContext.return_value = mock_app_context
+    @patch('subprocess.run')
+    def test_empty_command_line(self, mock_subprocess, MockAppContext):
+        """Test that running the CLI with no command displays help and exits."""
+        # Mock the subprocess call to simulate the help output
+        def mock_subprocess_side_effect(cmd, *args, **kwargs):
+            # Simulate the help command output
+            from rich.console import Console
+            console = Console()
+            console.print("Usage: python -m ollama_stack_cli.main [OPTIONS] COMMAND [ARGS]...")
+            return MagicMock()
         
-        # Create a mock typer context
-        ctx = Mock(spec=typer.Context)
+        mock_subprocess.side_effect = mock_subprocess_side_effect
         
-        # Test verbose=True
-        main(ctx, verbose=True)
-        MockAppContext.assert_called_with(verbose=True)
-        assert ctx.obj == mock_app_context
+        result = runner.invoke(app, [])
         
-        # Reset for next test
-        MockAppContext.reset_mock()
-        ctx = Mock(spec=typer.Context)
-        
-        # Test verbose=False (default)
-        main(ctx, verbose=False)
-        MockAppContext.assert_called_with(verbose=False)
-        assert ctx.obj == mock_app_context
+        assert result.exit_code == 0
+        # The output should contain the ASCII art
+        assert "██████╗ ██╗     ██╗      █████╗ ███╗   ███╗ █████╗" in result.output
+
+
+@patch('ollama_stack_cli.main.AppContext')
+def test_main_callback_behavior(MockAppContext):
+    """Test the main callback function's behavior with verbose flag."""
+    # We need to import main here to use the patched AppContext
+    from ollama_stack_cli.main import main
+    
+    mock_ctx = MagicMock()
+    mock_ctx.invoked_subcommand = None
+    
+    # Mock the AppContext to return a real Display instance when verbose=True
+    def mock_app_context_side_effect(verbose=False):
+        # Create a real Display instance which will use our mocked RichHandler
+        from ollama_stack_cli.display import Display
+        display = Display(verbose=verbose)
+        mock_context = MagicMock()
+        mock_context.display = display
+        return mock_context
+    
+    MockAppContext.side_effect = mock_app_context_side_effect
+    
+    main(mock_ctx, verbose=True)
+    
+    # Check that AppContext was instantiated with verbose=True
+    MockAppContext.assert_called_with(verbose=True)
+    
+    # Check that the display was created with verbose=True
+    assert mock_ctx.obj.display.verbose is True

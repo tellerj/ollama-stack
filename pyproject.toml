@@ -58,6 +58,9 @@ select = ["E", "W", "F", "I", "C", "B"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
+testpaths = [
+    "ollama_stack_cli/tests",
+]
 markers = [
     "integration: marks tests as integration tests (requires a running Docker daemon)",
     "stateful: marks tests that modify system state",

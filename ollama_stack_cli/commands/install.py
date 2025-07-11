@@ -104,7 +104,6 @@ def install_logic(app_context: AppContext, force: bool = False) -> bool:
         
         if result['success']:
             # Display structured UI elements (moved from stack manager)
-            app_context.display.success("Installation completed successfully!")
             
             # Installation Summary Panel
             app_context.display.panel(

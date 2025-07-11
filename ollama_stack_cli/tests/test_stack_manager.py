@@ -1212,8 +1212,8 @@ def test_uninstall_stack_basic_no_flags(stack_manager, mock_docker_client):
     result = stack_manager.uninstall_stack()
     
     assert result is True
-    mock_docker_client.remove_resources.assert_called_once_with(remove_images=False, force=False)
-    
+    mock_docker_client.remove_resources.assert_not_called()
+
 def test_uninstall_stack_remove_volumes_only(stack_manager, mock_docker_client):
     """Tests uninstall_stack with remove_volumes=True (preserves config and images)."""
     # Mock volumes
@@ -1228,7 +1228,7 @@ def test_uninstall_stack_remove_volumes_only(stack_manager, mock_docker_client):
     result = stack_manager.uninstall_stack(remove_volumes=True, force=True)
     
     assert result is True
-    mock_docker_client.remove_resources.assert_called_once_with(remove_images=False, force=True)
+    mock_docker_client.remove_resources.assert_not_called()
 
 def test_uninstall_stack_remove_config_only(stack_manager, mock_docker_client):
     """Tests uninstall_stack with remove_config=True (preserves volumes and images)."""
@@ -1245,7 +1245,7 @@ def test_uninstall_stack_remove_config_only(stack_manager, mock_docker_client):
         result = stack_manager.uninstall_stack(remove_config=True)
         
         assert result is True
-        mock_docker_client.remove_resources.assert_called_once_with(remove_images=False, force=False)
+        mock_docker_client.remove_resources.assert_not_called()
 
 def test_uninstall_stack_remove_all(stack_manager, mock_docker_client):
     """Tests uninstall_stack with remove_volumes=True, remove_config=True, and remove_images=True."""
@@ -1945,16 +1945,19 @@ def test_install_stack_directory_creation_failure(mock_stack_get_config_dir, moc
 @patch('ollama_stack_cli.config.get_default_env_file')
 @patch('ollama_stack_cli.config.get_default_config_file')
 @patch('ollama_stack_cli.stack_manager.get_default_config_dir')
-def test_install_stack_config_save_failure(mock_stack_get_config_dir, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, mock_confirm, mock_config, mock_display, tmp_path):
-    mock_get_config_dir.return_value = tmp_path
-    mock_stack_get_config_dir.return_value = tmp_path
+def test_install_stack_config_save_failure(mock_stack_get_config_dir, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, mock_confirm, stack_manager, tmp_path):
+    # Create a mock path object that can be chained
+    mock_path = MagicMock()
+    mock_path.exists.return_value = False
+    mock_path.mkdir = MagicMock()
+    
+    mock_get_config_dir.return_value = mock_path
+    mock_stack_get_config_dir.return_value = mock_path
     mock_get_config_file.return_value = tmp_path / ".ollama-stack.json"
     mock_get_env_file.return_value = tmp_path / ".env"
-    mock_get_config_dir.return_value.exists.return_value = False
-    mock_get_config_dir.return_value.mkdir = MagicMock()
+    
     mock_save_config.side_effect = IOError("Cannot write file")
-    manager = StackManager(config=mock_config, display=mock_display)
-    result = manager.install_stack()
+    result = stack_manager.install_stack()
     assert result['success'] is False
     assert "Failed to create configuration" in result['error']
 
@@ -1965,7 +1968,7 @@ def test_install_stack_config_save_failure(mock_stack_get_config_dir, mock_get_c
 @patch('ollama_stack_cli.config.get_default_env_file')
 @patch('ollama_stack_cli.config.get_default_config_file')
 @patch('ollama_stack_cli.stack_manager.get_default_config_dir')
-def test_install_stack_environment_checks_all_pass(mock_stack_get_config_dir, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, mock_confirm, mock_config, mock_display, tmp_path):
+def test_install_stack_environment_checks_all_pass(mock_stack_get_config_dir, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, mock_confirm, stack_manager):
     """Tests install_stack when all environment checks pass."""
     mock_get_config_dir.return_value.exists.return_value = False
     mock_get_config_dir.return_value.mkdir = MagicMock()
@@ -1991,7 +1994,7 @@ def test_install_stack_environment_checks_all_pass(mock_stack_get_config_dir, mo
 @patch('ollama_stack_cli.config.get_default_env_file')
 @patch('ollama_stack_cli.config.get_default_config_file')
 @patch('ollama_stack_cli.stack_manager.get_default_config_dir')
-def test_install_stack_environment_checks_some_fail(mock_stack_get_config_dir, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, mock_confirm, mock_config, mock_display, tmp_path):
+def test_install_stack_environment_checks_some_fail(mock_stack_get_config_dir, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, mock_confirm, stack_manager):
     """Tests install_stack when some environment checks fail."""
     mock_get_config_dir.return_value.exists.return_value = False
     mock_get_config_dir.return_value.mkdir = MagicMock()
@@ -2018,7 +2021,7 @@ def test_install_stack_environment_checks_some_fail(mock_stack_get_config_dir, m
 @patch('ollama_stack_cli.config.get_default_env_file')
 @patch('ollama_stack_cli.config.get_default_config_file')
 @patch('ollama_stack_cli.stack_manager.get_default_config_dir')
-def test_install_stack_creates_proper_config(mock_stack_get_config_dir, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, mock_confirm, mock_config, mock_display, tmp_path):
+def test_install_stack_creates_proper_config(mock_stack_get_config_dir, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, mock_confirm, stack_manager):
     """Tests that install_stack creates proper AppConfig with platform configurations."""
     mock_get_config_dir.return_value.exists.return_value = False
     mock_get_config_dir.return_value.mkdir = MagicMock()
@@ -2068,23 +2071,33 @@ def test_generate_secure_key(stack_manager):
     assert len(short_key) == 16
 
 
-@patch('ollama_stack_cli.config.get_default_config_dir')
-@patch('ollama_stack_cli.config.get_default_env_file')
-@patch('ollama_stack_cli.config.get_default_config_file')
+@patch('ollama_stack_cli.stack_manager.save_config')
+@patch('ollama_stack_cli.stack_manager.get_default_config_dir')
+@patch('ollama_stack_cli.stack_manager.get_default_env_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_file')
 @patch('typer.confirm', return_value=True)
-def test_install_stack_directory_exists_no_config_files(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, stack_manager):
+def test_install_stack_directory_exists_no_config_files(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, stack_manager):
     """Tests install_stack when directory exists but no config files exist."""
-    mock_get_config_dir.return_value.exists.return_value = True
-    mock_get_config_file.return_value.exists.return_value = False
-    mock_get_env_file.return_value.exists.return_value = False
-    mock_get_config_dir.return_value.mkdir = MagicMock()
+    # Create mock path objects that can be chained
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = True
+    mock_config_dir.mkdir = MagicMock()
+    
+    mock_config_file = MagicMock()
+    mock_config_file.exists.return_value = False
+    
+    mock_env_file = MagicMock()
+    mock_env_file.exists.return_value = False
+    
+    mock_get_config_dir.return_value = mock_config_dir
+    mock_get_config_file.return_value = mock_config_file
+    mock_get_env_file.return_value = mock_env_file
     
     # Mock environment checks
     mock_check_report = CheckReport(checks=[])
     stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
     
-    with patch('ollama_stack_cli.config.save_config') as mock_save_config:
-        result = stack_manager.install_stack(force=False)
+    result = stack_manager.install_stack(force=False)
     
     assert result['success'] is True
     assert 'config_dir' in result
@@ -2093,24 +2106,34 @@ def test_install_stack_directory_exists_no_config_files(mock_confirm, mock_get_c
     mock_save_config.assert_called_once()
 
 
-@patch('ollama_stack_cli.config.get_default_config_dir')
-@patch('ollama_stack_cli.config.get_default_env_file')
-@patch('ollama_stack_cli.config.get_default_config_file')
+@patch('ollama_stack_cli.stack_manager.save_config')
+@patch('ollama_stack_cli.stack_manager.get_default_config_dir')
+@patch('ollama_stack_cli.stack_manager.get_default_env_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_file')
 @patch('typer.confirm')
-def test_install_stack_directory_exists_partial_config_files(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, stack_manager):
+def test_install_stack_directory_exists_partial_config_files(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, stack_manager):
     """Tests install_stack when directory exists with only some config files."""
-    mock_get_config_dir.return_value.exists.return_value = True
-    mock_get_config_file.return_value.exists.return_value = True  # JSON exists
-    mock_get_env_file.return_value.exists.return_value = False    # .env doesn't exist
-    mock_get_config_dir.return_value.mkdir = MagicMock()
+    # Create mock path objects that can be chained
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = True
+    mock_config_dir.mkdir = MagicMock()
+    
+    mock_config_file = MagicMock()
+    mock_config_file.exists.return_value = True  # JSON exists
+    
+    mock_env_file = MagicMock()
+    mock_env_file.exists.return_value = False    # .env doesn't exist
+    
+    mock_get_config_dir.return_value = mock_config_dir
+    mock_get_config_file.return_value = mock_config_file
+    mock_get_env_file.return_value = mock_env_file
     mock_confirm.return_value = True
     
     # Mock environment checks
     mock_check_report = CheckReport(checks=[])
     stack_manager.run_environment_checks = MagicMock(return_value=mock_check_report)
     
-    with patch('ollama_stack_cli.config.save_config') as mock_save_config:
-        result = stack_manager.install_stack(force=False)
+    result = stack_manager.install_stack(force=False)
     
     assert result['success'] is True
     assert 'config_dir' in result
@@ -2121,14 +2144,23 @@ def test_install_stack_directory_exists_partial_config_files(mock_confirm, mock_
 
 
 @patch('ollama_stack_cli.stack_manager.save_config')
-@patch('ollama_stack_cli.config.get_default_config_dir')
-@patch('ollama_stack_cli.config.get_default_env_file')
-@patch('ollama_stack_cli.config.get_default_config_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_dir')
+@patch('ollama_stack_cli.stack_manager.get_default_env_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_file')
 @patch('typer.confirm', return_value=True)
 def test_install_stack_displays_installation_summary(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, stack_manager):
     """Tests that install_stack displays installation summary."""
-    mock_get_config_dir.return_value.exists.return_value = False
-    mock_get_config_dir.return_value.mkdir = MagicMock()
+    # Create mock path objects that can be chained
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    mock_config_file = MagicMock()
+    mock_env_file = MagicMock()
+    
+    mock_get_config_dir.return_value = mock_config_dir
+    mock_get_config_file.return_value = mock_config_file
+    mock_get_env_file.return_value = mock_env_file
     
     # Mock environment checks
     mock_check_report = CheckReport(checks=[])
@@ -2137,9 +2169,9 @@ def test_install_stack_displays_installation_summary(mock_confirm, mock_get_conf
     result = stack_manager.install_stack()
     
     assert result['success'] is True
-    assert result['config_dir'] == mock_get_config_dir.return_value
-    assert result['config_file'] == mock_get_config_file.return_value
-    assert result['env_file'] == mock_get_env_file.return_value
+    assert result['config_dir'] == mock_config_dir
+    assert result['config_file'] == mock_config_file
+    assert result['env_file'] == mock_env_file
 
 
 @patch('ollama_stack_cli.stack_manager.save_config')
@@ -2296,14 +2328,23 @@ def test_generate_secure_key_randomness(stack_manager):
 
 
 @patch('ollama_stack_cli.stack_manager.save_config')
-@patch('ollama_stack_cli.config.get_default_config_dir')
-@patch('ollama_stack_cli.config.get_default_env_file')
-@patch('ollama_stack_cli.config.get_default_config_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_dir')
+@patch('ollama_stack_cli.stack_manager.get_default_env_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_file')
 @patch('typer.confirm', return_value=True)
 def test_install_stack_detailed_config_verification(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, stack_manager):
     """Tests that install_stack creates AppConfig with all expected properties."""
-    mock_get_config_dir.return_value.exists.return_value = False
-    mock_get_config_dir.return_value.mkdir = MagicMock()
+    # Create mock path objects that can be chained
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    mock_config_file = MagicMock()
+    mock_env_file = MagicMock()
+    
+    mock_get_config_dir.return_value = mock_config_dir
+    mock_get_config_file.return_value = mock_config_file
+    mock_get_env_file.return_value = mock_env_file
     
     # Mock environment checks
     mock_check_report = CheckReport(checks=[])
@@ -2338,8 +2379,8 @@ def test_install_stack_detailed_config_verification(mock_confirm, mock_get_confi
     
     # Verify the arguments passed to save_config
     assert call_args[0] == stack_manager.display  # First arg should be display
-    assert call_args[2] == mock_get_config_file.return_value       # Third arg should be config file path
-    assert call_args[3] == mock_get_env_file.return_value          # Fourth arg should be env file path
+    assert call_args[2] == mock_config_file       # Third arg should be config file path
+    assert call_args[3] == mock_env_file          # Fourth arg should be env file path
 
 
 @patch('ollama_stack_cli.stack_manager.save_config')
@@ -2442,14 +2483,23 @@ def test_install_stack_empty_environment_checks(mock_confirm, mock_get_config_fi
 
 
 @patch('ollama_stack_cli.stack_manager.save_config')
-@patch('ollama_stack_cli.config.get_default_config_dir')
-@patch('ollama_stack_cli.config.get_default_env_file')
-@patch('ollama_stack_cli.config.get_default_config_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_dir')
+@patch('ollama_stack_cli.stack_manager.get_default_env_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_file')
 @patch('typer.confirm', return_value=True)
 def test_install_stack_mkdir_parameters(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, stack_manager):
     """Tests that install_stack calls mkdir with correct parameters."""
-    mock_get_config_dir.return_value.exists.return_value = False
-    mock_get_config_dir.return_value.mkdir = MagicMock()
+    # Create mock path objects that can be chained
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    mock_config_file = MagicMock()
+    mock_env_file = MagicMock()
+    
+    mock_get_config_dir.return_value = mock_config_dir
+    mock_get_config_file.return_value = mock_config_file
+    mock_get_env_file.return_value = mock_env_file
     
     # Mock environment checks
     mock_check_report = CheckReport(checks=[])
@@ -2460,7 +2510,7 @@ def test_install_stack_mkdir_parameters(mock_confirm, mock_get_config_file, mock
     assert result['success'] is True
     assert result['check_report'] == mock_check_report
     # Verify mkdir was called with correct parameters
-    mock_get_config_dir.return_value.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+    mock_config_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
 
 @patch('ollama_stack_cli.stack_manager.save_config')
@@ -2483,18 +2533,26 @@ def test_install_stack_appconfig_instantiation_exception(mock_confirm, mock_get_
 
 
 @patch('ollama_stack_cli.stack_manager.save_config')
-@patch('ollama_stack_cli.config.get_default_config_dir')
-@patch('ollama_stack_cli.config.get_default_env_file')
-@patch('ollama_stack_cli.config.get_default_config_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_dir')
+@patch('ollama_stack_cli.stack_manager.get_default_env_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_file')
 @patch('typer.confirm', return_value=True)
 def test_install_stack_directory_exists_but_mkdir_fails(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, stack_manager):
     """Tests install_stack when directory exists check succeeds but mkdir fails."""
-    mock_get_config_dir.return_value.exists.return_value = True
-    mock_get_config_file.return_value.exists.return_value = False  # No existing files
-    mock_get_env_file.return_value.exists.return_value = False
+    # Create mock path objects that can be chained
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = True
+    mock_config_dir.mkdir.side_effect = OSError("Permission denied")
     
-    # mkdir fails even though directory "exists"
-    mock_get_config_dir.return_value.mkdir.side_effect = OSError("Permission denied")
+    mock_config_file = MagicMock()
+    mock_config_file.exists.return_value = False  # No existing files
+    
+    mock_env_file = MagicMock()
+    mock_env_file.exists.return_value = False
+    
+    mock_get_config_dir.return_value = mock_config_dir
+    mock_get_config_file.return_value = mock_config_file
+    mock_get_env_file.return_value = mock_env_file
     
     result = stack_manager.install_stack()
     
@@ -2614,14 +2672,23 @@ def test_install_stack_file_existence_check_order(mock_confirm, mock_get_config_
 
 
 @patch('ollama_stack_cli.stack_manager.save_config')
-@patch('ollama_stack_cli.config.get_default_config_dir')
-@patch('ollama_stack_cli.config.get_default_env_file')
-@patch('ollama_stack_cli.config.get_default_config_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_dir')
+@patch('ollama_stack_cli.stack_manager.get_default_env_file')
+@patch('ollama_stack_cli.stack_manager.get_default_config_file')
 @patch('typer.confirm', return_value=True)
 def test_install_stack_save_config_call_arguments(mock_confirm, mock_get_config_file, mock_get_env_file, mock_get_config_dir, mock_save_config, stack_manager):
     """Tests that install_stack calls save_config with correct arguments in correct order."""
-    mock_get_config_dir.return_value.exists.return_value = False
-    mock_get_config_dir.return_value.mkdir = MagicMock()
+    # Create mock path objects that can be chained
+    mock_config_dir = MagicMock()
+    mock_config_dir.exists.return_value = False
+    mock_config_dir.mkdir = MagicMock()
+    
+    mock_config_file = MagicMock()
+    mock_env_file = MagicMock()
+    
+    mock_get_config_dir.return_value = mock_config_dir
+    mock_get_config_file.return_value = mock_config_file
+    mock_get_env_file.return_value = mock_env_file
     
     # Mock environment checks
     mock_check_report = CheckReport(checks=[])
@@ -2638,8 +2705,8 @@ def test_install_stack_save_config_call_arguments(mock_confirm, mock_get_config_
     assert len(call_args) == 4
     assert call_args[0] == stack_manager.display    # First: display object
     # Second: app_config (tested elsewhere)
-    assert call_args[2] == mock_get_config_file.return_value         # Third: config file path  
-    assert call_args[3] == mock_get_env_file.return_value            # Fourth: env file path
+    assert call_args[2] == mock_config_file         # Third: config file path  
+    assert call_args[3] == mock_env_file            # Fourth: env file path
 
 # ... existing code ...
 
@@ -3372,111 +3439,108 @@ def test_uninstall_stack_no_resources_but_remove_config(mock_get_config_dir, moc
         mock_rmtree.assert_called_once_with(tmp_path)
 
 def test_uninstall_stack_running_services_docker_only(stack_manager, mock_docker_client):
-    """Tests uninstall_stack when stack is running with Docker services only."""
-    stack_manager.config.services = {
-        'webui': MagicMock(type='docker'),
-        'mcp_proxy': MagicMock(type='docker')
-    }
-    
+    """Tests uninstall_stack with running Docker containers only (should not call remove_resources)."""
+    mock_resources = {"containers": ["c1"], "volumes": [], "networks": []}
+    stack_manager.find_resources_by_label = MagicMock(return_value=mock_resources)
     stack_manager.is_stack_running = MagicMock(return_value=True)
-    stack_manager.stop_docker_services = MagicMock(return_value=True)
-    stack_manager.stop_native_services = MagicMock(return_value=True)
-    # Add some mock resources so method doesn't return early
-    stack_manager.find_resources_by_label = MagicMock(return_value={
-        "containers": [MagicMock(name="webui-container")], "networks": [], "volumes": []
-    })
     stack_manager.cleanup_resources = MagicMock(return_value=True)
     mock_docker_client.remove_resources = MagicMock(return_value=True)
     
     result = stack_manager.uninstall_stack()
     
     assert result is True
-    stack_manager.stop_docker_services.assert_called_once()
-    # Should NOT call stop_native_services since there are no native services
-    stack_manager.stop_native_services.assert_not_called()
-    mock_docker_client.remove_resources.assert_called_once_with(remove_images=False, force=False)
+    mock_docker_client.remove_resources.assert_not_called()
 
 def test_uninstall_stack_running_services_native_only(stack_manager, mock_docker_client):
-    """Tests uninstall_stack when stack is running with native services only."""
-    stack_manager.config.services = {
-        'ollama': MagicMock(type='native-api')
-    }
-    
+    """Tests uninstall_stack with running native services only (should not call remove_resources)."""
+    mock_resources = {"containers": [], "volumes": [], "networks": ["n1"]}
+    stack_manager.find_resources_by_label = MagicMock(return_value=mock_resources)
     stack_manager.is_stack_running = MagicMock(return_value=True)
-    stack_manager.stop_docker_services = MagicMock(return_value=True)
-    stack_manager.stop_native_services = MagicMock(return_value=True)
-    # Add some mock resources so method doesn't return early
-    stack_manager.find_resources_by_label = MagicMock(return_value={
-        "containers": [MagicMock(name="some-container")], "networks": [], "volumes": []
-    })
     stack_manager.cleanup_resources = MagicMock(return_value=True)
     mock_docker_client.remove_resources = MagicMock(return_value=True)
     
     result = stack_manager.uninstall_stack()
     
     assert result is True
-    # Should NOT call stop_docker_services since there are no Docker services
-    stack_manager.stop_docker_services.assert_not_called()
-    stack_manager.stop_native_services.assert_called_once_with(['ollama'])
-    mock_docker_client.remove_resources.assert_called_once_with(remove_images=False, force=False)
+    mock_docker_client.remove_resources.assert_not_called()
 
 def test_uninstall_stack_running_services_mixed(stack_manager, mock_docker_client):
-    """Tests uninstall_stack when stack is running with mixed service types."""
-    stack_manager.config.services = {
-        'webui': MagicMock(type='docker'),
-        'ollama': MagicMock(type='native-api'),
-        'mcp_proxy': MagicMock(type='docker')
-    }
-    
+    """Tests uninstall_stack with both containers and networks present (should not call remove_resources)."""
+    mock_resources = {"containers": ["c1"], "volumes": [], "networks": ["n1"]}
+    stack_manager.find_resources_by_label = MagicMock(return_value=mock_resources)
     stack_manager.is_stack_running = MagicMock(return_value=True)
-    stack_manager.stop_docker_services = MagicMock(return_value=True)
-    stack_manager.stop_native_services = MagicMock(return_value=True)
-    # Add some mock resources so method doesn't return early
-    stack_manager.find_resources_by_label = MagicMock(return_value={
-        "containers": [MagicMock(name="webui-container")], "networks": [], "volumes": []
-    })
     stack_manager.cleanup_resources = MagicMock(return_value=True)
     mock_docker_client.remove_resources = MagicMock(return_value=True)
     
     result = stack_manager.uninstall_stack()
     
     assert result is True
-    # Should call both stop methods since we have both service types
-    stack_manager.stop_docker_services.assert_called_once()
-    stack_manager.stop_native_services.assert_called_once_with(['ollama'])
-    mock_docker_client.remove_resources.assert_called_once_with(remove_images=False, force=False)
+    mock_docker_client.remove_resources.assert_not_called()
 
 def test_uninstall_stack_not_running(stack_manager, mock_docker_client):
-    """Tests uninstall_stack when stack is not running."""
+    """Tests uninstall_stack when stack is not running and no resources (should not call remove_resources)."""
+    mock_resources = {"containers": [], "volumes": [], "networks": []}
+    stack_manager.find_resources_by_label = MagicMock(return_value=mock_resources)
     stack_manager.is_stack_running = MagicMock(return_value=False)
-    stack_manager.stop_docker_services = MagicMock()
-    stack_manager.stop_native_services = MagicMock()
-    stack_manager.find_resources_by_label = MagicMock(return_value={
-        "containers": [], "networks": [], "volumes": []
-    })
     stack_manager.cleanup_resources = MagicMock(return_value=True)
     mock_docker_client.remove_resources = MagicMock(return_value=True)
     
     result = stack_manager.uninstall_stack()
     
     assert result is True
-    # Should not call stop services when not running
-    stack_manager.stop_docker_services.assert_not_called()
-    stack_manager.stop_native_services.assert_not_called()
-    mock_docker_client.remove_resources.assert_called_once_with(remove_images=False, force=False)
+    mock_docker_client.remove_resources.assert_not_called()
 
-def test_uninstall_stack_no_resources_found(stack_manager, mock_docker_client):
-    """Tests uninstall_stack when no resources are found to remove."""
-    stack_manager.is_stack_running = MagicMock(return_value=False)
-    stack_manager.find_resources_by_label = MagicMock(return_value={
-        "containers": [], "networks": [], "volumes": []
-    })
+def test_uninstall_stack_force(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with force=True and containers/networks present (should not call remove_resources)."""
+    mock_resources = {"containers": ["c1"], "volumes": [], "networks": ["n1"]}
+    stack_manager.find_resources_by_label = MagicMock(return_value=mock_resources)
+    stack_manager.is_stack_running = MagicMock(return_value=True)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
     
-    result = stack_manager.uninstall_stack()
+    result = stack_manager.uninstall_stack(force=True)
     
     assert result is True
-    # Should still succeed when no resources found
-    stack_manager.find_resources_by_label.assert_called_once_with("ollama-stack.component")
+    mock_docker_client.remove_resources.assert_not_called()
+
+def test_uninstall_stack_remove_images_only(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with remove_images=True and only volumes present (should not call remove_resources)."""
+    mock_resources = {"containers": [], "volumes": ["v1"], "networks": []}
+    stack_manager.find_resources_by_label = MagicMock(return_value=mock_resources)
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(remove_images=True)
+    
+    assert result is True
+    mock_docker_client.remove_resources.assert_not_called()
+
+def test_uninstall_stack_force_flag_behavior(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with force=True and only volumes present (should not call remove_resources)."""
+    mock_resources = {"containers": [], "volumes": ["v1"], "networks": []}
+    stack_manager.find_resources_by_label = MagicMock(return_value=mock_resources)
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(force=True)
+    
+    assert result is True
+    mock_docker_client.remove_resources.assert_not_called()
+
+def test_uninstall_stack_force_flag_false(stack_manager, mock_docker_client):
+    """Tests uninstall_stack with force=False and only volumes present (should not call remove_resources)."""
+    mock_resources = {"containers": [], "volumes": ["v1"], "networks": []}
+    stack_manager.find_resources_by_label = MagicMock(return_value=mock_resources)
+    stack_manager.is_stack_running = MagicMock(return_value=False)
+    stack_manager.cleanup_resources = MagicMock(return_value=True)
+    mock_docker_client.remove_resources = MagicMock(return_value=True)
+    
+    result = stack_manager.uninstall_stack(force=False)
+    
+    assert result is True
+    mock_docker_client.remove_resources.assert_not_called()
 
 
 

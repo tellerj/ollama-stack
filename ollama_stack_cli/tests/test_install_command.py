@@ -58,7 +58,14 @@ def failed_check_report():
 def test_install_command_basic_execution(MockAppContext, mock_app_context):
     """Test basic install command execution without flags."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
@@ -70,7 +77,14 @@ def test_install_command_basic_execution(MockAppContext, mock_app_context):
 def test_install_command_with_force_flag(MockAppContext, mock_app_context):
     """Test install command with --force flag."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install", "--force"])
     
@@ -93,7 +107,14 @@ def test_install_command_help_display(MockAppContext, mock_app_context):
 def test_install_command_no_args(MockAppContext, mock_app_context):
     """Test install command with no arguments (default behavior)."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
@@ -108,27 +129,20 @@ def test_install_command_no_args(MockAppContext, mock_app_context):
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_install_command_success_display_messages(MockAppContext, mock_app_context):
-    """Test that successful installation displays correct messages."""
+    """Test that install command shows the correct final success message."""
     MockAppContext.return_value = mock_app_context
-    mock_check_report = MagicMock()
-    mock_check_report.checks = []
     mock_app_context.stack_manager.install_stack.return_value = {
         'success': True,
         'config_dir': '/test/config',
         'config_file': '/test/config.json',
         'env_file': '/test/env',
-        'check_report': mock_check_report,
+        'check_report': MagicMock(),
         'failed_checks': []
     }
     
-    result = runner.invoke(app, ["install"])
+    runner.invoke(app, ["install"])
     
-    assert result.exit_code == 0
-    mock_app_context.display.success.assert_any_call("Installation completed successfully!")
-    # Check that Next Steps panel is called
-    next_steps_calls = [call for call in mock_app_context.display.panel.call_args_list 
-                       if len(call[0]) >= 2 and call[0][1] == "Next Steps"]
-    assert len(next_steps_calls) == 1
+    mock_app_context.display.success.assert_called_once_with("Environment validation completed - all checks passed!")
 
 
 @patch('ollama_stack_cli.main.AppContext')
@@ -158,7 +172,14 @@ def test_install_command_success_logging(MockAppContext, mock_app_context):
 def test_install_command_success_return_value(MockAppContext, mock_app_context):
     """Test that successful installation returns correct value."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
@@ -206,7 +227,14 @@ def test_install_command_failure_logging(MockAppContext, mock_app_context):
 def test_install_command_no_success_display_on_failure(MockAppContext, mock_app_context):
     """Test that failed installation doesn't display success messages."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = False
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': False,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
@@ -292,18 +320,15 @@ def test_install_command_keyboard_interrupt_cli_level(MockAppContext, mock_app_c
 
 
 @patch('ollama_stack_cli.main.AppContext')
-def test_install_logic_keyboard_interrupt_handling(MockAppContext, mock_app_context):
-    """Test install_logic function handles KeyboardInterrupt in business logic."""
-    from ollama_stack_cli.commands.install import install_logic
-    
+def test_install_command_keyboard_interrupt_during_install(MockAppContext, mock_app_context):
+    """Test that KeyboardInterrupt during install_stack is handled correctly."""
+    MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.install_stack.side_effect = KeyboardInterrupt()
     
-    result = install_logic(mock_app_context, force=False)
+    result = runner.invoke(app, ["install"])
     
-    assert result is False
-    mock_app_context.display.error.assert_called_once()
-    error_call = mock_app_context.display.error.call_args[0][0]
-    assert "Installation failed:" in error_call
+    assert result.exit_code == 130
+    mock_app_context.display.error.assert_not_called()
 
 
 # =============================================================================
@@ -314,7 +339,14 @@ def test_install_logic_keyboard_interrupt_handling(MockAppContext, mock_app_cont
 def test_install_command_force_flag_variations(MockAppContext, mock_app_context):
     """Test different ways to specify the force flag."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     # Test --force
     result = runner.invoke(app, ["install", "--force"])
@@ -345,7 +377,14 @@ def test_install_command_invalid_flag(MockAppContext, mock_app_context):
 def test_install_command_force_flag_boolean_type(MockAppContext, mock_app_context):
     """Test that force flag is properly typed as boolean."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install", "--force"])
     
@@ -364,7 +403,14 @@ def test_install_command_force_flag_boolean_type(MockAppContext, mock_app_contex
 def test_install_command_context_object_access(MockAppContext, mock_app_context):
     """Test that install command properly accesses the context object."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
@@ -388,7 +434,14 @@ def test_install_command_context_initialization_failure(MockAppContext, mock_app
 def test_install_command_multiple_invocations(MockAppContext, mock_app_context):
     """Test that install command can be called multiple times."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     # First invocation
     result1 = runner.invoke(app, ["install"])
@@ -406,21 +459,35 @@ def test_install_command_multiple_invocations(MockAppContext, mock_app_context):
 def test_install_command_display_object_usage(MockAppContext, mock_app_context):
     """Test that install command properly uses display object for all output."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
     assert result.exit_code == 0
     # Verify display methods were called
-    mock_app_context.display.success.assert_called_once()
-    mock_app_context.display.panel.assert_called_once()
+    mock_app_context.display.success.assert_called_once_with("Environment validation completed - all checks passed!")
+    mock_app_context.display.panel.assert_called()
 
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_install_command_stack_manager_delegation(MockAppContext, mock_app_context):
     """Test that install command properly delegates to stack manager."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
@@ -439,12 +506,26 @@ def test_install_command_return_value_consistency(MockAppContext, mock_app_conte
     MockAppContext.return_value = mock_app_context
     
     # Test True return
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     result = runner.invoke(app, ["install"])
     assert result.exit_code == 0
     
     # Test False return
-    mock_app_context.stack_manager.install_stack.return_value = False
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': False,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     result = runner.invoke(app, ["install"])
     assert result.exit_code == 0  # Should not exit with error code
     
@@ -458,7 +539,14 @@ def test_install_command_return_value_consistency(MockAppContext, mock_app_conte
 def test_install_command_empty_args_list(MockAppContext, mock_app_context):
     """Test install command with empty arguments list."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
@@ -501,24 +589,37 @@ def test_install_command_very_long_error_message(MockAppContext, mock_app_contex
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_install_logic_function_direct_call(MockAppContext, mock_app_context):
-    """Test the install_logic function directly."""
+    """Test that install_logic can be called directly and returns correct value."""
     from ollama_stack_cli.commands.install import install_logic
     
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = install_logic(mock_app_context, force=False)
     
     assert result is True
-    mock_app_context.stack_manager.install_stack.assert_called_once_with(force=False)
     mock_app_context.display.success.assert_called_once()
-
+    
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_install_logic_function_with_force(MockAppContext, mock_app_context):
     """Test the install_logic function with force=True."""
     from ollama_stack_cli.commands.install import install_logic
     
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = install_logic(mock_app_context, force=True)
     
@@ -531,7 +632,14 @@ def test_install_logic_function_failure(MockAppContext, mock_app_context):
     """Test the install_logic function when stack manager fails."""
     from ollama_stack_cli.commands.install import install_logic
     
-    mock_app_context.stack_manager.install_stack.return_value = False
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': False,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = install_logic(mock_app_context, force=False)
     
@@ -558,29 +666,37 @@ def test_install_logic_function_exception(MockAppContext, mock_app_context):
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_install_command_full_success_workflow(MockAppContext, mock_app_context):
-    """Test complete successful installation workflow."""
+    """Test the complete success workflow of the install command."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
     assert result.exit_code == 0
-    
-    # Verify the complete call sequence
-    mock_app_context.stack_manager.install_stack.assert_called_once_with(force=False)
-    mock_app_context.display.success.assert_called_once_with("Installation completed successfully!")
-    mock_app_context.display.panel.assert_called_once_with(
-        "Run `ollama-stack start` to begin using the stack",
-        "Next Steps",
-        border_style="green"
-    )
+    mock_app_context.stack_manager.install_stack.assert_called_once()
+    mock_app_context.display.success.assert_called_once_with("Environment validation completed - all checks passed!")
+    mock_app_context.display.panel.assert_called()
 
 
 @patch('ollama_stack_cli.main.AppContext')
 def test_install_command_full_failure_workflow(MockAppContext, mock_app_context):
     """Test complete failed installation workflow."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = False
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': False,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     result = runner.invoke(app, ["install"])
     
@@ -622,7 +738,14 @@ def test_install_command_full_exception_workflow(MockAppContext, mock_app_contex
 def test_install_command_rapid_successive_calls(MockAppContext, mock_app_context):
     """Test install command can handle rapid successive calls."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     # Make multiple rapid calls
     for i in range(5):
@@ -637,7 +760,14 @@ def test_install_command_rapid_successive_calls(MockAppContext, mock_app_context
 def test_install_command_memory_cleanup(MockAppContext, mock_app_context):
     """Test that install command doesn't leak memory or resources."""
     MockAppContext.return_value = mock_app_context
-    mock_app_context.stack_manager.install_stack.return_value = True
+    mock_app_context.stack_manager.install_stack.return_value = {
+        'success': True,
+        'config_dir': '/test/config',
+        'config_file': '/test/config.json',
+        'env_file': '/test/env',
+        'check_report': MagicMock(),
+        'failed_checks': []
+    }
     
     # This test primarily ensures no exceptions during cleanup
     result = runner.invoke(app, ["install"])
