@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ollama-stack-cli"
-version = "0.2.0"
+version = "0.5.0"
 authors = [
-  { name="Teller Junak", email="tellerj@gmail.com" },
+  { name="Teller Junak", email="teller.junak@ctcubed.com" },
 ]
 description = "A CLI tool for managing the Ollama Stack"
 readme = "README.md"
@@ -35,8 +35,8 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/teller-junak/ollama-stack"
-"Bug Tracker" = "https://github.com/teller-junak/ollama-stack/issues"
+"Homepage" = "https://git.ctcubed.com/teller.junak/ollama-stack"
+"Bug Tracker" = "https://git.ctcubed.com/teller.junak/ollama-stack/issues"
 
 [tool.setuptools]
 packages = ["ollama_stack_cli"]

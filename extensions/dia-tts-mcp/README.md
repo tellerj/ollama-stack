@@ -197,4 +197,4 @@ This extension integrates with the Dia model. Please check the [Dia repository](
 - [Dia Model Repository](https://github.com/nari-labs/dia)
 - [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
 - [OpenWebUI Documentation](https://docs.openwebui.com/)
-- [Ollama Stack Repository](https://github.com/your-repo/ollama-stack) 
+- [Ollama Stack Repository](https://git.ctcubed.com/teller.junak/ollama-stack) 

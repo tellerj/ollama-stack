@@ -12,7 +12,7 @@ Once the prerequisites are met, follow these steps to set up your development en
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-org/ollama-stack.git
+    git clone https://git.ctcubed.com/teller.junak/ollama-stack.git
     cd ollama-stack
     ```
 

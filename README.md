@@ -12,7 +12,7 @@ A local AI development environment with Ollama, Open WebUI, and extensible tool 
 
 ```bash
 # Clone and install
-git clone https://github.com/tellerj/ollama-stack.git
+git clone https://git.ctcubed.com/teller.junak/ollama-stack.git
 cd ollama-stack
 
 # Install CLI tool
