@@ -245,6 +245,28 @@ def cleanup_backup_artifacts():
                 time.sleep(0.2)
         except Exception:
             pass
+    
+    # Clean up Docker volumes associated with the stack
+    try:
+        client = docker.from_env()
+        # Find volumes with Docker Compose project label
+        volumes = client.volumes.list(filters={"label": "com.docker.compose.project=ollama-stack"})
+        for volume in volumes:
+            try:
+                volume.remove(force=True)
+            except Exception:
+                pass
+        
+        # Also find volumes by name pattern
+        all_volumes = client.volumes.list()
+        for volume in all_volumes:
+            if volume.name.startswith("ollama-stack"):
+                try:
+                    volume.remove(force=True)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 def cleanup_minimal():
     """Minimal cleanup for stateless tests - only stops services."""
