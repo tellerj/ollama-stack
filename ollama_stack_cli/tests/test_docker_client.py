@@ -751,11 +751,14 @@ def test_check_nvidia_runtime_exception(mock_docker_from_env, mock_config, mock_
     assert check.passed is False
     assert "Could not verify NVIDIA runtime" in check.details
 
-@patch('pathlib.Path.exists')
+@patch('ollama_stack_cli.config.get_compose_file_path')
 @patch('docker.from_env')
-def test_check_compose_files_exist(mock_docker_from_env, mock_exists, mock_config, mock_display):
+def test_check_compose_files_exist(mock_docker_from_env, mock_get_compose_file_path, mock_config, mock_display):
     """Tests _check_compose_files when compose file exists."""
-    mock_exists.return_value = True
+    mock_path = MagicMock()
+    mock_path.exists.return_value = True
+    mock_path.__str__ = lambda self: "/path/to/docker-compose.yml"
+    mock_get_compose_file_path.return_value = mock_path
 
     client = DockerClient(config=mock_config, display=mock_display)
     
@@ -765,12 +768,16 @@ def test_check_compose_files_exist(mock_docker_from_env, mock_exists, mock_confi
     check = checks[0]
     assert check.passed is True
     assert mock_config.docker_compose_file in check.name
+    mock_get_compose_file_path.assert_called_once_with(mock_config.docker_compose_file)
 
-@patch('pathlib.Path.exists')
+@patch('ollama_stack_cli.config.get_compose_file_path')
 @patch('docker.from_env')
-def test_check_compose_files_missing(mock_docker_from_env, mock_exists, mock_config, mock_display):
+def test_check_compose_files_missing(mock_docker_from_env, mock_get_compose_file_path, mock_config, mock_display):
     """Tests _check_compose_files when compose file is missing."""
-    mock_exists.return_value = False
+    mock_path = MagicMock()
+    mock_path.exists.return_value = False
+    mock_path.__str__ = lambda self: "/path/to/docker-compose.yml"
+    mock_get_compose_file_path.return_value = mock_path
 
     client = DockerClient(config=mock_config, display=mock_display)
     
@@ -780,6 +787,8 @@ def test_check_compose_files_missing(mock_docker_from_env, mock_exists, mock_con
     check = checks[0]
     assert check.passed is False
     assert "not found" in check.details
+    assert "package directory" in check.suggestion
+    mock_get_compose_file_path.assert_called_once_with(mock_config.docker_compose_file)
 
 @patch('docker.from_env')
 def test_check_and_pull_images_success(mock_docker_from_env, mock_config, mock_display):
