@@ -39,7 +39,7 @@ dev = [
 "Bug Tracker" = "https://git.ctcubed.com/teller.junak/ollama-stack/issues"
 
 [tool.setuptools]
-packages = ["ollama_stack_cli"]
+packages = ["ollama_stack_cli", "ollama_stack_cli.commands"]
 
 [tool.setuptools.package-data]
 ollama_stack_cli = [
