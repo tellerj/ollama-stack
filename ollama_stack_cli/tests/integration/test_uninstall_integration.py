@@ -510,6 +510,8 @@ def test_uninstall_all_flag_removes_images(runner, clean_config_dir):
     
     # Perform uninstall with --all flag
     result = runner.invoke(app, ["uninstall", "--all", "--force"])
+    print(f"Uninstall stdout: {result.stdout}")
+    print(f"Uninstall exit code: {result.exit_code}")
     assert result.exit_code == 0
     
     # Verify stack images are removed (check if any of the original images still exist)

@@ -24,6 +24,7 @@ from ollama_stack_cli.tests.integration.helpers import (
     create_large_test_data,
     wait_for_stack_to_stop,
     ArtifactTracker,
+    cleanup_backup_artifacts,
 )
 
 # --- Real Backup Operation Tests ---
@@ -38,60 +39,63 @@ def test_backup_creates_real_docker_volume_backup(runner, temp_backup_dir, isola
     
     Tests the core backup functionality with actual Docker volumes.
     """
-    # Install stack first to create configuration
-    install_result = runner.invoke(app, ["install", "--force"])
-    assert install_result.exit_code == 0
-    
-    # Start stack to create real volumes with data
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Let services create some real data
-    time.sleep(5)
-    
-    # Wait for services to be healthy
-    assert wait_for_service_health("webui", timeout=15)
-    
-    # Create backup
-    backup_path = temp_backup_dir / "real_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    if result.exit_code != 0:
-        print(f"Backup command failed with exit code {result.exit_code}")
-        print(f"stdout: {result.stdout}")
-    assert result.exit_code == 0
-    
-    # Verify backup structure exists
-    assert backup_path.exists()
-    assert (backup_path / "backup_manifest.json").exists()
-    assert (backup_path / "volumes").exists()
-    assert (backup_path / "config").exists()
-    
-    # Verify manifest contains real data
-    with open(backup_path / "backup_manifest.json", 'r') as f:
-        manifest = json.load(f)
-    
-    assert manifest["backup_id"] is not None
-    assert manifest["stack_version"] is not None
-    assert "volumes" in manifest
-    assert len(manifest["volumes"]) > 0
-    
-    # Verify volume data was backed up
-    volumes_dir = backup_path / "volumes"
-    assert volumes_dir.exists()
-    
-    # Check that volume backup files exist
-    volume_files = [f for f in volumes_dir.iterdir() if f.is_file() and f.name.endswith('.tar.gz')]
-    assert len(volume_files) > 0, "Should have backed up at least one volume"
-    
-    # Verify configuration was backed up
-    config_dir = backup_path / "config"
-    assert (config_dir / ".ollama-stack.json").exists()
-    assert (config_dir / ".env").exists()
-    
-    # Verify config content is valid
-    with open(config_dir / ".ollama-stack.json", 'r') as f:
-        config_data = json.load(f)
-    assert "docker_compose_file" in config_data
+    try:
+        # Install stack first to create configuration
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+        
+        # Start stack to create real volumes with data
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Let services create some real data
+        time.sleep(5)
+        
+        # Wait for services to be healthy
+        assert wait_for_service_health("webui", timeout=15)
+        
+        # Create backup
+        backup_path = temp_backup_dir / "real_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        if result.exit_code != 0:
+            print(f"Backup command failed with exit code {result.exit_code}")
+            print(f"stdout: {result.stdout}")
+        assert result.exit_code == 0
+        
+        # Verify backup structure exists
+        assert backup_path.exists()
+        assert (backup_path / "backup_manifest.json").exists()
+        assert (backup_path / "volumes").exists()
+        assert (backup_path / "config").exists()
+        
+        # Verify manifest contains real data
+        with open(backup_path / "backup_manifest.json", 'r') as f:
+            manifest = json.load(f)
+        
+        assert manifest["backup_id"] is not None
+        assert manifest["stack_version"] is not None
+        assert "volumes" in manifest
+        assert len(manifest["volumes"]) > 0
+        
+        # Verify volume data was backed up
+        volumes_dir = backup_path / "volumes"
+        assert volumes_dir.exists()
+        
+        # Check that volume backup files exist
+        volume_files = [f for f in volumes_dir.iterdir() if f.is_file() and f.name.endswith('.tar.gz')]
+        assert len(volume_files) > 0, "Should have backed up at least one volume"
+        
+        # Verify configuration was backed up
+        config_dir = backup_path / "config"
+        assert (config_dir / ".ollama-stack.json").exists()
+        assert (config_dir / ".env").exists()
+        
+        # Verify config content is valid
+        with open(config_dir / ".ollama-stack.json", 'r') as f:
+            config_data = json.load(f)
+        assert "docker_compose_file" in config_data
+    finally:
+        cleanup_backup_artifacts()
 
 
 @pytest.mark.integration
@@ -103,40 +107,43 @@ def test_backup_with_stack_running_performs_live_backup(runner, temp_backup_dir,
     
     Tests that backup can capture consistent state from running services.
     """
-    # Install and start stack
-    install_result = runner.invoke(app, ["install", "--force"])
-    assert install_result.exit_code == 0
-    
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Verify stack is running
-    running_services = get_actual_running_services()
-    expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
-    assert running_services == expected_components
-    
-    # Create backup while running
-    backup_path = temp_backup_dir / "live_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    
-    # Should complete successfully or with warnings
-    assert result.exit_code in [0, 1]
-    
-    # Verify backup was created
-    assert backup_path.exists()
-    assert (backup_path / "backup_manifest.json").exists()
-    
-    # Verify stack is still running after backup
-    final_services = get_actual_running_services()
-    assert final_services == running_services, "Stack should still be running after live backup"
-    
-    # Verify manifest reflects running state
-    with open(backup_path / "backup_manifest.json", 'r') as f:
-        manifest = json.load(f)
-    
-    # Note: The actual backup manifest may not have a "created_while_running" field
-    # Instead, check that the backup_config indicates it was a live backup
-    assert manifest["backup_config"]["include_volumes"] == True
+    try:
+        # Install and start stack
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+        
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Verify stack is running
+        running_services = get_actual_running_services()
+        expected_components = EXPECTED_ALL_COMPONENTS if IS_APPLE_SILICON else EXPECTED_DOCKER_COMPONENTS
+        assert running_services == expected_components
+        
+        # Create backup while running
+        backup_path = temp_backup_dir / "live_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        
+        # Should complete successfully or with warnings
+        assert result.exit_code in [0, 1]
+        
+        # Verify backup was created
+        assert backup_path.exists()
+        assert (backup_path / "backup_manifest.json").exists()
+        
+        # Verify stack is still running after backup
+        final_services = get_actual_running_services()
+        assert final_services == running_services, "Stack should still be running after live backup"
+        
+        # Verify manifest reflects running state
+        with open(backup_path / "backup_manifest.json", 'r') as f:
+            manifest = json.load(f)
+        
+        # Note: The actual backup manifest may not have a "created_while_running" field
+        # Instead, check that the backup_config indicates it was a live backup
+        assert manifest["backup_config"]["include_volumes"] == True
+    finally:
+        cleanup_backup_artifacts()
 
 
 @pytest.mark.integration
@@ -148,39 +155,42 @@ def test_backup_with_stack_stopped_performs_offline_backup(runner, temp_backup_d
     
     Tests backup of dormant volumes and configuration.
     """
-    # Install and start stack to create data, then stop it
-    install_result = runner.invoke(app, ["install", "--force"])
-    assert install_result.exit_code == 0
-    
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    time.sleep(3)  # Let services create data
-    
-    stop_result = runner.invoke(app, ["stop"])
-    assert stop_result.exit_code == 0
-    
-    # Verify stack is stopped
-    assert wait_for_stack_to_stop(timeout=10)
-    
-    # Create backup while stopped
-    backup_path = temp_backup_dir / "offline_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    
-    # Should complete successfully or with warnings
-    assert result.exit_code in [0, 1]
-    
-    # Verify backup was created
-    assert backup_path.exists()
-    assert (backup_path / "backup_manifest.json").exists()
-    
-    # Verify manifest reflects stopped state
-    with open(backup_path / "backup_manifest.json", 'r') as f:
-        manifest = json.load(f)
-    
-    # Note: The actual backup manifest may not have a "created_while_running" field
-    # Instead, check that the backup was created successfully
-    assert manifest["backup_config"]["include_volumes"] == True
+    try:
+        # Install and start stack to create data, then stop it
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+        
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        time.sleep(3)  # Let services create data
+        
+        stop_result = runner.invoke(app, ["stop"])
+        assert stop_result.exit_code == 0
+        
+        # Verify stack is stopped
+        assert wait_for_stack_to_stop(timeout=10)
+        
+        # Create backup while stopped
+        backup_path = temp_backup_dir / "offline_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        
+        # Should complete successfully or with warnings
+        assert result.exit_code in [0, 1]
+        
+        # Verify backup was created
+        assert backup_path.exists()
+        assert (backup_path / "backup_manifest.json").exists()
+        
+        # Verify manifest reflects stopped state
+        with open(backup_path / "backup_manifest.json", 'r') as f:
+            manifest = json.load(f)
+        
+        # Note: The actual backup manifest may not have a "created_while_running" field
+        # Instead, check that the backup was created successfully
+        assert manifest["backup_config"]["include_volumes"] == True
+    finally:
+        cleanup_backup_artifacts()
 
 
 @pytest.mark.integration
@@ -192,41 +202,44 @@ def test_backup_preserves_large_volume_data(runner, temp_backup_dir, isolated_te
     
     Tests backup performance and integrity with substantial data volumes.
     """
-    # Install and start stack
-    install_result = runner.invoke(app, ["install", "--force"])
-    assert install_result.exit_code == 0
-    
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    time.sleep(5)  # Let services initialize
-    
-    # Create large test data in volumes (simulate real usage)
-    # This would typically be done by interacting with the services
-    # For testing, we'll create a backup and verify it handles realistic sizes
-    
-    backup_path = temp_backup_dir / "large_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    
-    # Should complete successfully or with warnings
-    assert result.exit_code in [0, 1]
-    
-    # Verify backup completed
-    assert backup_path.exists()
-    
-    # Check manifest for completeness
-    with open(backup_path / "backup_manifest.json", 'r') as f:
-        manifest = json.load(f)
-    
-    assert "volumes" in manifest
-    assert len(manifest["volumes"]) >= 0
-    
-    # Verify all expected volumes were backed up
-    volumes_dir = backup_path / "volumes"
-    if volumes_dir.exists():
-        volume_files = [f for f in volumes_dir.iterdir() if f.is_file() and f.name.endswith('.tar.gz')]
-        # Should have backed up volumes (exact count depends on stack configuration)
-        assert len(volume_files) >= 0  # At minimum, should not fail
+    try:
+        # Install and start stack
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+        
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        time.sleep(5)  # Let services initialize
+        
+        # Create large test data in volumes (simulate real usage)
+        # This would typically be done by interacting with the services
+        # For testing, we'll create a backup and verify it handles realistic sizes
+        
+        backup_path = temp_backup_dir / "large_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        
+        # Should complete successfully or with warnings
+        assert result.exit_code in [0, 1]
+        
+        # Verify backup completed
+        assert backup_path.exists()
+        
+        # Check manifest for completeness
+        with open(backup_path / "backup_manifest.json", 'r') as f:
+            manifest = json.load(f)
+        
+        assert "volumes" in manifest
+        assert len(manifest["volumes"]) >= 0
+        
+        # Verify all expected volumes were backed up
+        volumes_dir = backup_path / "volumes"
+        if volumes_dir.exists():
+            volume_files = [f for f in volumes_dir.iterdir() if f.is_file() and f.name.endswith('.tar.gz')]
+            # Should have backed up volumes (exact count depends on stack configuration)
+            assert len(volume_files) >= 0  # At minimum, should not fail
+    finally:
+        cleanup_backup_artifacts()
 
 
 # --- Backup Validation Tests ---
@@ -415,24 +428,27 @@ def test_backup_handles_docker_service_interruption(runner, temp_backup_dir):
     
     Tests resilience to Docker daemon issues during backup operations.
     """
-    # Start stack
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Note: Actual Docker daemon stopping would affect the entire test suite
-    # So we'll test the error handling by attempting backup operations
-    # that might encounter Docker issues
-    
-    backup_path = temp_backup_dir / "interrupted_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    
-    # Should complete successfully or handle Docker issues gracefully
-    assert result.exit_code in [0, 1]
-    
-    if result.exit_code == 1:
-        output_lower = result.stdout.lower()
-        # Should provide helpful error messages, not technical details
-        assert "traceback" not in output_lower
+    try:
+        # Start stack
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Note: Actual Docker daemon stopping would affect the entire test suite
+        # So we'll test the error handling by attempting backup operations
+        # that might encounter Docker issues
+        
+        backup_path = temp_backup_dir / "interrupted_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        
+        # Should complete successfully or handle Docker issues gracefully
+        assert result.exit_code in [0, 1]
+        
+        if result.exit_code == 1:
+            output_lower = result.stdout.lower()
+            # Should provide helpful error messages, not technical details
+            assert "traceback" not in output_lower
+    finally:
+        cleanup_backup_artifacts()
 
 
 @pytest.mark.integration
@@ -443,39 +459,42 @@ def test_backup_handles_corrupted_source_data(runner, temp_backup_dir):
     
     Tests handling of invalid or corrupted source data.
     """
-    # Create corrupted config files
-    config_dir = os.path.expanduser("~/.ollama-stack")
-    os.makedirs(config_dir, exist_ok=True)
-    
-    # Create invalid JSON config
-    config_file = os.path.join(config_dir, ".ollama-stack.json")
-    with open(config_file, 'w') as f:
-        f.write('{"invalid": "json"')  # Missing closing brace
-    
     try:
-        # Attempt backup with corrupted config
-        backup_path = temp_backup_dir / "corrupted_source_backup"
-        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        # Create corrupted config files
+        config_dir = os.path.expanduser("~/.ollama-stack")
+        os.makedirs(config_dir, exist_ok=True)
         
-        # Should handle gracefully
-        assert result.exit_code in [0, 1]
+        # Create invalid JSON config
+        config_file = os.path.join(config_dir, ".ollama-stack.json")
+        with open(config_file, 'w') as f:
+            f.write('{"invalid": "json"')  # Missing closing brace
         
-        if result.exit_code == 1:
-            output_lower = result.stdout.lower()
-            assert any(keyword in output_lower for keyword in [
-                "invalid", "corrupted", "configuration", "json"
-            ])
+        try:
+            # Attempt backup with corrupted config
+            backup_path = temp_backup_dir / "corrupted_source_backup"
+            result = runner.invoke(app, ["backup", "--output", str(backup_path)])
             
-            # Should not show Python tracebacks
-            assert "traceback" not in output_lower
+            # Should handle gracefully
+            assert result.exit_code in [0, 1]
             
+            if result.exit_code == 1:
+                output_lower = result.stdout.lower()
+                assert any(keyword in output_lower for keyword in [
+                    "invalid", "corrupted", "configuration", "json"
+                ])
+                
+                # Should not show Python tracebacks
+                assert "traceback" not in output_lower
+                
+        finally:
+            # Clean up corrupted config
+            if os.path.exists(config_file):
+                try:
+                    os.remove(config_file)
+                except OSError:
+                    pass
     finally:
-        # Clean up corrupted config
-        if os.path.exists(config_file):
-            try:
-                os.remove(config_file)
-            except OSError:
-                pass
+        cleanup_backup_artifacts()
 
 
 # --- Cross-Platform Backup Tests ---
@@ -489,30 +508,33 @@ def test_backup_apple_silicon_native_ollama_handling(runner, temp_backup_dir):
     
     Tests platform-specific backup behavior for Apple Silicon.
     """
-    if not shutil.which("ollama"):
-        pytest.skip("Ollama not installed")
-    
-    # Start stack (should start native Ollama on Apple Silicon)
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Create backup
-    backup_path = temp_backup_dir / "apple_silicon_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    assert result.exit_code == 0
-    
-    # Verify backup was created
-    assert backup_path.exists()
-    
-    # Check manifest for platform-specific information
-    with open(backup_path / "backup_manifest.json", 'r') as f:
-        manifest = json.load(f)
-    
-    assert manifest["platform"] in ["apple", "darwin"]  # macOS can be reported as either
-    assert "volumes" in manifest
-    
-    # Verify backup contains volume information
-    assert len(manifest["volumes"]) >= 0
+    try:
+        if not shutil.which("ollama"):
+            pytest.skip("Ollama not installed")
+        
+        # Start stack (should start native Ollama on Apple Silicon)
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Create backup
+        backup_path = temp_backup_dir / "apple_silicon_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        assert result.exit_code == 0
+        
+        # Verify backup was created
+        assert backup_path.exists()
+        
+        # Check manifest for platform-specific information
+        with open(backup_path / "backup_manifest.json", 'r') as f:
+            manifest = json.load(f)
+        
+        assert manifest["platform"] in ["apple", "darwin"]  # macOS can be reported as either
+        assert "volumes" in manifest
+        
+        # Verify backup contains volume information
+        assert len(manifest["volumes"]) >= 0
+    finally:
+        cleanup_backup_artifacts()
 
 
 @pytest.mark.integration
@@ -525,27 +547,30 @@ def test_backup_docker_ollama_handling(runner, temp_backup_dir):
     
     Tests platform-specific backup behavior for Docker-based Ollama.
     """
-    # Start stack (should use Docker Ollama on non-Apple Silicon)
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Create backup
-    backup_path = temp_backup_dir / "docker_ollama_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    assert result.exit_code == 0
-    
-    # Verify backup was created
-    assert backup_path.exists()
-    
-    # Check manifest for Docker Ollama
-    with open(backup_path / "backup_manifest.json", 'r') as f:
-        manifest = json.load(f)
-    
-    assert manifest["platform"] != "apple"
-    assert "volumes" in manifest
-    
-    # Verify Docker volumes are included in backup
-    assert len(manifest["volumes"]) >= 0
+    try:
+        # Start stack (should use Docker Ollama on non-Apple Silicon)
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Create backup
+        backup_path = temp_backup_dir / "docker_ollama_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        assert result.exit_code == 0
+        
+        # Verify backup was created
+        assert backup_path.exists()
+        
+        # Check manifest for Docker Ollama
+        with open(backup_path / "backup_manifest.json", 'r') as f:
+            manifest = json.load(f)
+        
+        assert manifest["platform"] != "apple"
+        assert "volumes" in manifest
+        
+        # Verify Docker volumes are included in backup
+        assert len(manifest["volumes"]) >= 0
+    finally:
+        cleanup_backup_artifacts()
 
 
 # --- Performance and Stress Tests ---
@@ -559,36 +584,39 @@ def test_backup_performance_with_concurrent_operations(runner, temp_backup_dir):
     
     Tests backup behavior under concurrent system load.
     """
-    # Start stack
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Record initial resource usage
-    initial_resources = get_system_resource_usage()
-    
-    # Create backup while system is under load
-    backup_path = temp_backup_dir / "concurrent_backup"
-    start_time = time.time()
-    
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    
-    end_time = time.time()
-    backup_duration = end_time - start_time
-    
-    # Should complete successfully
-    assert result.exit_code == 0
-    
-    # Should complete within reasonable time (adjust based on system and load)
-    # Allow more time for integration tests which may run slower
-    max_time = 600  # 10 minutes for integration tests with large volumes
-    assert backup_duration < max_time, f"Backup took too long: {backup_duration:.2f} seconds (max: {max_time})"
-    
-    # Record final resource usage
-    final_resources = get_system_resource_usage()
-    
-    # System should not be completely overwhelmed
-    assert final_resources["cpu_percent"] < 95, "CPU usage too high during backup"
-    assert final_resources["memory_percent"] < 90, "Memory usage too high during backup"
+    try:
+        # Start stack
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Record initial resource usage
+        initial_resources = get_system_resource_usage()
+        
+        # Create backup while system is under load
+        backup_path = temp_backup_dir / "concurrent_backup"
+        start_time = time.time()
+        
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        
+        end_time = time.time()
+        backup_duration = end_time - start_time
+        
+        # Should complete successfully
+        assert result.exit_code == 0
+        
+        # Should complete within reasonable time (adjust based on system and load)
+        # Allow more time for integration tests which may run slower
+        max_time = 600  # 10 minutes for integration tests with large volumes
+        assert backup_duration < max_time, f"Backup took too long: {backup_duration:.2f} seconds (max: {max_time})"
+        
+        # Record final resource usage
+        final_resources = get_system_resource_usage()
+        
+        # System should not be completely overwhelmed
+        assert final_resources["cpu_percent"] < 95, "CPU usage too high during backup"
+        assert final_resources["memory_percent"] < 90, "Memory usage too high during backup"
+    finally:
+        cleanup_backup_artifacts()
 
 
 @pytest.mark.integration
@@ -600,24 +628,27 @@ def test_backup_handles_multiple_concurrent_backups(runner, temp_backup_dir):
     
     Tests resource management and coordination between concurrent backups.
     """
-    # Start stack
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Note: Running truly concurrent backups would require threading
-    # For this test, we'll run sequential backups rapidly to test resource management
-    
-    backup_results = []
-    for i in range(3):
-        backup_path = temp_backup_dir / f"concurrent_backup_{i}"
-        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-        backup_results.append((result.exit_code, backup_path))
-        time.sleep(1)  # Brief delay between backups
-    
-    # All backups should complete successfully
-    for exit_code, backup_path in backup_results:
-        assert exit_code == 0, f"Backup {backup_path} failed"
-        assert backup_path.exists(), f"Backup {backup_path} was not created"
+    try:
+        # Start stack
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Note: Running truly concurrent backups would require threading
+        # For this test, we'll run sequential backups rapidly to test resource management
+        
+        backup_results = []
+        for i in range(3):
+            backup_path = temp_backup_dir / f"concurrent_backup_{i}"
+            result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+            backup_results.append((result.exit_code, backup_path))
+            time.sleep(1)  # Brief delay between backups
+        
+        # All backups should complete successfully
+        for exit_code, backup_path in backup_results:
+            assert exit_code == 0, f"Backup {backup_path} failed"
+            assert backup_path.exists(), f"Backup {backup_path} was not created"
+    finally:
+        cleanup_backup_artifacts()
 
 
 # --- Integration with Other Commands ---
@@ -631,34 +662,37 @@ def test_backup_after_update_operation(runner, temp_backup_dir):
     
     Tests backup integration with update command workflow.
     """
-    # Install and start stack
-    install_result = runner.invoke(app, ["install", "--force"])
-    assert install_result.exit_code == 0
-    
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Run update
-    update_result = runner.invoke(app, ["update"], input="y\n")
-    assert update_result.exit_code == 0
-    
-    # Create backup after update
-    backup_path = temp_backup_dir / "post_update_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    
-    # Should complete successfully or with warnings
-    assert result.exit_code in [0, 1]
-    
-    # Verify backup reflects updated state
-    assert backup_path.exists()
-    
-    # Check manifest for update information
-    with open(backup_path / "backup_manifest.json", 'r') as f:
-        manifest = json.load(f)
-    
-    assert "stack_version" in manifest
-    assert manifest["stack_version"] is not None
-    assert "volumes" in manifest
+    try:
+        # Install and start stack
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+        
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Run update
+        update_result = runner.invoke(app, ["update"], input="y\n")
+        assert update_result.exit_code == 0
+        
+        # Create backup after update
+        backup_path = temp_backup_dir / "post_update_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        
+        # Should complete successfully or with warnings
+        assert result.exit_code in [0, 1]
+        
+        # Verify backup reflects updated state
+        assert backup_path.exists()
+        
+        # Check manifest for update information
+        with open(backup_path / "backup_manifest.json", 'r') as f:
+            manifest = json.load(f)
+        
+        assert "stack_version" in manifest
+        assert manifest["stack_version"] is not None
+        assert "volumes" in manifest
+    finally:
+        cleanup_backup_artifacts()
 
 
 @pytest.mark.integration
@@ -669,34 +703,37 @@ def test_backup_with_fresh_installation(runner, temp_backup_dir, clean_config_di
     
     Tests backup behavior immediately after install command.
     """
-    # Fresh install
-    install_result = runner.invoke(app, ["install", "--force"])
-    assert install_result.exit_code == 0
-    
-    # Create backup immediately after install
-    backup_path = temp_backup_dir / "fresh_install_backup"
-    result = runner.invoke(app, ["backup", "--output", str(backup_path)])
-    
-    # Should complete successfully or with warnings
-    assert result.exit_code in [0, 1]
-    
-    # Verify backup was created
-    assert backup_path.exists()
-    
-    # Check manifest
-    with open(backup_path / "backup_manifest.json", 'r') as f:
-        manifest = json.load(f)
-    
-    # Note: The actual backup manifest may not have a "created_while_running" field
-    # Instead, check that the backup was created successfully
-    assert manifest["backup_config"]["include_volumes"] == True
-    assert "volumes" in manifest
-    
-    # Configuration should be backed up
-    config_backup_path = backup_path / "config"
-    if config_backup_path.exists():
-        assert (config_backup_path / ".ollama-stack.json").exists()
-        assert (config_backup_path / ".env").exists()
+    try:
+        # Fresh install
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+        
+        # Create backup immediately after install
+        backup_path = temp_backup_dir / "fresh_install_backup"
+        result = runner.invoke(app, ["backup", "--output", str(backup_path)])
+        
+        # Should complete successfully or with warnings
+        assert result.exit_code in [0, 1]
+        
+        # Verify backup was created
+        assert backup_path.exists()
+        
+        # Check manifest
+        with open(backup_path / "backup_manifest.json", 'r') as f:
+            manifest = json.load(f)
+        
+        # Note: The actual backup manifest may not have a "created_while_running" field
+        # Instead, check that the backup was created successfully
+        assert manifest["backup_config"]["include_volumes"] == True
+        assert "volumes" in manifest
+        
+        # Configuration should be backed up
+        config_backup_path = backup_path / "config"
+        if config_backup_path.exists():
+            assert (config_backup_path / ".ollama-stack.json").exists()
+            assert (config_backup_path / ".env").exists()
+    finally:
+        cleanup_backup_artifacts()
 
 
 @pytest.mark.integration
@@ -708,45 +745,48 @@ def test_backup_error_recovery_and_cleanup(runner, temp_backup_dir):
     
     Tests that failed backups clean up properly and don't leave artifacts.
     """
-    # Install stack first
-    install_result = runner.invoke(app, ["install", "--force"])
-    assert install_result.exit_code == 0
-    
-    start_result = runner.invoke(app, ["start"])
-    assert start_result.exit_code == 0
-    
-    # Create backup to non-existent directory (should fail)
-    invalid_backup_path = temp_backup_dir / "non_existent" / "deep" / "path" / "backup"
-    result = runner.invoke(app, ["backup", "--output", str(invalid_backup_path)])
-    
-    # Debug: Print what actually happened
-    print(f"Exit code: {result.exit_code}")
-    print(f"Output: {result.stdout}")
-    print(f"Path exists: {invalid_backup_path.exists()}")
-    
-    # The backup command may actually create the directory structure successfully
-    # So let's adjust the test to check for a different error condition
-    # or verify that the backup command handles this gracefully either way
-    assert result.exit_code in [0, 1]  # Allow either success or failure
-    
-    # Should not show Python tracebacks regardless of success/failure
-    output_lower = result.stdout.lower()
-    assert "traceback" not in output_lower
-    
-    # If it failed, check for appropriate error message
-    if result.exit_code == 1:
-        assert any(keyword in output_lower for keyword in [
-            "cannot create", "directory", "path", "invalid", "failed", "error"
-        ])
-    # If it succeeded, the backup should exist
-    elif result.exit_code == 0:
-        assert invalid_backup_path.exists()
-    
-    # System should still be in good state - subsequent backup should work
-    good_backup_path = temp_backup_dir / "recovery_backup"
-    recovery_result = runner.invoke(app, ["backup", "--output", str(good_backup_path)])
-    assert recovery_result.exit_code in [0, 1]  # Should succeed or complete with warnings
-    assert good_backup_path.exists()
+    try:
+        # Install stack first
+        install_result = runner.invoke(app, ["install", "--force"])
+        assert install_result.exit_code == 0
+        
+        start_result = runner.invoke(app, ["start"])
+        assert start_result.exit_code == 0
+        
+        # Create backup to non-existent directory (should fail)
+        invalid_backup_path = temp_backup_dir / "non_existent" / "deep" / "path" / "backup"
+        result = runner.invoke(app, ["backup", "--output", str(invalid_backup_path)])
+        
+        # Debug: Print what actually happened
+        print(f"Exit code: {result.exit_code}")
+        print(f"Output: {result.stdout}")
+        print(f"Path exists: {invalid_backup_path.exists()}")
+        
+        # The backup command may actually create the directory structure successfully
+        # So let's adjust the test to check for a different error condition
+        # or verify that the backup command handles this gracefully either way
+        assert result.exit_code in [0, 1]  # Allow either success or failure
+        
+        # Should not show Python tracebacks regardless of success/failure
+        output_lower = result.stdout.lower()
+        assert "traceback" not in output_lower
+        
+        # If it failed, check for appropriate error message
+        if result.exit_code == 1:
+            assert any(keyword in output_lower for keyword in [
+                "cannot create", "directory", "path", "invalid", "failed", "error"
+            ])
+        # If it succeeded, the backup should exist
+        elif result.exit_code == 0:
+            assert invalid_backup_path.exists()
+        
+        # System should still be in good state - subsequent backup should work
+        good_backup_path = temp_backup_dir / "recovery_backup"
+        recovery_result = runner.invoke(app, ["backup", "--output", str(good_backup_path)])
+        assert recovery_result.exit_code in [0, 1]  # Should succeed or complete with warnings
+        assert good_backup_path.exists()
+    finally:
+        cleanup_backup_artifacts()
 
 
 # --- Backup Output Format Tests ---

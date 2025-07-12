@@ -1001,8 +1001,13 @@ def test_find_resources_by_label_successful_search(stack_manager, mock_docker_cl
     mock_network = MagicMock()
     mock_network.name = "ollama-stack-network"
     
+    # Mock the two volume list calls - first with filters, then without for pattern matching
+    mock_docker_client.client.volumes.list.side_effect = [
+        [mock_volume],  # First call with filters
+        []              # Second call without filters (no pattern matches)
+    ]
+    
     mock_docker_client.client.containers.list.return_value = [mock_container]
-    mock_docker_client.client.volumes.list.return_value = [mock_volume]
     mock_docker_client.client.networks.list.return_value = [mock_network]
     
     result = stack_manager.find_resources_by_label("ollama-stack.component")
@@ -1020,9 +1025,13 @@ def test_find_resources_by_label_successful_search(stack_manager, mock_docker_cl
         filters={"label": "ollama-stack.component"}
     )
     # For volumes with ollama-stack.component label, we use Docker Compose project label
-    mock_docker_client.client.volumes.list.assert_called_once_with(
-        filters={"label": "com.docker.compose.project=ollama-stack"}
-    )
+    # and then also check for pattern matches
+    expected_calls = [
+        call(filters={"label": "com.docker.compose.project=ollama-stack"}),
+        call()
+    ]
+    mock_docker_client.client.volumes.list.assert_has_calls(expected_calls)
+    assert mock_docker_client.client.volumes.list.call_count == 2
     mock_docker_client.client.networks.list.assert_called_once_with(
         filters={"label": "ollama-stack.component"}
     )
@@ -1030,7 +1039,8 @@ def test_find_resources_by_label_successful_search(stack_manager, mock_docker_cl
 def test_find_resources_by_label_with_value(stack_manager, mock_docker_client):
     """Tests find_resources_by_label with specific label value."""
     mock_docker_client.client.containers.list.return_value = []
-    mock_docker_client.client.volumes.list.return_value = []
+    # Mock the two volume list calls - first with filters, then without for pattern matching
+    mock_docker_client.client.volumes.list.side_effect = [[], []]  # Both calls return empty
     mock_docker_client.client.networks.list.return_value = []
     
     result = stack_manager.find_resources_by_label("ollama-stack.component", "webui")
@@ -1040,8 +1050,13 @@ def test_find_resources_by_label_with_value(stack_manager, mock_docker_client):
     mock_docker_client.client.containers.list.assert_called_once_with(all=True, filters=expected_filter)
     
     # For volumes with ollama-stack.component label, we use Docker Compose project label
-    expected_volume_filter = {"label": "com.docker.compose.project=ollama-stack"}
-    mock_docker_client.client.volumes.list.assert_called_once_with(filters=expected_volume_filter)
+    # and then also check for pattern matches
+    expected_calls = [
+        call(filters={"label": "com.docker.compose.project=ollama-stack"}),
+        call()
+    ]
+    mock_docker_client.client.volumes.list.assert_has_calls(expected_calls)
+    assert mock_docker_client.client.volumes.list.call_count == 2
     
     mock_docker_client.client.networks.list.assert_called_once_with(filters=expected_filter)
 
@@ -1058,13 +1073,60 @@ def test_find_resources_by_label_docker_exception(stack_manager, mock_docker_cli
 def test_find_resources_by_label_empty_results(stack_manager, mock_docker_client):
     """Tests find_resources_by_label with no resources found."""
     mock_docker_client.client.containers.list.return_value = []
-    mock_docker_client.client.volumes.list.return_value = []
+    # Mock the two volume list calls - first with filters, then without for pattern matching
+    mock_docker_client.client.volumes.list.side_effect = [[], []]  # Both calls return empty
     mock_docker_client.client.networks.list.return_value = []
     
     result = stack_manager.find_resources_by_label("ollama-stack.component")
     
     expected = {"containers": [], "volumes": [], "networks": []}
     assert result == expected
+
+def test_find_resources_by_label_volume_pattern_matching(stack_manager, mock_docker_client):
+    """Tests find_resources_by_label with volume pattern matching for stack volumes."""
+    # Mock containers and networks
+    mock_container = MagicMock()
+    mock_container.name = "ollama-stack-webui"
+    mock_network = MagicMock()
+    mock_network.name = "ollama-stack-network"
+    
+    # Mock volumes - one with Docker Compose label, one with pattern match, one with exact name match
+    mock_labeled_volume = MagicMock()
+    mock_labeled_volume.name = "ollama-stack_webui_data"
+    mock_pattern_volume = MagicMock()
+    mock_pattern_volume.name = "ollama-stack_backup_data"
+    mock_exact_volume = MagicMock()
+    mock_exact_volume.name = "ollama-stack"
+    
+    # Mock the two volume list calls
+    mock_docker_client.client.volumes.list.side_effect = [
+        [mock_labeled_volume],  # First call with filters (Docker Compose labeled volumes)
+        [mock_pattern_volume, mock_exact_volume]  # Second call without filters (pattern matching)
+    ]
+    
+    mock_docker_client.client.containers.list.return_value = [mock_container]
+    mock_docker_client.client.networks.list.return_value = [mock_network]
+    
+    result = stack_manager.find_resources_by_label("ollama-stack.component")
+    
+    # Should find all three volumes (labeled + pattern matched + exact name matched)
+    assert len(result["containers"]) == 1
+    assert len(result["volumes"]) == 3
+    assert len(result["networks"]) == 1
+    
+    # Verify all expected volumes are found
+    volume_names = [vol.name for vol in result["volumes"]]
+    assert "ollama-stack_webui_data" in volume_names
+    assert "ollama-stack_backup_data" in volume_names
+    assert "ollama-stack" in volume_names
+    
+    # Verify the correct calls were made
+    expected_volume_calls = [
+        call(filters={"label": "com.docker.compose.project=ollama-stack"}),
+        call()
+    ]
+    mock_docker_client.client.volumes.list.assert_has_calls(expected_volume_calls)
+    assert mock_docker_client.client.volumes.list.call_count == 2
 
 def test_cleanup_resources_docker_client_unavailable(stack_manager, mock_docker_client):
     """Tests cleanup_resources when Docker client is unavailable."""

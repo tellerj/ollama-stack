@@ -643,12 +643,21 @@ class StackManager:
                 volume_filters = {"label": f"com.docker.compose.project={project_name}"}
                 volumes = self.docker_client.client.volumes.list(filters=volume_filters)
                 log.debug(f"Found {len(volumes)} volumes with Docker Compose project label '{project_name}'")
+                
+                # Also find volumes by name pattern for volumes that might not have labels
+                all_volumes = self.docker_client.client.volumes.list()
+                pattern_volumes = [v for v in all_volumes if v.name.startswith(f"{project_name}_") or v.name == project_name]
+                log.debug(f"Found {len(pattern_volumes)} volumes with name pattern '{project_name}_*' or exact match '{project_name}'")
+                
+                # Combine both sets, removing duplicates
+                all_found_volumes = list({v.name: v for v in volumes + pattern_volumes}.values())
+                resources["volumes"] = all_found_volumes
+                log.debug(f"Total unique volumes found: {len(all_found_volumes)}")
             else:
                 # For other use cases, use the provided label
                 volumes = self.docker_client.client.volumes.list(filters=filter_dict)
                 log.debug(f"Found {len(volumes)} volumes with label {label_key}")
-            
-            resources["volumes"] = volumes
+                resources["volumes"] = volumes
             
             # Find networks
             networks = self.docker_client.client.networks.list(
@@ -810,7 +819,7 @@ class StackManager:
                 # For now, we'll proceed as this is the basic implementation
                 log.info("Proceeding with resource removal...")
             
-            # Step 5: Stop all services
+            # Step 5: Stop all services and ensure containers are stopped
             log.info("Stopping all running services...")
             if self.is_stack_running():
                 docker_services = [name for name, conf in self.config.services.items() if conf.type == 'docker']
@@ -821,6 +830,50 @@ class StackManager:
                 
                 if native_services and not self.stop_native_services(native_services):
                     log.warning("Failed to stop some native services")
+            
+            # Step 5.5: Force stop and remove any remaining containers to ensure volume removal works
+            if remove_volumes and self.docker_client.client:
+                log.info("Ensuring all project containers are stopped and removed for volume removal...")
+                try:
+                    # Find all containers with our project label
+                    stack_containers = self.docker_client.client.containers.list(
+                        all=True, 
+                        filters={"label": "ollama-stack.component"}
+                    )
+                    
+                    # Also find any containers that reference stack volumes (like backup containers)
+                    project_name = self.config.project_name
+                    all_volumes = self.docker_client.client.volumes.list()
+                    stack_volume_names = [v.name for v in all_volumes if v.name.startswith(f"{project_name}_") or v.name == project_name]
+                    
+                    volume_containers = []
+                    for volume_name in stack_volume_names:
+                        try:
+                            containers_using_volume = self.docker_client.client.containers.list(
+                                all=True,
+                                filters={"volume": volume_name}
+                            )
+                            volume_containers.extend(containers_using_volume)
+                        except Exception as e:
+                            log.debug(f"Could not find containers using volume {volume_name}: {e}")
+                    
+                    # Combine and deduplicate containers
+                    all_containers = list({c.id: c for c in stack_containers + volume_containers}.values())
+                    
+                    # Force stop and remove any containers (running or stopped)
+                    for container in all_containers:
+                        if container.status == "running":
+                            log.debug(f"Force stopping container: {container.name}")
+                            container.stop(timeout=10)
+                            log.debug(f"Force stopped container: {container.name}")
+                        
+                        # Remove the container to release volume references
+                        log.debug(f"Removing container: {container.name}")
+                        container.remove(force=True)
+                        log.debug(f"Removed container: {container.name}")
+                            
+                except Exception as e:
+                    log.warning(f"Failed to force stop/remove some containers: {e}")
             
             # Step 6: Remove containers and networks 
             log.info("Removing containers and networks...")
