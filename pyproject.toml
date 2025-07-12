@@ -36,7 +36,7 @@ dev = [
 
 [project.urls]
 "Homepage" = "https://git.ctcubed.com/teller.junak/ollama-stack"
-"Bug Tracker" = "https://git.ctcubed.com/teller.junak/ollama-stack/issues"
+"Bug Tracker" = "https://git.ctcubed.com/teller.junak/ollama-stack/-/issues"
 
 [tool.setuptools]
 packages = ["ollama_stack_cli", "ollama_stack_cli.commands"]
