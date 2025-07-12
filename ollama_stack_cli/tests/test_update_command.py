@@ -15,7 +15,7 @@ def test_update_command_stack_not_running(MockAppContext, mock_app_context):
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.stack_manager.update_stack.return_value = True
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
@@ -35,7 +35,7 @@ def test_update_command_stack_running_confirm_yes(MockAppContext, mock_confirm):
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = True
     mock_app_context.stack_manager.update_stack.return_value = True
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     mock_confirm.return_value = True
     
     result = runner.invoke(app, ["update"])
@@ -56,7 +56,7 @@ def test_update_command_stack_running_confirm_no(MockAppContext, mock_confirm):
     mock_app_context = MagicMock()
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = True
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     mock_confirm.return_value = False
     
     result = runner.invoke(app, ["update"])
@@ -72,7 +72,7 @@ def test_update_command_services_only(MockAppContext, mock_app_context):
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.stack_manager.update_stack.return_value = True
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     
     result = runner.invoke(app, ["update", "--services"])
     assert result.exit_code == 0
@@ -89,7 +89,7 @@ def test_update_command_extensions_only(MockAppContext, mock_app_context):
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.stack_manager.update_stack.return_value = True
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     
     result = runner.invoke(app, ["update", "--extensions"])
     assert result.exit_code == 0
@@ -105,7 +105,7 @@ def test_update_command_conflicting_flags(MockAppContext, mock_app_context):
     """Tests that 'update --services --extensions' fails with error."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     
     result = runner.invoke(app, ["update", "--services", "--extensions"])
     assert result.exit_code == 2  # Conflicting flags validation error
@@ -118,7 +118,7 @@ def test_update_command_with_enabled_extensions(MockAppContext, mock_app_context
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.stack_manager.update_stack.return_value = True
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
@@ -135,7 +135,7 @@ def test_update_command_update_stack_failure(MockAppContext, mock_app_context):
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.stack_manager.update_stack.return_value = False
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 1
@@ -152,7 +152,7 @@ def test_update_command_confirmation_exception(MockAppContext, mock_confirm, moc
     """Tests update command handles exceptions from typer.confirm gracefully."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = True
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     mock_confirm.side_effect = KeyboardInterrupt("User interrupted")
     
     result = runner.invoke(app, ["update"])
@@ -165,7 +165,7 @@ def test_update_command_stack_manager_exception(MockAppContext, mock_app_context
     """Tests update command handles StackManager exceptions gracefully."""
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.side_effect = Exception("Docker daemon not running")
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 1
@@ -178,7 +178,7 @@ def test_update_command_integration_with_stack_manager_flags(MockAppContext, moc
     MockAppContext.return_value = mock_app_context
     mock_app_context.stack_manager.is_stack_running.return_value = False
     mock_app_context.stack_manager.update_stack.return_value = True
-    mock_app_context.config.app_config.version = "0.4.0"  # Mock version to avoid version transition
+    mock_app_context.config.app_config.version = "0.5.0"  # Mock version to avoid version transition
     
     # Test all flag combinations
     test_cases = [

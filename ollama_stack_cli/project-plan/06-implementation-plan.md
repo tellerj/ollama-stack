@@ -4,7 +4,7 @@ This document outlines the phased implementation plan for the `ollama-stack` CLI
 
 ---
 
-## Current Status: Advanced Implementation (v0.4.0+)
+## Current Status: Advanced Implementation (v0.5.0+)
 
 The CLI tool is **functionally complete for enterprise operations** and production-ready for professional stack management. Advanced extension management features are planned for the next release.
 
@@ -265,12 +265,12 @@ All phases must meet these standards:
 
 ## Release Strategy
 
-### v0.4.0: Backup and Migration (CURRENT RELEASE)
+### v0.5.0: Backup and Migration (CURRENT RELEASE)
 - ✅ Complete Phase 6 implementation
 - ✅ Focus on data protection and version migration
 - ✅ Enterprise-ready backup solutions
 
-### v0.5.0: Full Extension Management (NEXT RELEASE)
+### v0.6.0: Full Extension Management (NEXT RELEASE)
 - Complete Phase 7 implementation
 - Full MCP extension ecosystem support
 - Extension marketplace integration

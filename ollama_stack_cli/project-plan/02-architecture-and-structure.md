@@ -242,6 +242,6 @@ The application implements a centralized health checking system to ensure consis
 
 ### 4.1. Release Roadmap
 - **v0.3.0**: Resource Management (update, uninstall commands)
-- **v0.4.0**: Backup and Restore (backup, restore commands)  
-- **v0.5.0**: Extension Management (full extensions command group)
+- **v0.5.0**: Backup and Restore (backup, restore commands)  
+- **v0.6.0**: Extension Management (full extensions command group)
 - **v1.0.0**: Production Release with PyPI distribution

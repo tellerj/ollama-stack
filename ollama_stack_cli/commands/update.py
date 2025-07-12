@@ -181,7 +181,7 @@ def update_services_logic(
     
     # Check for version transitions and handle them appropriately
     current_version = ctx.config.app_config.version
-    latest_version = "0.4.0"  # This would come from a version registry in the future
+    latest_version = "0.5.0"  # This would come from a version registry in the future
     
     if current_version != latest_version:
         log.info(f"Detected version transition: {current_version} → {latest_version}")

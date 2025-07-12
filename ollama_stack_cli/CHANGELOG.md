@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - 
 
-## [v0.4.0] - 2025-01-XX
+## [v0.5.0] - 2025-07-11
 
 ### Added
 - **New Commands**: `backup` command for comprehensive stack backup, `restore` command for backup restoration
