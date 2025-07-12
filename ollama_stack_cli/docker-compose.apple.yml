@@ -14,6 +14,10 @@ services:
     environment:
       # Override: Point to host machine's Ollama instance  
       - OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Force non-streaming mode to fix SSE JSON parsing error
+      - ENABLE_WEBSOCKET_SUPPORT=false
+      - DISABLE_STREAMING=true
       # Inherit from base: Secret key for user session persistence
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
       # Disable all embedding functionality to prevent internet downloads
