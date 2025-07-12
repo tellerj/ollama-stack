@@ -372,22 +372,23 @@ class DockerClient:
         
         # Check main compose file
         compose_file = self.config.docker_compose_file
-        compose_path = Path(compose_file)
+        from .config import get_compose_file_path
+        compose_path = get_compose_file_path(compose_file)
         
         if compose_path.exists():
-            log.debug(f"Compose file found: {compose_file}")
+            log.debug(f"Compose file found: {compose_path}")
             checks.append(EnvironmentCheck(
                 name=f"Compose File: {compose_file}",
                 passed=True,
-                details=f"Docker compose file exists: {compose_file}"
+                details=f"Docker compose file exists: {compose_path}"
             ))
         else:
-            log.warning(f"Compose file missing: {compose_file}")
+            log.warning(f"Compose file missing: {compose_path}")
             checks.append(EnvironmentCheck(
                 name=f"Compose File: {compose_file}",
                 passed=False,
-                details=f"Docker compose file not found: {compose_file}",
-                suggestion=f"Ensure {compose_file} exists in the project directory"
+                details=f"Docker compose file not found: {compose_path}",
+                suggestion=f"Ensure {compose_file} exists in the package directory"
             ))
         
         return checks
